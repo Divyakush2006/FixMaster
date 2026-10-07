@@ -1,0 +1,14 @@
+.git
+.github
+.agents
+node_modules
+client
+tests
+docs
+.env
+.env.*
+!.env.example
+database/backups
+*.dump
+*.pdf
+*.md
