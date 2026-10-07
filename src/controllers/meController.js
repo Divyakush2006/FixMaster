@@ -1,4 +1,4 @@
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 const db = require('../config/db');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { PUBLIC_USER_COLUMNS, hashPassword } = require('../services/userService');
@@ -50,7 +50,7 @@ exports.changePassword = asyncHandler(async (req, res) => {
     const updated = await db.query(
         `UPDATE users SET password_hash = $1, credentials_changed_at = CURRENT_TIMESTAMP
          WHERE user_id = $2
-         RETURNING user_id, role, reg_or_emp_id`,
+         RETURNING user_id, role, reg_or_emp_id, credentials_changed_at`,
         [await hashPassword(new_password), req.user.userId]
     );
     // Every token issued before now is revoked (see auth.js), including the

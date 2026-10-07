@@ -15,7 +15,7 @@ import { StatusBadge, PriorityBadge, SpecializationBadge } from '../../component
 import { ActivityTimeline } from '../../components/common/ActivityTimeline';
 import { Complaint, TimelineEvent } from '../../types';
 import { formatDateTime } from '../../utils/formatters';
-import { reconstructTimeline } from '../../utils/timeline';
+import { logDescription, reconstructTimeline } from '../../utils/timeline';
 import { SCOPE_LABEL, SPECIALIZATION_LABEL, STATUS_LABEL, ticketLocation, ticketRef } from '../../utils/labels';
 
 interface DispatchDrawerProps {
@@ -31,8 +31,11 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
   const { showToast } = useToast();
 
   const isCleaning = complaint.required_specialization === 'CLEANING';
-  // The database only (re)assigns tickets in these states.
-  const canDispatch = complaint.status === 'OPEN' || complaint.status === 'ESCALATED';
+  // The database (re)assigns tickets in these states (migration 006).
+  // ASSIGNED / IN_PROGRESS means handing live work to another technician.
+  const isReassign = complaint.status === 'ASSIGNED' || complaint.status === 'IN_PROGRESS';
+  const canDispatch = complaint.status === 'OPEN' || complaint.status === 'ESCALATED' || isReassign;
+  const currentStaffId = isReassign ? complaint.assigned_staff_id : null;
 
   // Staff roster, pre-filtered to the trade this ticket needs. The backend
   // also rejects a specialization mismatch, so this is a convenience only.
@@ -62,7 +65,7 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
   const manualAssignMutation = useMutation({
     mutationFn: () => dispatchApi.assignTechnician(complaint.complaint_id, selectedStaffId),
     onSuccess: (data) => {
-      showToast('Technician assigned', 'success', data.message);
+      showToast(isReassign ? 'Ticket reassigned' : 'Technician assigned', 'success', data.message);
       afterDispatch();
       onClose();
     },
@@ -85,7 +88,7 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
     logs.length > 0
       ? logs.map((log, idx) => ({
           title: log.previous_status ? `${STATUS_LABEL[log.previous_status]} → ${STATUS_LABEL[log.new_status]}` : `Raised as ${STATUS_LABEL[log.new_status]}`,
-          description: [log.action_note, log.changed_by_name].filter(Boolean).join(' · ') || '—',
+          description: logDescription(log),
           timestamp: formatDateTime(log.timestamp),
           status: idx === logs.length - 1 ? 'current' : 'completed',
         }))
@@ -111,7 +114,7 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
               Close
             </Button>
             <Button icon={UserCheck} disabled={!selectedStaffId} loading={manualAssignMutation.isPending} onClick={() => manualAssignMutation.mutate()}>
-              {complaint.status === 'ESCALATED' ? 'Reassign technician' : 'Assign technician'}
+              {complaint.status === 'OPEN' ? 'Assign technician' : 'Reassign technician'}
             </Button>
           </>
         ) : (
@@ -138,6 +141,10 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
               { label: 'Raised on', value: formatDateTime(complaint.created_at) },
               { label: 'Trade', value: <SpecializationBadge specialization={complaint.required_specialization} /> },
               { label: 'Preferred time', value: complaint.preferred_timeslot || 'Any time' },
+              {
+                label: 'Technician',
+                value: complaint.assigned_staff_name && complaint.status !== 'OPEN' && complaint.status !== 'ESCALATED' ? complaint.assigned_staff_name : 'Unassigned',
+              },
             ]}
           />
           {complaint.description && (
@@ -151,11 +158,17 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
           <h3 className="eyebrow mb-3">Dispatch</h3>
           {!canDispatch ? (
             <Alert tone="info">
-              This ticket is <strong>{STATUS_LABEL[complaint.status].toLowerCase()}</strong>. Tickets can only be assigned while they are open or escalated.
+              This ticket is <strong>{STATUS_LABEL[complaint.status].toLowerCase()}</strong>. Tickets can be assigned or reassigned until the technician marks the work complete.
             </Alert>
           ) : (
             <div className="space-y-4">
-              {isCleaning && (
+              {isReassign && (
+                <Alert tone="info" title={`Currently with ${complaint.assigned_staff_name ?? 'a technician'}`}>
+                  Choosing another technician moves the ticket to them and removes it from {complaint.assigned_staff_name ?? 'the current technician'}'s queue. Use this when the
+                  current technician is unavailable.
+                </Alert>
+              )}
+              {isCleaning && !isReassign && (
                 <div className="flex flex-col gap-3 rounded-lg border border-brand-200 bg-brand-50/50 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-[13px] font-semibold text-slate-900">Auto-dispatch</p>
@@ -169,7 +182,7 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
 
               <div>
                 <p className="mb-2 text-[13px] font-medium text-slate-700">
-                  {isCleaning ? 'Or choose' : 'Choose'} a {SPECIALIZATION_LABEL[complaint.required_specialization].toLowerCase()} technician
+                  {isCleaning && !isReassign ? 'Or choose' : 'Choose'} a {SPECIALIZATION_LABEL[complaint.required_specialization].toLowerCase()} technician
                 </p>
                 {isLoadingStaff ? (
                   <div className="space-y-2">
@@ -182,13 +195,14 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
                   <div role="radiogroup" aria-label="Technician" className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
                     {roster.map((staff) => {
                       const selected = selectedStaffId === staff.user_id;
+                      const isCurrent = staff.user_id === currentStaffId;
                       return (
                         <button
                           key={staff.user_id}
                           type="button"
                           role="radio"
                           aria-checked={selected}
-                          disabled={!staff.is_available}
+                          disabled={!staff.is_available || isCurrent}
                           onClick={() => setSelectedStaffId(staff.user_id)}
                           className={cn(
                             'flex w-full items-center gap-3 px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55',
@@ -211,7 +225,9 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
                               {staff.active_task_count} active {staff.active_task_count === 1 ? 'task' : 'tasks'}
                             </span>
                           </span>
-                          {staff.is_available ? (
+                          {isCurrent ? (
+                            <Badge tone="brand">Current</Badge>
+                          ) : staff.is_available ? (
                             <Badge tone="success" dot>
                               On duty
                             </Badge>

@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Power, UserPlus } from 'lucide-react';
+import React, { useState } from 'react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { KeyRound, LockOpen, Power, UserPlus } from 'lucide-react';
 import { adminApi } from '../../api/endpoints';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/ui/Toast';
@@ -14,18 +14,26 @@ import { Badge } from '../../components/ui/Badge';
 import { Avatar } from '../../components/ui/Avatar';
 import { Button } from '../../components/ui/Button';
 import { Field, Input, PasswordInput, Select } from '../../components/ui/Form';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { SearchInput } from '../../components/ui/SearchInput';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Pagination } from '../../components/ui/Pagination';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
 import { RoleBadge, SpecializationBadge } from '../../components/common/Badges';
 import { CreateUserPayload, Role, Specialization, User } from '../../types';
 import { ROLE_LABEL, SPECIALIZATION_LABEL } from '../../utils/labels';
+import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
+import { PASSWORD_HINT, passwordProblem } from '../../utils/password';
+
+const isLocked = (u: User) => !!u.locked_until && new Date(u.locked_until).getTime() > Date.now();
 
 const ROLES: Role[] = ['STUDENT', 'STAFF', 'SUPERVISOR', 'ADMIN'];
 const CREATABLE_ROLES: Role[] = ['STAFF', 'SUPERVISOR', 'ADMIN', 'STUDENT'];
 const SPECIALIZATIONS: Specialization[] = ['CLEANING', 'ELECTRICIAN', 'CARPENTER', 'AC_TECH', 'PLUMBER'];
 
 type RoleTab = Role | 'ALL';
+type StatusFilter = '' | 'active' | 'deactivated' | 'locked';
+const PAGE_SIZE = 25;
 
 export const UsersPage: React.FC = () => {
   const { user: me } = useAuth();
@@ -33,30 +41,44 @@ export const UsersPage: React.FC = () => {
   const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [roleTab, setRoleTab] = useState<RoleTab>('ALL');
+  const [status, setStatus] = useState<StatusFilter>('');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const [resetting, setResetting] = useState<User | null>(null);
+  const q = useDebouncedValue(search.trim(), 300);
 
-  // One list for every role: the tabs filter it locally and show counts.
-  const { data: users = [], isLoading } = useQuery({ queryKey: ['admin-users', ''], queryFn: () => adminApi.listUsers() });
+  // Search, filters and paging run on the server, so the page stays fast
+  // with any number of student accounts.
+  const { data: summary } = useQuery({ queryKey: ['admin-users', 'summary'], queryFn: adminApi.userSummary });
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['admin-users', 'page', roleTab, status, q, page],
+    queryFn: () =>
+      adminApi.usersPage({
+        role: roleTab === 'ALL' ? undefined : roleTab,
+        status: status || undefined,
+        q: q || undefined,
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
+      }),
+    placeholderData: keepPreviousData,
+  });
+  const users = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const counts = useMemo(() => {
-    const c: Record<RoleTab, number> = { ALL: users.length, STUDENT: 0, STAFF: 0, SUPERVISOR: 0, ADMIN: 0 };
-    users.forEach((u) => (c[u.role] += 1));
-    return c;
-  }, [users]);
+  const countFor = (tab: RoleTab) =>
+    summary ? { ALL: summary.all, STUDENT: summary.student, STAFF: summary.staff, SUPERVISOR: summary.supervisor, ADMIN: summary.admin }[tab] : undefined;
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return users.filter(
-      (u) => (roleTab === 'ALL' || u.role === roleTab) && (!q || [u.full_name, u.reg_or_emp_id, u.email || ''].some((v) => v.toLowerCase().includes(q)))
-    );
-  }, [users, search, roleTab]);
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-audit'] });
+  };
 
   const toggleActive = useMutation({
     mutationFn: (u: User) => adminApi.updateUser(u.user_id, { is_active: !u.is_active }),
     onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      refresh();
       queryClient.invalidateQueries({ queryKey: ['complaints'] });
       showToast(
         res.is_active ? 'Account reactivated' : 'Account deactivated',
@@ -65,6 +87,15 @@ export const UsersPage: React.FC = () => {
       );
     },
     onError: (err: Error) => showToast('Update failed', 'error', err.message),
+  });
+
+  const unlock = useMutation({
+    mutationFn: (u: User) => adminApi.updateUser(u.user_id, { unlock: true }),
+    onSuccess: (res) => {
+      refresh();
+      showToast('Account unlocked', 'success', `${res.full_name} can sign in again.`);
+    },
+    onError: (err: Error) => showToast('Unlock failed', 'error', err.message),
   });
 
   const handleToggle = async (u: User) => {
@@ -85,12 +116,14 @@ export const UsersPage: React.FC = () => {
     toggleActive.mutate(u);
   };
 
+  const filtering = !!(q || status);
+
   return (
     <div>
       <PageHeader
         breadcrumbs={[{ label: 'Administration' }, { label: 'Users & access' }]}
         title="Users & access"
-        description="Create staff, supervisor and administrator accounts, deactivate leavers and reset passwords."
+        description="Create staff, supervisor and administrator accounts, deactivate leavers, unlock accounts and reset passwords."
         actions={
           <Button icon={UserPlus} onClick={() => setCreating(true)}>
             New account
@@ -98,96 +131,184 @@ export const UsersPage: React.FC = () => {
         }
       />
 
+      {summary && summary.locked > 0 && (
+        <Alert
+          tone="warning"
+          className="mb-4"
+          title={`${summary.locked} ${summary.locked === 1 ? 'account is' : 'accounts are'} locked after repeated failed sign-ins`}
+          action={
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setStatus('locked');
+                setRoleTab('ALL');
+                setPage(1);
+              }}
+            >
+              Show locked accounts
+            </Button>
+          }
+        >
+          Locks clear by themselves after 15 minutes. Unlock an account sooner once you have confirmed it is the owner asking.
+        </Alert>
+      )}
+
       <Card>
         <div className="px-5 pt-3">
           <Tabs
             ariaLabel="Filter by role"
             value={roleTab}
-            onChange={setRoleTab}
+            onChange={(v) => {
+              setRoleTab(v);
+              setPage(1);
+            }}
             items={[
-              { value: 'ALL', label: 'All', count: isLoading ? undefined : counts.ALL },
-              ...ROLES.map((r) => ({ value: r as RoleTab, label: `${ROLE_LABEL[r]}s`, count: isLoading ? undefined : counts[r] })),
+              { value: 'ALL', label: 'All', count: countFor('ALL') },
+              ...ROLES.map((r) => ({ value: r as RoleTab, label: `${ROLE_LABEL[r]}s`, count: countFor(r) })),
             ]}
           />
         </div>
-        <div className="border-b border-slate-200 px-5 py-3">
-          <SearchInput className="sm:max-w-sm" value={search} onChange={setSearch} placeholder="Search by name, ID or email" label="Search users" />
+        <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-3 sm:flex-row sm:items-center">
+          <SearchInput
+            className="sm:max-w-sm"
+            value={search}
+            onChange={(v) => {
+              setSearch(v);
+              setPage(1);
+            }}
+            placeholder="Search by name, ID or email"
+            label="Search users"
+          />
+          <Select
+            aria-label="Filter by status"
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value as StatusFilter);
+              setPage(1);
+            }}
+            className="sm:w-48"
+          >
+            <option value="">Any status</option>
+            <option value="active">Active</option>
+            <option value="deactivated">Deactivated</option>
+            <option value="locked">Locked</option>
+          </Select>
+          <p className="text-[13px] text-slate-500 sm:ml-auto">
+            {isLoading ? 'Loading…' : `${total} ${total === 1 ? 'account' : 'accounts'}`}
+            {isFetching && !isLoading && <span className="ml-2 text-slate-500">Updating…</span>}
+          </p>
         </div>
 
-        {!isLoading && filtered.length === 0 ? (
-          <EmptyState bare title="No accounts found" description="Try a different search or role." />
+        {!isLoading && users.length === 0 ? (
+          <EmptyState
+            bare
+            title="No accounts found"
+            description={filtering ? 'Try a different search or status.' : 'No accounts have this role yet.'}
+            action={
+              filtering
+                ? {
+                    label: 'Clear filters',
+                    onClick: () => {
+                      setSearch('');
+                      setStatus('');
+                      setPage(1);
+                    },
+                  }
+                : undefined
+            }
+          />
         ) : (
-          <TableWrap>
-            <Table>
-              <THead>
-                <tr>
-                  <Th>Name</Th>
-                  <Th>ID</Th>
-                  <Th>Role</Th>
-                  <Th>Trade</Th>
-                  <Th>Status</Th>
-                  <Th className="text-right">Actions</Th>
-                </tr>
-              </THead>
-              {isLoading ? (
-                <TableSkeleton columns={6} />
-              ) : (
-                <TBody>
-                  {filtered.map((u) => (
-                    <Tr key={u.user_id}>
-                      <Td>
-                        <div className="flex items-center gap-3">
-                          <Avatar name={u.full_name} />
-                          <div className="min-w-0">
-                            <p className="truncate font-medium text-slate-900">
-                              {u.full_name}
-                              {u.user_id === me?.user_id && <span className="ml-1.5 text-xs font-normal text-slate-400">(you)</span>}
-                            </p>
-                            <p className="truncate text-xs text-slate-500">{u.email}</p>
+          <>
+            <TableWrap>
+              <Table>
+                <THead>
+                  <tr>
+                    <Th>Name</Th>
+                    <Th>ID</Th>
+                    <Th>Role</Th>
+                    <Th>Trade</Th>
+                    <Th>Status</Th>
+                    <Th>Last sign-in</Th>
+                    <Th className="text-right">Actions</Th>
+                  </tr>
+                </THead>
+                {isLoading ? (
+                  <TableSkeleton columns={7} />
+                ) : (
+                  <TBody>
+                    {users.map((u) => (
+                      <Tr key={u.user_id}>
+                        <Td>
+                          <div className="flex items-center gap-3">
+                            <Avatar name={u.full_name} />
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-slate-900">
+                                {u.full_name}
+                                {u.user_id === me?.user_id && <span className="ml-1.5 text-xs font-normal text-slate-500">(you)</span>}
+                              </p>
+                              <p className="truncate text-xs text-slate-500">{u.email}</p>
+                            </div>
                           </div>
-                        </div>
-                      </Td>
-                      <Td className="whitespace-nowrap font-mono text-xs">{u.reg_or_emp_id}</Td>
-                      <Td>
-                        <RoleBadge role={u.role} />
-                      </Td>
-                      <Td>{u.specialization ? <SpecializationBadge specialization={u.specialization} /> : <span className="text-slate-400">—</span>}</Td>
-                      <Td>
-                        {u.is_active ? (
-                          <Badge tone="success" dot>
-                            Active
-                          </Badge>
-                        ) : (
-                          <Badge tone="neutral" dot>
-                            Deactivated
-                          </Badge>
-                        )}
-                      </Td>
-                      <Td>
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="secondary" icon={KeyRound} onClick={() => setResetting(u)}>
-                            Reset password
-                          </Button>
-                          {u.user_id !== me?.user_id && (
-                            <Button
-                              size="sm"
-                              variant={u.is_active ? 'danger-outline' : 'secondary'}
-                              icon={Power}
-                              disabled={toggleActive.isPending}
-                              onClick={() => handleToggle(u)}
-                              className="w-[112px]"
-                            >
-                              {u.is_active ? 'Deactivate' : 'Reactivate'}
+                        </Td>
+                        <Td className="whitespace-nowrap font-mono text-xs">{u.reg_or_emp_id}</Td>
+                        <Td>
+                          <RoleBadge role={u.role} />
+                        </Td>
+                        <Td>{u.specialization ? <SpecializationBadge specialization={u.specialization} /> : <span className="text-slate-500">—</span>}</Td>
+                        <Td>
+                          <div className="flex flex-wrap gap-1.5">
+                            {u.is_active ? (
+                              <Badge tone="success" dot>
+                                Active
+                              </Badge>
+                            ) : (
+                              <Badge tone="neutral" dot>
+                                Deactivated
+                              </Badge>
+                            )}
+                            {isLocked(u) && (
+                              <Badge tone="danger" title={`Locked until ${formatDateTime(u.locked_until)}`}>
+                                Locked
+                              </Badge>
+                            )}
+                          </div>
+                        </Td>
+                        <Td className="whitespace-nowrap text-slate-500" title={u.last_login_at ? formatDateTime(u.last_login_at) : undefined}>
+                          {u.last_login_at ? formatRelativeTime(u.last_login_at) : 'Never'}
+                        </Td>
+                        <Td>
+                          <div className="flex justify-end gap-2">
+                            {isLocked(u) && (
+                              <Button size="sm" variant="secondary" icon={LockOpen} disabled={unlock.isPending} onClick={() => unlock.mutate(u)}>
+                                Unlock
+                              </Button>
+                            )}
+                            <Button size="sm" variant="secondary" icon={KeyRound} onClick={() => setResetting(u)}>
+                              Reset password
                             </Button>
-                          )}
-                        </div>
-                      </Td>
-                    </Tr>
-                  ))}
-                </TBody>
-              )}
-            </Table>
-          </TableWrap>
+                            {u.user_id !== me?.user_id && (
+                              <Button
+                                size="sm"
+                                variant={u.is_active ? 'danger-outline' : 'secondary'}
+                                icon={Power}
+                                disabled={toggleActive.isPending}
+                                onClick={() => handleToggle(u)}
+                                className="w-[112px]"
+                              >
+                                {u.is_active ? 'Deactivate' : 'Reactivate'}
+                              </Button>
+                            )}
+                          </div>
+                        </Td>
+                      </Tr>
+                    ))}
+                  </TBody>
+                )}
+              </Table>
+            </TableWrap>
+            <Pagination currentPage={Math.min(page, totalPages)} totalPages={totalPages} onPageChange={setPage} totalItems={total} pageSize={PAGE_SIZE} />
+          </>
         )}
       </Card>
 
@@ -217,6 +338,7 @@ const CreateUserModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     mutationFn: () => adminApi.createUser({ ...form, specialization: form.role === 'STAFF' ? form.specialization : null }),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-audit'] });
       showToast('Account created', 'success', `${res.user.full_name} (${res.user.reg_or_emp_id}) can now sign in.`);
       onClose();
     },
@@ -228,7 +350,8 @@ const CreateUserModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     setError(null);
     if (!form.reg_or_emp_id.trim() || !form.full_name.trim() || !form.email.trim()) return setError('Fill in the ID, name and email.');
     if (!/^\d{10}$/.test(form.phone_number)) return setError('Phone number must be exactly 10 digits.');
-    if (form.password.length < 8) return setError('The initial password must be at least 8 characters.');
+    const problem = passwordProblem(form.password, form.reg_or_emp_id);
+    if (problem) return setError(`Initial password: ${problem}`);
     mutation.mutate();
   };
 
@@ -301,7 +424,7 @@ const CreateUserModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               />
             )}
           </Field>
-          <Field label="Initial password" required className="sm:col-span-2" hint="At least 8 characters. Share it securely and ask the person to change it from My account.">
+          <Field label="Initial password" required className="sm:col-span-2" hint={`${PASSWORD_HINT} Share it securely and ask the person to change it from My account.`}>
             {(a) => <PasswordInput {...a} autoComplete="new-password" value={form.password} onChange={set('password')} />}
           </Field>
         </div>
@@ -327,7 +450,8 @@ const ResetPasswordModal: React.FC<{ user: User; onClose: () => void }> = ({ use
   const submit = (e?: React.FormEvent) => {
     e?.preventDefault();
     setError(null);
-    if (password.length < 8) return setError('The password must be at least 8 characters.');
+    const problem = passwordProblem(password, user.reg_or_emp_id);
+    if (problem) return setError(problem);
     mutation.mutate();
   };
 
@@ -351,7 +475,7 @@ const ResetPasswordModal: React.FC<{ user: User; onClose: () => void }> = ({ use
     >
       <form onSubmit={submit} className="space-y-4" noValidate>
         {error && <Alert tone="danger">{error}</Alert>}
-        <Field label="New password" required hint="At least 8 characters. The person is signed out everywhere.">
+        <Field label="New password" required hint={`${PASSWORD_HINT} Resetting also unlocks the account and signs the person out everywhere.`}>
           {(a) => <PasswordInput {...a} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />}
         </Field>
       </form>

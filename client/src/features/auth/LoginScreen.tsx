@@ -46,6 +46,7 @@ export const LoginScreen: React.FC = () => {
   const { showToast } = useToast();
   const navigate = useNavigate();
   const isExpired = searchParams.get('expired') === '1';
+  const isIdle = searchParams.get('idle') === '1';
   const ui = PORTAL_UI[portal];
 
   if (!authLoading && isAuthenticated && user && user.role !== 'ADMIN') {
@@ -107,6 +108,11 @@ export const LoginScreen: React.FC = () => {
       />
 
       <div className="space-y-3">
+        {isIdle && !errorMsg && (
+          <Alert tone="info" title="You were signed out after a period of inactivity">
+            Sign in again to continue.
+          </Alert>
+        )}
         {isExpired && !errorMsg && (
           <Alert tone="warning" title="Your session has ended">
             Please sign in again to continue.

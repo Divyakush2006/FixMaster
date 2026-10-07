@@ -39,6 +39,9 @@ export interface User {
   is_available?: boolean;
   is_active?: boolean;
   created_at?: string;
+  last_login_at?: string | null;
+  /** Set while the account is locked after repeated failed sign-ins. */
+  locked_until?: string | null;
 }
 
 export interface CreateUserPayload {
@@ -146,6 +149,9 @@ export interface Complaint {
   issue_name: string;
   required_specialization: Specialization;
   student_name: string;
+  /** Technician currently (or most recently) holding the ticket. */
+  assigned_staff_id?: string | null;
+  assigned_staff_name?: string | null;
 }
 
 export interface ComplaintLogEntry {
@@ -268,4 +274,29 @@ export interface TimelineEvent {
   description: string;
   timestamp: string;
   status: 'completed' | 'current' | 'pending';
+}
+
+export interface AuditEntry {
+  audit_id: number;
+  occurred_at: string;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  details: Record<string, unknown>;
+  ip_address: string | null;
+  request_id: string | null;
+  actor_user_id: string | null;
+  actor_name: string | null;
+  actor_reg_or_emp_id: string | null;
+  target_name: string | null;
+}
+
+export interface UserSummary {
+  all: number;
+  student: number;
+  staff: number;
+  supervisor: number;
+  admin: number;
+  locked: number;
+  deactivated: number;
 }

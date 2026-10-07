@@ -27,6 +27,9 @@ process.env.RATE_LIMIT_AUTH_MAX = '1000000';
 process.env.RATE_LIMIT_ADMIN_AUTH_MAX = '1000000';
 process.env.RATE_LIMIT_REGISTER_MAX = '1000000';
 process.env.RATE_LIMIT_MAX = '1000000';
+process.env.RATE_LIMIT_ANON_MAX = '1000000';
+process.env.RATE_LIMIT_AUTH_IP_MAX = '1000000';
+process.env.RATE_LIMIT_ADMIN_AUTH_IP_MAX = '1000000';
 
 const SEED_PASSWORD = 'Password@123';
 

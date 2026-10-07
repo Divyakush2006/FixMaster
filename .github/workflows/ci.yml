@@ -45,8 +45,8 @@ jobs:
       - run: npm ci
       - name: Generated SQL bundles are up to date
         run: npm run db:bundle -- --check
-      - name: Production dependencies have no known vulnerabilities
-        run: npm audit --omit=dev --audit-level=high
+      - name: No known vulnerabilities (production and dev dependencies)
+        run: npm audit --audit-level=high
       - run: npm test
 
   frontend:
@@ -70,10 +70,36 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
   docker:
-    name: Container images build
+    name: Container stack (build + smoke test)
     runs-on: ubuntu-latest
     needs: [backend, frontend]
+    env:
+      WEB_PORT: 8080
+      CORS_ORIGIN: http://localhost:8080
+      POSTGRES_PASSWORD: ci_only_password
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t fix-master-api .
-      - run: docker build -t fix-master-web ./client
+      - name: The API refuses to start in production with a weak secret
+        run: |
+          docker build -t fix-master-api .
+          if docker run --rm -e NODE_ENV=production -e JWT_SECRET=short -e CORS_ORIGIN=x -e DATABASE_URL=postgresql://x@localhost/x fix-master-api node -e "require('./src/app')"; then
+            echo "API started with a weak JWT_SECRET"; exit 1
+          fi
+      - name: Start the stack
+        run: |
+          export JWT_SECRET=$(openssl rand -hex 48)
+          docker compose up -d --build --wait
+      - name: Smoke test through nginx
+        run: |
+          curl -fsS http://localhost:8080/api/health | grep -q '"status":"ok"'
+          curl -fsS -o /dev/null http://localhost:8080/admin/audit
+          curl -fsSI http://localhost:8080/ | grep -qi '^content-security-policy:'
+          curl -fsSI http://localhost:8080/ | grep -qi '^x-frame-options: DENY'
+          curl -fsSI http://localhost:8080/api/health | grep -qi '^strict-transport-security:'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/admin/users)" = "401"
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v

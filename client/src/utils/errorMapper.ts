@@ -49,7 +49,7 @@ export function mapApiError(rawError: unknown): string {
   }
 
   // Return formatted message if it looks clean, otherwise generic fallback
-  if (message.length < 120 && !message.toLowerCase().includes('violates') && !message.toLowerCase().includes('postgres')) {
+  if (message.length <= 240 && !message.toLowerCase().includes('violates') && !message.toLowerCase().includes('postgres')) {
     return message;
   }
 

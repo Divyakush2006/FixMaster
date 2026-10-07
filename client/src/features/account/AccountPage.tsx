@@ -13,6 +13,7 @@ import { Field, PasswordInput } from '../../components/ui/Form';
 import { Skeleton } from '../../components/ui/PageLoader';
 import { RoleBadge, SpecializationBadge } from '../../components/common/Badges';
 import { formatDateTime } from '../../utils/formatters';
+import { PASSWORD_HINT, passwordProblem } from '../../utils/password';
 
 export const AccountPage: React.FC = () => {
   const { updateToken } = useAuth();
@@ -41,8 +42,8 @@ export const AccountPage: React.FC = () => {
     e.preventDefault();
     setError(null);
     if (!current) return setError('Enter your current password.');
-    if (next.length < 8) return setError('The new password must be at least 8 characters.');
-    if (new TextEncoder().encode(next).length > 72) return setError('The new password must be at most 72 bytes.');
+    const problem = passwordProblem(next, me?.reg_or_emp_id);
+    if (problem) return setError(`New password: ${problem}`);
     if (next !== confirm) return setError('The new passwords do not match.');
     if (next === current) return setError('The new password must be different from the current one.');
     mutation.mutate();
@@ -83,6 +84,7 @@ export const AccountPage: React.FC = () => {
                       { label: 'Mobile number', value: me.phone_number || '—' },
                       ...(me.specialization ? [{ label: 'Trade', value: <SpecializationBadge specialization={me.specialization} /> }] : []),
                       ...(me.created_at ? [{ label: 'Member since', value: formatDateTime(me.created_at).split(',')[0] }] : []),
+                      ...(me.last_login_at ? [{ label: 'Last sign-in', value: formatDateTime(me.last_login_at) }] : []),
                     ]}
                   />
                 </div>
@@ -111,7 +113,7 @@ export const AccountPage: React.FC = () => {
                 <Field label="Current password" required>
                   {(a) => <PasswordInput {...a} autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />}
                 </Field>
-                <Field label="New password" required hint="At least 8 characters.">
+                <Field label="New password" required hint={PASSWORD_HINT}>
                   {(a) => <PasswordInput {...a} autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />}
                 </Field>
                 <Field label="Confirm new password" required error={confirm && next !== confirm ? 'Does not match.' : null}>

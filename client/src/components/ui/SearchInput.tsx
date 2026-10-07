@@ -12,7 +12,7 @@ interface SearchInputProps {
 
 export const SearchInput: React.FC<SearchInputProps> = ({ value, onChange, placeholder = 'Search', className, label = 'Search' }) => (
   <div className={cn('relative w-full', className)}>
-    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
+    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden />
     <input
       type="search"
       aria-label={label}
@@ -26,7 +26,7 @@ export const SearchInput: React.FC<SearchInputProps> = ({ value, onChange, place
         type="button"
         onClick={() => onChange('')}
         aria-label="Clear search"
-        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
       >
         <X className="h-3.5 w-3.5" />
       </button>

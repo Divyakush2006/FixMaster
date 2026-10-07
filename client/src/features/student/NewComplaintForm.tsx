@@ -83,10 +83,14 @@ export const NewComplaintForm: React.FC = () => {
   const selectedSubcategory = subcategories.find((s) => s.subcategory_id === subcategoryId);
   const selectedArea = commonAreas.find((a) => a.area_id === commonAreaId);
 
-  // The issue sets a default priority; the student can still change it.
+  // The issue sets a default priority. A student may lower it, or raise it
+  // by one level (the server enforces the same rule).
   useEffect(() => {
     if (selectedSubcategory) setPriority(selectedSubcategory.priority_level);
   }, [selectedSubcategory]);
+  const allowedPriorities = selectedSubcategory
+    ? PRIORITIES.slice(0, Math.min(PRIORITIES.indexOf(selectedSubcategory.priority_level) + 2, PRIORITIES.length))
+    : PRIORITIES;
 
   const mutation = useMutation({
     mutationFn: complaintsApi.create,
@@ -134,7 +138,7 @@ export const NewComplaintForm: React.FC = () => {
           active ? 'border-brand-500 bg-brand-50/50 ring-1 ring-brand-500' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
         )}
       >
-        <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', active ? 'text-brand-600' : 'text-slate-400')} />
+        <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', active ? 'text-brand-600' : 'text-slate-500')} />
         <span>
           <span className="block text-[13px] font-semibold text-slate-900">{title}</span>
           <span className="mt-0.5 block text-xs text-slate-500">{text}</span>
@@ -267,10 +271,17 @@ export const NewComplaintForm: React.FC = () => {
                   )}
                 </Field>
               </div>
-              <Field label="Priority" hint="Set from the issue. Use Emergency only for hazards such as sparking, flooding or a stuck lift.">
+              <Field
+                label="Priority"
+                hint={
+                  selectedSubcategory
+                    ? `Default for this issue: ${PRIORITY_LABEL[selectedSubcategory.priority_level]}. You can raise it by one level if the situation is worse than usual.`
+                    : 'Choose the issue first; its usual priority is filled in for you.'
+                }
+              >
                 {(a) => (
-                  <Select {...a} value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="sm:max-w-xs">
-                    {PRIORITIES.map((p) => (
+                  <Select {...a} value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="sm:max-w-xs" disabled={!selectedSubcategory}>
+                    {allowedPriorities.map((p) => (
                       <option key={p} value={p}>
                         {PRIORITY_LABEL[p]}
                       </option>

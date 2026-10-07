@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { apiFetch, ApiError } from './client';
+import { apiFetch, apiFetchPage, ApiError } from './client';
 import { saveSession, getToken, clearSession, isTokenExpired } from './session';
 
 const user = { user_id: 'u1', reg_or_emp_id: 'S1', full_name: 'Test', role: 'STUDENT' as const };
@@ -117,5 +117,42 @@ describe('session storage', () => {
     expect(isTokenExpired(encode({ exp: Math.floor(Date.now() / 1000) - 10 }))).toBe(true);
     expect(isTokenExpired(encode({}))).toBe(true);
     expect(isTokenExpired('not-a-jwt')).toBe(true);
+  });
+});
+
+describe('paged lists and empty responses', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('apiFetchPage reads the full size from X-Total-Count', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify([{ id: 1 }, { id: 2 }]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'X-Total-Count': '57' },
+        })
+      )
+    );
+    const page = await apiFetchPage<{ id: number }>('/complaints', { params: { limit: 2, offset: 0 } });
+    expect(page.items).toHaveLength(2);
+    expect(page.total).toBe(57);
+  });
+
+  it('apiFetchPage falls back to the item count without the header', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, [{ id: 1 }]));
+    expect((await apiFetchPage('/x')).total).toBe(1);
+  });
+
+  it('a 204 response resolves without trying to parse a body', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+    await expect(apiFetch('/auth/logout', { method: 'POST' })).resolves.toBeNull();
+  });
+
+  it('the activity timestamp is part of the session and cleared with it', () => {
+    localStorage.clear();
+    saveSession('tok', user);
+    expect(localStorage.getItem('fixmaster_last_activity')).not.toBeNull();
+    clearSession();
+    expect(localStorage.length).toBe(0);
   });
 });

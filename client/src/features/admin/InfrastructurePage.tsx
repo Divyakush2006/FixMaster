@@ -221,14 +221,14 @@ export const InfrastructurePage: React.FC = () => {
                     <dt className="text-xs text-slate-500">Open rooms</dt>
                     <dd className="text-lg font-semibold text-slate-900 tabular">
                       {block.active_room_count}
-                      {block.room_count !== block.active_room_count && <span className="text-sm font-normal text-slate-400">/{block.room_count}</span>}
+                      {block.room_count !== block.active_room_count && <span className="text-sm font-normal text-slate-500">/{block.room_count}</span>}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-xs text-slate-500">Beds occupied</dt>
                     <dd className="text-lg font-semibold text-slate-900 tabular">
                       {block.occupied_beds}
-                      <span className="text-sm font-normal text-slate-400">/{block.total_beds}</span>
+                      <span className="text-sm font-normal text-slate-500">/{block.total_beds}</span>
                     </dd>
                   </div>
                 </dl>
@@ -286,7 +286,7 @@ export const InfrastructurePage: React.FC = () => {
                                   className={cn('rounded-md border px-3 py-2.5', r.is_active ? 'border-slate-200 bg-white' : 'border-dashed border-slate-300 bg-slate-50')}
                                 >
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className={cn('font-mono text-[15px] font-semibold', r.is_active ? 'text-slate-900' : 'text-slate-400')}>{r.room_number}</span>
+                                    <span className={cn('font-mono text-[15px] font-semibold', r.is_active ? 'text-slate-900' : 'text-slate-500')}>{r.room_number}</span>
                                     <IconButton
                                       icon={Power}
                                       size="sm"
@@ -386,7 +386,7 @@ export const InfrastructurePage: React.FC = () => {
                                   }}
                                 />
                               ) : (
-                                <span className="text-xs text-slate-400">In use</span>
+                                <span className="text-xs text-slate-500">In use</span>
                               )}
                             </Td>
                           </Tr>

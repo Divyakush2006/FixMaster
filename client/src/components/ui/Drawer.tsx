@@ -53,12 +53,15 @@ export const Drawer: React.FC<DrawerProps> = ({ isOpen, onClose, title, subtitle
             type="button"
             onClick={onClose}
             aria-label="Close panel"
-            className="-mr-2 rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            className="-mr-2 rounded-md p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+        {/* Focusable so keyboard users can scroll long content. */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 focus-visible:ring-inset" tabIndex={0}>
+          {children}
+        </div>
         {footer && <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-3.5">{footer}</div>}
       </div>
     </div>,

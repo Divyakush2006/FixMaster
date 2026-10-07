@@ -52,7 +52,7 @@ export const HotspotsTable: React.FC = () => {
                       <Tr key={`${h.asset_location}-${h.category_name}-${idx}`}>
                         <Td>
                           <span className="inline-flex items-center gap-2 font-medium text-slate-900">
-                            <MapPin className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+                            <MapPin className="h-3.5 w-3.5 text-slate-500" aria-hidden />
                             {h.asset_location}
                           </span>
                         </Td>

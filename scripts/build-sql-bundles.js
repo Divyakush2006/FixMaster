@@ -3,8 +3,8 @@
  * Regenerates the human-readable SQL bundles from the migrations, so there
  * is exactly one source of truth for the schema:
  *
- *   database/schema.sql              <- drops + migrations/001 + 004 (tables, floors, room rules)
- *   database/triggers_procedures.sql <- migrations/003
+ *   database/schema.sql              <- drops + migrations/001 + 004 + 005 (tables, floors, room rules, audit)
+ *   database/triggers_procedures.sql <- migrations/003 + 006 (triggers, procedures, views)
  *   database/init_all.sql            <- drops + every migration in order + seed (dev reset)
  *
  *   npm run db:bundle           rewrite the files
@@ -33,6 +33,8 @@ const DEV_ONLY_DROPS = `-- DEVELOPMENT ONLY: everything below starts by DROPPING
 -- Never run this against a database whose data you want to keep; production
 -- schemas are created and upgraded with \`npm run db:migrate\`.
 DROP TABLE IF EXISTS schema_migrations CASCADE;
+DROP TABLE IF EXISTS audit_log CASCADE;
+DROP TABLE IF EXISTS revoked_tokens CASCADE;
 DROP TABLE IF EXISTS complaint_logs CASCADE;
 DROP TABLE IF EXISTS complaint_feedback CASCADE;
 DROP TABLE IF EXISTS complaint_assignments CASCADE;
@@ -60,8 +62,8 @@ function build() {
     const seed = read(path.join(DB_DIR, 'seed_data.sql'));
 
     return {
-        'schema.sql': [GENERATED('migrations/001 + 004'), DEV_ONLY_DROPS, mig('001'), mig('004')].join('\n'),
-        'triggers_procedures.sql': `${GENERATED('migrations/003_programmable_objects.sql')}\n${mig('003')}`,
+        'schema.sql': [GENERATED('migrations/001 + 004 + 005'), DEV_ONLY_DROPS, mig('001'), mig('004'), mig('005')].join('\n'),
+        'triggers_procedures.sql': [GENERATED('migrations/003 + 006'), mig('003'), mig('006')].join('\n'),
         'init_all.sql': [
             GENERATED(`every migration in order + seed_data.sql`),
             DEV_ONLY_DROPS,

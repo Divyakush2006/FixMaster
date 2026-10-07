@@ -30,6 +30,8 @@ const AccountPage = named(() => import('./features/account/AccountPage'), 'Accou
 const UsersPage = named(() => import('./features/admin/UsersPage'), 'UsersPage');
 const AllotmentsPage = named(() => import('./features/admin/AllotmentsPage'), 'AllotmentsPage');
 const InfrastructurePage = named(() => import('./features/admin/InfrastructurePage'), 'InfrastructurePage');
+const AuditLogPage = named(() => import('./features/admin/AuditLogPage'), 'AuditLogPage');
+const NotFoundPage = named(() => import('./features/NotFoundPage'), 'NotFoundPage');
 
 const RoleRedirect: React.FC = () => {
   const { user, getHomeRouteForRole, isAuthenticated, isLoading } = useAuth();
@@ -84,9 +86,11 @@ export const App: React.FC = () => {
                       <Route path="/admin/users" element={guard(['ADMIN'], <UsersPage />)} />
                       <Route path="/admin/allotments" element={guard(['ADMIN'], <AllotmentsPage />)} />
                       <Route path="/admin/infrastructure" element={guard(['ADMIN'], <InfrastructurePage />)} />
-                    </Route>
+                      <Route path="/admin/audit" element={guard(['ADMIN'], <AuditLogPage />)} />
 
-                    <Route path="*" element={<RoleRedirect />} />
+                      {/* Unknown address: a 404 page when signed in, the sign-in page otherwise. */}
+                      <Route path="*" element={guard(undefined, <NotFoundPage />)} />
+                    </Route>
                   </Routes>
                 </Suspense>
               </ErrorBoundary>

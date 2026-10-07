@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { coerceNumber } from './formatters';
 import { mapApiError } from './errorMapper';
-import { reconstructTimeline } from './timeline';
+import { logDescription, reconstructTimeline } from './timeline';
 import { Complaint } from '../types';
 
 describe('coerceNumber', () => {
@@ -38,5 +38,13 @@ describe('reconstructTimeline', () => {
     const closed = reconstructTimeline({ ...base, status: 'COMPLETED', closed_at: '2026-10-02T10:00:00Z' });
     expect(closed[closed.length - 1].title).toBe('Closed & Verified');
     expect(closed.every((e) => e.status === 'completed')).toBe(true);
+  });
+});
+
+describe('logDescription', () => {
+  it('drops the automatic transition note but keeps real notes and the actor', () => {
+    expect(logDescription({ action_note: 'Transition: OPEN -> ASSIGNED', changed_by_name: 'R. Sundaram' })).toBe('R. Sundaram');
+    expect(logDescription({ action_note: 'Reassigned from A to B', changed_by_name: 'R. Sundaram' })).toBe('Reassigned from A to B · R. Sundaram');
+    expect(logDescription({ action_note: null, changed_by_name: null })).toBe('Recorded by the system');
   });
 });

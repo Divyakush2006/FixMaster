@@ -39,6 +39,18 @@ data tables, Inter type and one corporate blue (`brand-*` in
 - An expired session sends the user back to the sign-in page of their own area
   (`/admin` for admin pages, `/login` otherwise). A failed sign-in attempt never
   ends a session that is already open.
+- **Sign-out** calls `POST /api/auth/logout` so the token is revoked on the
+  server, then clears local state. Signing out in one tab signs out all tabs
+  (`storage` event in `AuthContext`).
+- **Idle sign-out** (`components/layout/IdleSignOut.tsx`): 30 min admin,
+  60 min supervisor, 2 h student, 4 h technician, with a one-minute warning.
+  Only real input counts as activity - a reload does not.
+- **Large lists** (ticket register, users, allotments, audit log) are searched
+  and paged on the server: `apiFetchPage()` returns `{ items, total }` from the
+  `X-Total-Count` header.
+- **Accessibility**: every screen passes axe-core WCAG 2.1 AA. Secondary text
+  uses `slate-500`, which is overridden in `tailwind.config.js` to a shade that
+  meets 4.5:1 on the canvas; keep using it rather than `slate-400` for text.
 - A password change returns a new token (the server revokes all older ones);
   `AuthContext.updateToken` swaps it in so the current session continues.
 
@@ -55,6 +67,8 @@ data tables, Inter type and one corporate blue (`brand-*` in
 | `/admin/dashboard` | ADMIN | KPI dashboard (admin home). |
 | `/admin/users`, `/admin/allotments` | ADMIN | Create staff/supervisor accounts, deactivate, reset passwords; allot and move students between rooms. |
 | `/admin/infrastructure` | ADMIN | Blocks A-T, floors (Ground + 1-10, add more), rooms added per floor with generated numbers (`G01`, `428`). |
+| `/admin/audit` | ADMIN | Append-only log of account, allotment and infrastructure changes, admin sign-ins and lockouts. |
+| any unknown path | signed in | 404 page (signed-out visitors go to the sign-in page). |
 | `/account` | everyone | Profile and password change. |
 
 Every page is lazy-loaded (its own chunk) and wrapped in an error boundary.

@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
+const { recordAudit } = require('../services/auditService');
 
 // Room numbering (enforced by the database too - migration 004):
 //   room_number = floor code + two-digit room 01-99
@@ -41,29 +42,48 @@ exports.listBlocks = asyncHandler(async (req, res) => {
 exports.createBlock = asyncHandler(async (req, res) => {
     const { block_code, block_name, top_floor } = req.body;
     const blockId = `${block_code}_BLOCK`;
-    const result = await db.query(
-        `INSERT INTO hostel_blocks (block_id, block_name, total_floors)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (block_id) DO NOTHING
-         RETURNING block_id, block_name, total_floors`,
-        [blockId, block_name, top_floor || 10]
-    );
-    if (result.rows.length === 0) {
-        throw new AppError(409, `Block ${block_code} already exists.`);
-    }
-    res.status(201).json(result.rows[0]);
+    const block = await db.withTransaction(async (client) => {
+        const result = await client.query(
+            `INSERT INTO hostel_blocks (block_id, block_name, total_floors)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (block_id) DO NOTHING
+             RETURNING block_id, block_name, total_floors`,
+            [blockId, block_name, top_floor || 10]
+        );
+        if (result.rows.length === 0) {
+            throw new AppError(409, `Block ${block_code} already exists.`);
+        }
+        await recordAudit(client, req, {
+            action: 'block.create',
+            targetType: 'block',
+            targetId: blockId,
+            details: { block_name, top_floor: top_floor || 10 },
+        });
+        return result.rows[0];
+    }, req.user.userId);
+    res.status(201).json(block);
 });
 
 // PATCH /api/admin/blocks/:block_id { block_name }
 exports.updateBlock = asyncHandler(async (req, res) => {
-    const result = await db.query(
-        'UPDATE hostel_blocks SET block_name = $2 WHERE block_id = $1 RETURNING block_id, block_name, total_floors',
-        [req.params.block_id, req.body.block_name]
-    );
-    if (result.rows.length === 0) {
-        throw new AppError(404, 'Block not found.');
-    }
-    res.json(result.rows[0]);
+    const block = await db.withTransaction(async (client) => {
+        const before = await client.query('SELECT block_name FROM hostel_blocks WHERE block_id = $1 FOR UPDATE', [req.params.block_id]);
+        if (before.rows.length === 0) {
+            throw new AppError(404, 'Block not found.');
+        }
+        const result = await client.query(
+            'UPDATE hostel_blocks SET block_name = $2 WHERE block_id = $1 RETURNING block_id, block_name, total_floors',
+            [req.params.block_id, req.body.block_name]
+        );
+        await recordAudit(client, req, {
+            action: 'block.rename',
+            targetType: 'block',
+            targetId: req.params.block_id,
+            details: { from: before.rows[0].block_name, to: req.body.block_name },
+        });
+        return result.rows[0];
+    }, req.user.userId);
+    res.json(block);
 });
 
 // GET /api/admin/blocks/:block_id/floors
@@ -103,6 +123,7 @@ exports.addFloor = asyncHandler(async (req, res) => {
         if (inserted.rows.length === 0) {
             throw new AppError(409, `Floor ${floorCode(floorNumber)} already exists in this block.`);
         }
+        await recordAudit(client, req, { action: 'floor.add', targetType: 'block', targetId: block_id, details: { floor_number: floorNumber } });
         return inserted.rows[0];
     }, req.user.userId);
     res.status(201).json(floor);
@@ -131,6 +152,7 @@ exports.removeFloor = asyncHandler(async (req, res) => {
         if (deleted.rows.length === 0) {
             throw new AppError(404, 'Floor not found.');
         }
+        await recordAudit(client, req, { action: 'floor.remove', targetType: 'block', targetId: block_id, details: { floor_number: floorNumber } });
     }, req.user.userId);
     res.json({ message: `Floor ${floorCode(floorNumber)} removed.` });
 });
@@ -186,6 +208,14 @@ exports.createRooms = asyncHandler(async (req, res) => {
             );
             (inserted.rows.length ? created : skipped).push(roomId);
         }
+        if (created.length > 0) {
+            await recordAudit(client, req, {
+                action: 'room.create',
+                targetType: 'block',
+                targetId: block_id,
+                details: { floor_number, rooms: created, room_type, bed_capacity },
+            });
+        }
         return { created, skipped };
     }, req.user.userId);
 
@@ -201,7 +231,7 @@ exports.updateRoom = asyncHandler(async (req, res) => {
     const { is_active, room_type, bed_capacity } = req.body;
 
     const room = await db.withTransaction(async (client) => {
-        const current = await client.query('SELECT room_id FROM rooms WHERE room_id = $1 FOR UPDATE', [room_id]);
+        const current = await client.query('SELECT room_id, is_active, room_type, bed_capacity FROM rooms WHERE room_id = $1 FOR UPDATE', [room_id]);
         if (current.rows.length === 0) {
             throw new AppError(404, 'Room not found.');
         }
@@ -225,7 +255,17 @@ exports.updateRoom = asyncHandler(async (req, res) => {
              RETURNING room_id, block_id, room_number, floor_number, room_type, bed_capacity, is_active`,
             [room_id, is_active ?? null, room_type ?? null, bed_capacity ?? null]
         );
-        return { ...updated.rows[0], occupied_beds: occupied };
+        const before = current.rows[0];
+        const after = updated.rows[0];
+        const changes = {};
+        for (const key of ['is_active', 'room_type', 'bed_capacity']) {
+            if (before[key] !== after[key]) changes[key] = { from: before[key], to: after[key] };
+        }
+        if (Object.keys(changes).length > 0) {
+            const action = changes.is_active ? (after.is_active ? 'room.reopen' : 'room.close') : 'room.update';
+            await recordAudit(client, req, { action, targetType: 'room', targetId: room_id, details: changes });
+        }
+        return { ...after, occupied_beds: occupied };
     }, req.user.userId);
 
     res.json(room);

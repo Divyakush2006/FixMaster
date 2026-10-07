@@ -2,13 +2,50 @@ const db = require('../config/db');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 
 // required_specialization lets a dispatch UI pre-filter the staff picker.
-const COMPLAINT_SELECT = `
-    SELECT c.*, cat.category_name, sub.issue_name, sub.required_specialization, u.full_name as student_name
+const COMPLAINT_FROM = `
     FROM complaints c
     JOIN complaint_subcategories sub ON c.subcategory_id = sub.subcategory_id
     JOIN complaint_categories cat ON sub.category_id = cat.category_id
     JOIN users u ON c.raised_by_user_id = u.user_id
 `;
+const COMPLAINT_SELECT = `
+    SELECT c.*, cat.category_name, sub.issue_name, sub.required_specialization, u.full_name as student_name,
+           asg.staff_user_id AS assigned_staff_id, asg.full_name AS assigned_staff_name
+    ${COMPLAINT_FROM}
+    LEFT JOIN LATERAL (
+        SELECT ca.staff_user_id, su.full_name
+        FROM complaint_assignments ca
+        JOIN users su ON su.user_id = ca.staff_user_id
+        WHERE ca.complaint_id = c.complaint_id
+          AND ca.current_state IN ('ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS', 'DONE')
+        ORDER BY ca.assigned_at DESC, ca.assignment_id DESC
+        LIMIT 1
+    ) asg ON TRUE
+`;
+
+// Priority policy. Every issue type has a default priority. Supervisors and
+// administrators may set any priority; a student may raise it by at most one
+// level (e.g. a sparking socket, HIGH, can be reported as an EMERGENCY) but
+// cannot turn routine work such as room cleaning into an emergency to jump
+// every technician's queue.
+const PRIORITY_ORDER = ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'];
+const PRIORITY_LABEL = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', EMERGENCY: 'Emergency' };
+
+function resolvePriority(requested, issueDefault, role) {
+    if (!requested) return issueDefault;
+    if (role !== 'STUDENT') return requested;
+    const ceiling = Math.min(PRIORITY_ORDER.indexOf(issueDefault) + 1, PRIORITY_ORDER.length - 1);
+    if (PRIORITY_ORDER.indexOf(requested) > ceiling) {
+        throw new AppError(
+            400,
+            `For this issue the highest priority you can choose is ${PRIORITY_LABEL[PRIORITY_ORDER[ceiling]]}. A supervisor can raise it further if needed.`
+        );
+    }
+    return requested;
+}
+
+/** Escapes LIKE wildcards in user-supplied search text. */
+const likeEscape = (text) => text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 
 // Without an explicit limit, the list is capped rather than unbounded, so one
 // request can't pull the whole table. The real total is always in the
@@ -82,6 +119,12 @@ exports.createComplaint = asyncHandler(async (req, res) => {
 
         await assertValidLocation(client, { ticket_scope, room_id, common_area_id, block_id, userId, role });
 
+        const issue = await client.query('SELECT priority_level FROM complaint_subcategories WHERE subcategory_id = $1', [subcategory_id]);
+        if (issue.rows.length === 0) {
+            throw new AppError(400, 'Unknown issue type.');
+        }
+        const effectivePriority = resolvePriority(priority, issue.rows[0].priority_level, role);
+
         const duplicate = await client.query(
             `SELECT complaint_id, status FROM complaints
              WHERE raised_by_user_id = $1 AND subcategory_id = $2
@@ -114,7 +157,7 @@ exports.createComplaint = asyncHandler(async (req, res) => {
                 subcategory_id,
                 description || null,
                 photo_evidence_url || null,
-                priority || 'MEDIUM',
+                effectivePriority,
                 preferred_timeslot || null,
             ]
         );
@@ -138,7 +181,7 @@ exports.createComplaint = asyncHandler(async (req, res) => {
 //   SUPERVISOR / ADMIN: all tickets.
 exports.getComplaints = asyncHandler(async (req, res) => {
     const { role, userId } = req.user;
-    const { status, block_id } = req.query;
+    const { status, block_id, q } = req.query;
     const limit = req.query.limit || DEFAULT_LIST_LIMIT;
     const offset = req.query.offset || 0;
 
@@ -163,10 +206,32 @@ exports.getComplaints = asyncHandler(async (req, res) => {
         params.push(block_id);
         where.push(`c.block_id = $${params.length}`);
     }
+    if (q && q.trim()) {
+        // Free-text search over the issue, the person who raised it, the
+        // location and the ticket id - including the short "TKT-xxxxxx"
+        // reference the UI shows, which is the end of the id.
+        const text = q.trim();
+        const ref = text.replace(/^TKT-?/i, '').replace(/[^a-zA-Z0-9]/g, '');
+        params.push(`%${likeEscape(text)}%`);
+        const p = `$${params.length}`;
+        const parts = [
+            `sub.issue_name ILIKE ${p}`,
+            `u.full_name ILIKE ${p}`,
+            `c.room_id ILIKE ${p}`,
+            `c.common_area_id ILIKE ${p}`,
+            `c.complaint_id ILIKE ${p}`,
+            `cat.category_name ILIKE ${p}`,
+        ];
+        if (ref) {
+            params.push(`%${likeEscape(ref)}`);
+            parts.push(`regexp_replace(c.complaint_id, '[^a-zA-Z0-9]', '', 'g') ILIKE $${params.length}`);
+        }
+        where.push(`(${parts.join(' OR ')})`);
+    }
 
     const whereSql = where.join(' AND ');
     const [{ rows: countRows }, { rows }] = await Promise.all([
-        db.query(`SELECT COUNT(*)::int AS total FROM complaints c WHERE ${whereSql}`, params),
+        db.query(`SELECT COUNT(*)::int AS total ${COMPLAINT_FROM} WHERE ${whereSql}`, params),
         db.query(
             `${COMPLAINT_SELECT} WHERE ${whereSql}
              ORDER BY c.created_at DESC, c.complaint_id

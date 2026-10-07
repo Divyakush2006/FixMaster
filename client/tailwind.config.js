@@ -28,6 +28,10 @@ export default {
         },
         // Application canvas behind cards.
         canvas: '#f4f6fa',
+        // Secondary text. Tailwind's default slate-500 (#64748b) is 4.4:1 on
+        // the canvas - just under WCAG AA. This shade is 5.4:1 there and
+        // 5.9:1 on white.
+        slate: { 500: '#586579' },
       },
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],

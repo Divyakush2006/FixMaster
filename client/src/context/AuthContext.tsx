@@ -9,6 +9,7 @@ import {
   isTokenExpired,
   replaceToken,
   saveSession,
+  SESSION_TOKEN_KEY,
 } from '../api/session';
 
 interface AuthContextType {
@@ -46,6 +47,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(false);
   }, []);
 
+  // Keep every open tab on the same session: signing out in one tab signs
+  // out all of them, and a different account signing in elsewhere reloads
+  // this tab so it never keeps showing the previous person's data.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== SESSION_TOKEN_KEY && e.key !== null) return;
+      const next = getToken();
+      if (!next) {
+        queryClient.clear();
+        setToken(null);
+        setUser(null);
+      } else if (next !== token) {
+        const nextUser = getStoredUser();
+        if (nextUser && user && nextUser.user_id === user.user_id) {
+          setToken(next); // same person, refreshed token (e.g. password change)
+        } else {
+          window.location.reload();
+        }
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [token, user]);
+
   const getHomeRouteForRole = (role?: string): string => {
     switch (role || user?.role) {
       case 'STUDENT':
@@ -77,6 +102,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = useCallback(() => {
+    // Revoke the token on the server first (the request reads it from
+    // storage synchronously), then forget it locally. A failure here must not
+    // keep the user signed in on this device.
+    if (getToken()) authApi.logout().catch(() => undefined);
     clearSession();
     queryClient.clear();
     setToken(null);
