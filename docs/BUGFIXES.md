@@ -1,5 +1,12 @@
 # Backend Hardening — Fix Log
 
+> **Superseded in part.** This is the first fix pass. A later production-readiness
+> audit found and fixed further bugs - several in code from this pass - and replaced
+> some mechanisms described below. In particular: privileged accounts are now created
+> only via `POST /api/admin/users` (the admin-token-on-`/register` path described in
+> #1 was removed), and the schema is managed by versioned migrations rather than
+> hand-edited SQL files. See [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
+
 This documents every bug found during a manual audit of the `sudeep-dev` backend
 (the only branch with a running API) and the fix applied for each, on branch
 `fix/backend-hardening`. Every fix below was reproduced against the running

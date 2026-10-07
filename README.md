@@ -411,30 +411,51 @@ Automated workflow `.github/workflows/ci.yml`:
 # 🚀 Team Setup & Execution Guide
 
 ### Prerequisites
-- Node.js (v18+)
-- PostgreSQL (v15+) or Docker
-- Git
+- Node.js 20+ (22 recommended)
+- PostgreSQL 15+ **or** Docker
 
-### Quickstart Commands
+### Quickstart (local development)
 
 ```bash
 # 1. Clone the repository
 git clone <repo-url>
 cd FIX_MASTER
 
-# 2. Configure environment variables
+# 2. Configure environment variables (defaults point at a local PostgreSQL)
 cp .env.example .env
 
-# 3. Setup PostgreSQL Database & Run Migrations
-npm install
-npx prisma db push
+# 3. Create / upgrade the database schema (versioned migrations)
+npm ci
+npm run db:migrate
 
-# 4. Seed VIT L-Block Dataset
+# 4. Load the VIT L-Block demo dataset (all demo accounts: Password@123)
 npm run db:seed
 
-# 5. Start Development Servers
+# 5. Start the API (port 5000) and the web app (port 3000)
 npm run dev
+cd client && npm ci && npm run dev
 ```
+
+`npm run db:reset -- --yes` wipes and rebuilds a development database. Never run
+`database/init_all.sql` against a database you want to keep: it drops every table.
+
+### Tests
+
+```bash
+npm test                 # API + database (rebuilds a separate fix_master_test database)
+cd client && npm test    # web app unit tests
+```
+
+### Production (Docker)
+
+```bash
+cp .env.example .env     # set JWT_SECRET (>= 32 random characters) and POSTGRES_PASSWORD
+docker compose up -d --build     # http://localhost:8080
+```
+
+Pending migrations are applied automatically when the API container starts.
+See [Production Readiness](docs/PRODUCTION_READINESS.md) for the full checklist,
+the audit findings, and known limitations.
 
 ---
 
@@ -444,3 +465,5 @@ npm run dev
 - 📊 [ER Models, Diagrams & Normalization Proofs](docs/er_diagrams.md)
 - 💾 [Database Implementation (DDL, Triggers, Procedures, Views)](docs/database_implementation.md)
 - 🛠️ [Team Implementation Guide](docs/IMPLEMENTATION_GUIDE.md)
+- ✅ [Production Readiness Audit](docs/PRODUCTION_READINESS.md)
+- 🐞 [Bug Fix Log](docs/BUGFIXES.md)
