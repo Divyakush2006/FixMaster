@@ -1,13 +1,21 @@
 -- ============================================================================
--- GENERATED FILE - DO NOT EDIT BY HAND.
--- Built by scripts/build-sql-bundles.js from: migrations/001-003 + seed_data.sql
--- Change the schema by adding a migration under database/migrations/.
+-- FIX_MASTER: COMPLETE DATABASE INITIALIZATION (ALL-IN-ONE SCRIPT)
+-- Course: BCSE307L - Database Systems (SCOPE, VIT Vellore)
+-- Target: PostgreSQL 15+ / Neon.tech Serverless Cloud PostgreSQL
 -- ============================================================================
 
--- DEVELOPMENT ONLY: everything below starts by DROPPING every table.
--- Never run this against a database whose data you want to keep; production
--- schemas are created and upgraded with `npm run db:migrate`.
-DROP TABLE IF EXISTS schema_migrations CASCADE;
+-- >>>>> PART 1: SCHEMA & TABLES (DDL) <<<<<
+-- ============================================================================
+-- FIX_MASTER: Relational Database Schema Specification
+-- Course: BCSE307L - Database Systems (SCOPE, VIT Vellore)
+-- Database Engine: PostgreSQL 15+
+-- Normalized to 3NF / BCNF
+-- ============================================================================
+
+-- Enable UUID extension for globally unique primary keys
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Drop existing tables in reverse dependency order
 DROP TABLE IF EXISTS complaint_logs CASCADE;
 DROP TABLE IF EXISTS complaint_feedback CASCADE;
 DROP TABLE IF EXISTS complaint_assignments CASCADE;
@@ -20,34 +28,20 @@ DROP TABLE IF EXISTS common_areas CASCADE;
 DROP TABLE IF EXISTS rooms CASCADE;
 DROP TABLE IF EXISTS hostel_blocks CASCADE;
 
--- >>>>> PART 1: SCHEMA & TABLES (DDL) <<<<<
--- ============================================================================
--- FIX_MASTER migration 001: tables, constraints and indexes
--- ----------------------------------------------------------------------------
--- Source of truth for the table layer. Applied by scripts/migrate.js, which
--- records it in schema_migrations so it runs exactly once per database.
--- Every statement is IF NOT EXISTS so this is also safe against a database
--- that was originally built with the old, destructive init_all.sql; 002
--- then reconciles any constraint differences on such a database.
---
--- Never put DROP TABLE in a migration. Schema changes go in a new numbered
--- file (004_..., 005_...), never by editing an already-applied one.
--- ============================================================================
-
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
 -- ============================================================================
 -- 1. INFRASTRUCTURE & SPATIAL HIERARCHY
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS hostel_blocks (
+-- 1. Hostel Blocks Master Table
+CREATE TABLE hostel_blocks (
     block_id VARCHAR(10) PRIMARY KEY,
     block_name VARCHAR(50) NOT NULL,
     total_floors INT NOT NULL CHECK (total_floors > 0),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS rooms (
+-- 2. Hostel Rooms Table
+CREATE TABLE rooms (
     room_id VARCHAR(20) PRIMARY KEY, -- e.g. 'L-843'
     block_id VARCHAR(10) NOT NULL REFERENCES hostel_blocks(block_id) ON DELETE CASCADE,
     room_number VARCHAR(10) NOT NULL,
@@ -59,7 +53,8 @@ CREATE TABLE IF NOT EXISTS rooms (
     CONSTRAINT uq_block_room UNIQUE (block_id, room_number)
 );
 
-CREATE TABLE IF NOT EXISTS common_areas (
+-- 3. Common Areas & Public Facilities Table
+CREATE TABLE common_areas (
     area_id VARCHAR(30) PRIMARY KEY, -- e.g. 'L-F08-COOLER-01'
     block_id VARCHAR(10) NOT NULL REFERENCES hostel_blocks(block_id) ON DELETE CASCADE,
     floor_number INT NOT NULL,
@@ -74,55 +69,40 @@ CREATE TABLE IF NOT EXISTS common_areas (
 -- 2. USER MANAGEMENT & RBAC (SINGLE USERS TABLE)
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS users (
+-- 4. Unified Users Table
+CREATE TABLE users (
     user_id VARCHAR(36) PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-    reg_or_emp_id VARCHAR(30) UNIQUE NOT NULL, -- Student RegNo or Staff Employee ID (stored upper-case)
+    reg_or_emp_id VARCHAR(30) UNIQUE NOT NULL, -- Student RegNo or Staff Employee ID
     full_name VARCHAR(100) NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,         -- stored lower-case
+    email VARCHAR(100) UNIQUE NOT NULL,
     phone_number VARCHAR(15) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(20) NOT NULL CHECK (role IN ('STUDENT', 'STAFF', 'SUPERVISOR', 'ADMIN')),
     specialization VARCHAR(30) CHECK (
-        specialization IS NULL OR
+        specialization IS NULL OR 
         specialization IN ('CLEANING', 'ELECTRICIAN', 'CARPENTER', 'AC_TECH', 'PLUMBER')
     ),
-    is_available BOOLEAN DEFAULT TRUE,   -- on/off duty (staff); used by auto-dispatch
-    is_active BOOLEAN NOT NULL DEFAULT TRUE, -- account enabled; FALSE blocks login and every API call
-    -- Set on password change/reset. Tokens issued before it are rejected, so
-    -- changing a password signs out every other session.
-    credentials_changed_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    -- A STAFF account without a trade can never be matched by dispatch, and a
-    -- trade on a non-staff account is meaningless.
-    CONSTRAINT chk_staff_specialization CHECK ((role = 'STAFF') = (specialization IS NOT NULL))
+    is_available BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Case-insensitive identity: '21bce0843' and '21BCE0843' are the same person.
-CREATE UNIQUE INDEX IF NOT EXISTS uq_users_reg_or_emp_id_ci ON users (UPPER(reg_or_emp_id));
-CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_ci ON users (LOWER(email));
-
-CREATE TABLE IF NOT EXISTS student_room_allotments (
+-- 5. Student Room Allotment Table
+CREATE TABLE student_room_allotments (
     allotment_id SERIAL PRIMARY KEY,
     student_id VARCHAR(36) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     room_id VARCHAR(20) NOT NULL REFERENCES rooms(room_id) ON DELETE RESTRICT,
     academic_year VARCHAR(10) NOT NULL, -- e.g. '2026-2027'
     is_current BOOLEAN DEFAULT TRUE,
-    assigned_date DATE DEFAULT CURRENT_DATE
+    assigned_date DATE DEFAULT CURRENT_DATE,
+    CONSTRAINT uq_student_active_allotment UNIQUE (student_id, is_current)
 );
-
--- At most one CURRENT allotment per student; any number of historical rows.
-CREATE UNIQUE INDEX IF NOT EXISTS uq_student_current_allotment
-    ON student_room_allotments (student_id)
-    WHERE is_current = TRUE;
-CREATE INDEX IF NOT EXISTS idx_allotments_room_current
-    ON student_room_allotments (room_id)
-    WHERE is_current = TRUE;
 
 -- ============================================================================
 -- 3. CATEGORIES & TAXONOMY
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS complaint_categories (
+-- 6. Complaint Categories Master
+CREATE TABLE complaint_categories (
     category_id SERIAL PRIMARY KEY,
     category_code VARCHAR(30) UNIQUE NOT NULL,
     category_name VARCHAR(50) NOT NULL,
@@ -130,7 +110,8 @@ CREATE TABLE IF NOT EXISTS complaint_categories (
     default_sla_hours INT NOT NULL DEFAULT 24 CHECK (default_sla_hours > 0)
 );
 
-CREATE TABLE IF NOT EXISTS complaint_subcategories (
+-- 7. Granular Complaint Subcategories & Fault Types
+CREATE TABLE complaint_subcategories (
     subcategory_id SERIAL PRIMARY KEY,
     category_id INT NOT NULL REFERENCES complaint_categories(category_id) ON DELETE CASCADE,
     subcategory_code VARCHAR(30) UNIQUE NOT NULL,
@@ -146,7 +127,8 @@ CREATE TABLE IF NOT EXISTS complaint_subcategories (
 -- 4. COMPLAINTS, DISPATCH & FEEDBACK
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS complaints (
+-- 8. Core Complaints Registry
+CREATE TABLE complaints (
     complaint_id VARCHAR(36) PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     ticket_scope VARCHAR(15) NOT NULL CHECK (ticket_scope IN ('ROOM', 'COMMON_AREA')),
     room_id VARCHAR(20) REFERENCES rooms(room_id) ON DELETE SET NULL,
@@ -166,11 +148,12 @@ CREATE TABLE IF NOT EXISTS complaints (
     closed_at TIMESTAMP WITH TIME ZONE,
     CONSTRAINT chk_complaint_location CHECK (
         (ticket_scope = 'ROOM' AND room_id IS NOT NULL AND common_area_id IS NULL) OR
-        (ticket_scope = 'COMMON_AREA' AND common_area_id IS NOT NULL AND room_id IS NULL)
+        (ticket_scope = 'COMMON_AREA' AND common_area_id IS NOT NULL)
     )
 );
 
-CREATE TABLE IF NOT EXISTS complaint_assignments (
+-- 9. Staff Task Dispatch Queue
+CREATE TABLE complaint_assignments (
     assignment_id SERIAL PRIMARY KEY,
     complaint_id VARCHAR(36) NOT NULL REFERENCES complaints(complaint_id) ON DELETE CASCADE,
     staff_user_id VARCHAR(36) NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
@@ -183,12 +166,10 @@ CREATE TABLE IF NOT EXISTS complaint_assignments (
     )
 );
 
--- One feedback row per verification ROUND. A rejected round (ESCALATED) is
--- kept as history and the ticket goes back for rework, so the same complaint
--- legitimately collects several rows - but only one can ever accept the work.
-CREATE TABLE IF NOT EXISTS complaint_feedback (
+-- 10. Student Closed-Loop Verification & Feedback
+CREATE TABLE complaint_feedback (
     feedback_id SERIAL PRIMARY KEY,
-    complaint_id VARCHAR(36) NOT NULL REFERENCES complaints(complaint_id) ON DELETE CASCADE,
+    complaint_id VARCHAR(36) UNIQUE NOT NULL REFERENCES complaints(complaint_id) ON DELETE CASCADE,
     student_id VARCHAR(36) NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
     is_satisfactorily_resolved BOOLEAN NOT NULL,
     rating INT CHECK (rating BETWEEN 1 AND 5),
@@ -196,12 +177,8 @@ CREATE TABLE IF NOT EXISTS complaint_feedback (
     verified_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_feedback_complaint ON complaint_feedback (complaint_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_feedback_single_acceptance
-    ON complaint_feedback (complaint_id)
-    WHERE is_satisfactorily_resolved = TRUE;
-
-CREATE TABLE IF NOT EXISTS complaint_logs (
+-- 11. Immutable Complaint Audit Trail
+CREATE TABLE complaint_logs (
     log_id SERIAL PRIMARY KEY,
     complaint_id VARCHAR(36) NOT NULL REFERENCES complaints(complaint_id) ON DELETE CASCADE,
     changed_by_user_id VARCHAR(36) REFERENCES users(user_id) ON DELETE SET NULL,
@@ -215,126 +192,43 @@ CREATE TABLE IF NOT EXISTS complaint_logs (
 -- 5. PERFORMANCE INDEXES
 -- ============================================================================
 
-CREATE INDEX IF NOT EXISTS idx_complaints_block_status ON complaints(block_id, status);
-CREATE INDEX IF NOT EXISTS idx_complaints_raised_by ON complaints(raised_by_user_id, status);
-CREATE INDEX IF NOT EXISTS idx_complaints_room ON complaints(room_id);
-CREATE INDEX IF NOT EXISTS idx_complaints_common_area ON complaints(common_area_id);
-CREATE INDEX IF NOT EXISTS idx_complaints_created_at ON complaints(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_assignments_staff_state ON complaint_assignments(staff_user_id, current_state);
--- Foreign-key side of every complaint -> assignment/log join. Without these,
--- each lookup by complaint_id is a sequential scan of the whole table.
-CREATE INDEX IF NOT EXISTS idx_assignments_complaint ON complaint_assignments(complaint_id);
-CREATE INDEX IF NOT EXISTS idx_logs_complaint_time ON complaint_logs(complaint_id, timestamp);
-CREATE INDEX IF NOT EXISTS idx_users_staff_dispatch ON users(role, specialization, is_available) WHERE role = 'STAFF';
+CREATE INDEX idx_complaints_block_status ON complaints(block_id, status);
+CREATE INDEX idx_complaints_raised_by ON complaints(raised_by_user_id, status);
+CREATE INDEX idx_complaints_room ON complaints(room_id);
+CREATE INDEX idx_assignments_staff_state ON complaint_assignments(staff_user_id, current_state);
+CREATE INDEX idx_users_staff_dispatch ON users(role, specialization, is_available) WHERE role = 'STAFF';
 
--- >>>>> PART 1b: RECONCILIATION (no-op on a fresh database) <<<<<
--- ============================================================================
--- FIX_MASTER migration 002: bring a pre-migration database up to 001's shape
--- ----------------------------------------------------------------------------
--- Before migrations existed, databases were built with init_all.sql. 001 uses
--- CREATE TABLE IF NOT EXISTS, so on such a database it leaves the old tables
--- (and their old constraints) in place. Everything here corrects those
--- differences. Each statement is idempotent: on a database created fresh by
--- 001 it is a no-op.
--- ============================================================================
-
--- users: account deactivation flag (new).
-ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
--- users: password change/reset timestamp used to revoke older tokens (new).
-ALTER TABLE users ADD COLUMN IF NOT EXISTS credentials_changed_at TIMESTAMP WITH TIME ZONE;
-
--- users: store identifiers in canonical case so the case-insensitive unique
--- indexes below can be created. If two rows differ only by case this fails
--- loudly - that is two accounts for one person and needs a human decision.
-UPDATE users SET reg_or_emp_id = UPPER(reg_or_emp_id) WHERE reg_or_emp_id <> UPPER(reg_or_emp_id);
-UPDATE users SET email = LOWER(email) WHERE email <> LOWER(email);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_users_reg_or_emp_id_ci ON users (UPPER(reg_or_emp_id));
-CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_ci ON users (LOWER(email));
-
--- users: role <-> specialization must agree.
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_staff_specialization') THEN
-        ALTER TABLE users ADD CONSTRAINT chk_staff_specialization
-            CHECK ((role = 'STAFF') = (specialization IS NOT NULL));
-    END IF;
-END $$;
-
--- student_room_allotments: the original UNIQUE(student_id, is_current)
--- capped every student at one historical allotment. Replace with a partial
--- unique index on the current allotment only.
-ALTER TABLE student_room_allotments DROP CONSTRAINT IF EXISTS uq_student_active_allotment;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_student_current_allotment
-    ON student_room_allotments (student_id) WHERE is_current = TRUE;
-CREATE INDEX IF NOT EXISTS idx_allotments_room_current
-    ON student_room_allotments (room_id) WHERE is_current = TRUE;
-
--- complaints: the original location check let a COMMON_AREA ticket also
--- carry a room_id.
-ALTER TABLE complaints DROP CONSTRAINT IF EXISTS chk_complaint_location;
-ALTER TABLE complaints ADD CONSTRAINT chk_complaint_location CHECK (
-    (ticket_scope = 'ROOM' AND room_id IS NOT NULL AND common_area_id IS NULL) OR
-    (ticket_scope = 'COMMON_AREA' AND common_area_id IS NOT NULL AND room_id IS NULL)
-);
-
--- complaint_feedback: UNIQUE(complaint_id) made a rejected-then-reworked
--- ticket impossible to ever close (its second verification collided with
--- the first). Allow one row per verification round, at most one acceptance.
-ALTER TABLE complaint_feedback DROP CONSTRAINT IF EXISTS complaint_feedback_complaint_id_key;
-CREATE INDEX IF NOT EXISTS idx_feedback_complaint ON complaint_feedback (complaint_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_feedback_single_acceptance
-    ON complaint_feedback (complaint_id) WHERE is_satisfactorily_resolved = TRUE;
-
--- Indexes added after the original schema.
-CREATE INDEX IF NOT EXISTS idx_complaints_common_area ON complaints(common_area_id);
-CREATE INDEX IF NOT EXISTS idx_complaints_created_at ON complaints(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_assignments_complaint ON complaint_assignments(complaint_id);
-CREATE INDEX IF NOT EXISTS idx_logs_complaint_time ON complaint_logs(complaint_id, timestamp);
-
--- Serial sequences: seed data inserts categories/subcategories with explicit
--- ids, which does not advance the sequence. Left alone, the next row added
--- through the default would collide with id 1. Re-sync to the current max.
-SELECT setval(pg_get_serial_sequence('complaint_categories', 'category_id'),
-              GREATEST((SELECT COALESCE(MAX(category_id), 0) FROM complaint_categories), 1),
-              (SELECT COUNT(*) > 0 FROM complaint_categories));
-SELECT setval(pg_get_serial_sequence('complaint_subcategories', 'subcategory_id'),
-              GREATEST((SELECT COALESCE(MAX(subcategory_id), 0) FROM complaint_subcategories), 1),
-              (SELECT COUNT(*) > 0 FROM complaint_subcategories));
 
 -- >>>>> PART 2: TRIGGERS, PROCEDURES & VIEWS <<<<<
 -- ============================================================================
--- FIX_MASTER migration 003: triggers, stored procedures and views
--- ----------------------------------------------------------------------------
--- Every object is CREATE OR REPLACE / DROP IF EXISTS + CREATE, so this file
--- is idempotent. To change one of these objects later, add a new migration
--- containing the new definition - do not edit this file after it has been
--- applied anywhere.
---
--- Error contract with the API (src/middleware/errorHandler.js): procedures
--- raise with a custom SQLSTATE whose last three digits are the HTTP status
--- the API should answer with, and a message that is safe to show a user.
---   FM400 bad request   FM403 forbidden   FM404 not found   FM409 conflict
+-- FIX_MASTER: Database Triggers, Stored Procedures, Functions & Views
+-- Course: BCSE307L - Database Systems (SCOPE, VIT Vellore)
+-- Database Engine: PostgreSQL 15+
 -- ============================================================================
 
 -- ============================================================================
--- 1. TRIGGERS
+-- 1. DATABASE TRIGGERS
 -- ============================================================================
 
--- Trigger 1: audit every complaint status change.
--- The acting user comes from the transaction-local setting app.current_user_id,
--- set by the API (src/config/db.js withTransaction). A change made outside the
--- API (manual SQL) is logged with changed_by_user_id = NULL rather than failing.
+-- Trigger 1: Automated Audit Logging for Complaint Status Changes
 CREATE OR REPLACE FUNCTION fn_audit_complaint_status_change()
 RETURNS TRIGGER AS $$
-DECLARE
-    v_actor_id VARCHAR(36);
 BEGIN
     IF (OLD.status IS DISTINCT FROM NEW.status) THEN
-        v_actor_id := NULLIF(current_setting('app.current_user_id', true), '');
-
-        INSERT INTO complaint_logs (complaint_id, changed_by_user_id, previous_status, new_status, action_note)
-        VALUES (NEW.complaint_id, v_actor_id, OLD.status, NEW.status,
-                CONCAT('Transition: ', OLD.status, ' -> ', NEW.status));
+        INSERT INTO complaint_logs (
+            complaint_id,
+            changed_by_user_id,
+            previous_status,
+            new_status,
+            action_note
+        )
+        VALUES (
+            NEW.complaint_id,
+            NULL,
+            OLD.status,
+            NEW.status,
+            CONCAT('Automated transition: ', OLD.status, ' -> ', NEW.status)
+        );
     END IF;
     RETURN NEW;
 END;
@@ -346,17 +240,13 @@ AFTER UPDATE OF status ON complaints
 FOR EACH ROW
 EXECUTE FUNCTION fn_audit_complaint_status_change();
 
--- Trigger 2: maintain resolved_at / closed_at.
--- resolved_at = "technician finished"; it is cleared when the student rejects
--- the work, so time-to-resolve reflects the round that actually fixed it.
+-- Trigger 2: Auto-Maintain Resolved and Closed Timestamps
 CREATE OR REPLACE FUNCTION fn_update_complaint_timestamps()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF NEW.status = 'PENDING_VERIFICATION' AND OLD.status IS DISTINCT FROM 'PENDING_VERIFICATION' THEN
+    IF NEW.status = 'PENDING_VERIFICATION' AND OLD.status != 'PENDING_VERIFICATION' THEN
         NEW.resolved_at = CURRENT_TIMESTAMP;
-    ELSIF NEW.status = 'ESCALATED' AND OLD.status IS DISTINCT FROM 'ESCALATED' THEN
-        NEW.resolved_at = NULL;
-    ELSIF NEW.status = 'COMPLETED' AND OLD.status IS DISTINCT FROM 'COMPLETED' THEN
+    ELSIF NEW.status = 'COMPLETED' AND OLD.status != 'COMPLETED' THEN
         NEW.closed_at = CURRENT_TIMESTAMP;
         IF NEW.resolved_at IS NULL THEN
             NEW.resolved_at = CURRENT_TIMESTAMP;
@@ -373,74 +263,47 @@ FOR EACH ROW
 EXECUTE FUNCTION fn_update_complaint_timestamps();
 
 -- ============================================================================
--- 2. STORED PROCEDURES
+-- 2. STORED PROCEDURES & ACID TRANSACTIONS
 -- ============================================================================
 
--- Procedure 1: 1-click auto-dispatch to the least-loaded on-duty cleaner.
--- p_assigned_staff_id comes back NULL when nobody was available (the ticket
--- stays OPEN) - callers must check it rather than assume success.
--- The original 1-argument version is dropped so only this signature exists.
-DROP PROCEDURE IF EXISTS sp_auto_dispatch_cleaning(VARCHAR);
-
+-- Procedure 1: 1-Click Auto-Dispatch for Cleaning Staff (Least Loaded)
 CREATE OR REPLACE PROCEDURE sp_auto_dispatch_cleaning(
-    p_complaint_id VARCHAR(36),
-    INOUT p_assigned_staff_id VARCHAR(36) DEFAULT NULL
+    p_complaint_id VARCHAR(36)
 )
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    v_status VARCHAR(25);
-    v_specialization VARCHAR(30);
+    v_assigned_staff_id VARCHAR(36);
 BEGIN
-    -- Lock the ticket: two concurrent dispatch calls must not both assign it.
-    SELECT c.status, sub.required_specialization INTO v_status, v_specialization
-    FROM complaints c
-    JOIN complaint_subcategories sub ON sub.subcategory_id = c.subcategory_id
-    WHERE c.complaint_id = p_complaint_id
-    FOR UPDATE OF c;
-
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Complaint not found.' USING ERRCODE = 'FM404';
-    END IF;
-    IF v_specialization <> 'CLEANING' THEN
-        RAISE EXCEPTION 'Auto-dispatch only applies to cleaning tickets. Use manual assignment for this complaint.' USING ERRCODE = 'FM400';
-    END IF;
-    IF v_status NOT IN ('OPEN', 'ESCALATED') THEN
-        RAISE EXCEPTION 'Complaint is % and cannot be dispatched right now.', v_status USING ERRCODE = 'FM409';
-    END IF;
-
-    SELECT u.user_id INTO p_assigned_staff_id
+    -- 1. Identify on-duty cleaning staff with minimum active assignments
+    SELECT u.user_id INTO v_assigned_staff_id
     FROM users u
-    LEFT JOIN complaint_assignments ca
-        ON u.user_id = ca.staff_user_id
-        AND ca.current_state IN ('ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS')
-    WHERE u.role = 'STAFF'
-      AND u.specialization = 'CLEANING'
+    LEFT JOIN complaint_assignments ca 
+        ON u.user_id = ca.staff_user_id 
+        AND ca.current_state IN ('ASSIGNED', 'IN_PROGRESS')
+    WHERE u.role = 'STAFF' 
+      AND u.specialization = 'CLEANING' 
       AND u.is_available = TRUE
-      AND u.is_active = TRUE
     GROUP BY u.user_id
     ORDER BY COUNT(ca.assignment_id) ASC, u.created_at ASC
     LIMIT 1;
 
-    IF p_assigned_staff_id IS NOT NULL THEN
+    IF v_assigned_staff_id IS NULL THEN
+        UPDATE complaints 
+        SET status = 'OPEN' 
+        WHERE complaint_id = p_complaint_id;
+    ELSE
         INSERT INTO complaint_assignments (complaint_id, staff_user_id, current_state)
-        VALUES (p_complaint_id, p_assigned_staff_id, 'ASSIGNED');
+        VALUES (p_complaint_id, v_assigned_staff_id, 'ASSIGNED');
 
-        UPDATE complaints SET status = 'ASSIGNED' WHERE complaint_id = p_complaint_id;
+        UPDATE complaints 
+        SET status = 'ASSIGNED' 
+        WHERE complaint_id = p_complaint_id;
     END IF;
-    -- No staff available: leave the ticket exactly as it was (OPEN or ESCALATED).
 END;
 $$;
 
--- Procedure 2: closed-loop verification by the person who raised the ticket.
--- Fixes vs. the original:
---   * the ticket must actually be PENDING_VERIFICATION. Previously a student
---     could "verify" an OPEN ticket nobody had touched and close it as
---     COMPLETED, bypassing the whole dispatch -> work -> verify loop;
---   * one feedback row per verification round, so a rejected ticket can be
---     reworked and verified again (previously it dead-ended forever);
---   * only the assignment(s) in this round are touched - the original
---     rewrote every assignment's state and completion time on the ticket.
+-- Procedure 2: Atomic Closed-Loop Resolution Verification & Rating
 CREATE OR REPLACE PROCEDURE sp_confirm_resolution(
     p_complaint_id VARCHAR(36),
     p_student_id VARCHAR(36),
@@ -454,41 +317,58 @@ DECLARE
     v_ticket_student_id VARCHAR(36);
     v_current_status VARCHAR(25);
 BEGIN
-    SELECT raised_by_user_id, status
+    -- 1. Security & Ownership check
+    SELECT raised_by_user_id, status 
     INTO v_ticket_student_id, v_current_status
-    FROM complaints
-    WHERE complaint_id = p_complaint_id
-    FOR UPDATE;
+    FROM complaints 
+    WHERE complaint_id = p_complaint_id;
 
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Complaint not found.' USING ERRCODE = 'FM404';
-    END IF;
-    IF v_ticket_student_id <> p_student_id THEN
-        RAISE EXCEPTION 'Only the person who raised this complaint can verify it.' USING ERRCODE = 'FM403';
-    END IF;
-    IF v_current_status <> 'PENDING_VERIFICATION' THEN
-        RAISE EXCEPTION 'This complaint is % - it can only be verified after the technician marks the work done.', v_current_status
-            USING ERRCODE = 'FM409';
+    IF v_ticket_student_id IS NULL THEN
+        RAISE EXCEPTION 'Complaint % not found', p_complaint_id;
     END IF;
 
-    INSERT INTO complaint_feedback (complaint_id, student_id, is_satisfactorily_resolved, rating, student_comments)
-    VALUES (p_complaint_id, p_student_id, p_is_satisfied, p_rating, p_comments);
+    IF v_ticket_student_id != p_student_id THEN
+        RAISE EXCEPTION 'Unauthorized: User % did not raise complaint %', p_student_id, p_complaint_id;
+    END IF;
 
-    IF p_is_satisfied THEN
-        UPDATE complaints SET status = 'COMPLETED' WHERE complaint_id = p_complaint_id;
+    -- 2. Insert feedback
+    INSERT INTO complaint_feedback (
+        complaint_id,
+        student_id,
+        is_satisfactorily_resolved,
+        rating,
+        student_comments
+    )
+    VALUES (
+        p_complaint_id,
+        p_student_id,
+        p_is_satisfied,
+        p_rating,
+        p_comments
+    );
+
+    -- 3. Transition complaint status
+    IF p_is_satisfied = TRUE THEN
+        UPDATE complaints 
+        SET status = 'COMPLETED', closed_at = CURRENT_TIMESTAMP 
+        WHERE complaint_id = p_complaint_id;
+
+        UPDATE complaint_assignments 
+        SET current_state = 'DONE', work_completed_at = CURRENT_TIMESTAMP 
+        WHERE complaint_id = p_complaint_id;
     ELSE
-        UPDATE complaints SET status = 'ESCALATED' WHERE complaint_id = p_complaint_id;
-        -- The work in this round was rejected.
-        UPDATE complaint_assignments
-        SET current_state = 'DECLINED'
-        WHERE complaint_id = p_complaint_id AND current_state = 'DONE';
+        UPDATE complaints 
+        SET status = 'ESCALATED' 
+        WHERE complaint_id = p_complaint_id;
+
+        UPDATE complaint_assignments 
+        SET current_state = 'DECLINED' 
+        WHERE complaint_id = p_complaint_id;
     END IF;
 END;
 $$;
 
--- Procedure 3: supervisor manual dispatch / re-dispatch.
--- The procedure is the authority on whether the assignment is valid; the
--- API's own checks exist only to produce friendlier messages first.
+-- Procedure 3: Manual Dispatch Override (Supervisor Action)
 CREATE OR REPLACE PROCEDURE sp_supervisor_assign_task(
     p_complaint_id VARCHAR(36),
     p_staff_user_id VARCHAR(36),
@@ -496,59 +376,25 @@ CREATE OR REPLACE PROCEDURE sp_supervisor_assign_task(
 )
 LANGUAGE plpgsql
 AS $$
-DECLARE
-    v_status VARCHAR(25);
-    v_required VARCHAR(30);
-    v_role VARCHAR(20);
-    v_specialization VARCHAR(30);
-    v_active BOOLEAN;
 BEGIN
-    SELECT c.status, sub.required_specialization INTO v_status, v_required
-    FROM complaints c
-    JOIN complaint_subcategories sub ON sub.subcategory_id = c.subcategory_id
-    WHERE c.complaint_id = p_complaint_id
-    FOR UPDATE OF c;
-
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Complaint not found.' USING ERRCODE = 'FM404';
-    END IF;
-    IF v_status NOT IN ('OPEN', 'ESCALATED') THEN
-        RAISE EXCEPTION 'Complaint is % and cannot be (re)assigned right now.', v_status USING ERRCODE = 'FM409';
-    END IF;
-
-    SELECT role, specialization, is_active INTO v_role, v_specialization, v_active
-    FROM users WHERE user_id = p_staff_user_id;
-
-    IF NOT FOUND OR v_role <> 'STAFF' THEN
-        RAISE EXCEPTION 'staff_user_id does not refer to a staff member.' USING ERRCODE = 'FM400';
-    END IF;
-    IF NOT v_active THEN
-        RAISE EXCEPTION 'That staff account is deactivated.' USING ERRCODE = 'FM400';
-    END IF;
-    IF v_specialization <> v_required THEN
-        RAISE EXCEPTION 'This complaint needs a % technician; the selected staff member is %.', v_required, v_specialization
-            USING ERRCODE = 'FM400';
-    END IF;
-
+    -- Insert new assignment
     INSERT INTO complaint_assignments (complaint_id, staff_user_id, assigned_by_user_id, current_state)
     VALUES (p_complaint_id, p_staff_user_id, p_supervisor_user_id, 'ASSIGNED');
 
-    UPDATE complaints SET status = 'ASSIGNED' WHERE complaint_id = p_complaint_id;
+    -- Update complaint status
+    UPDATE complaints
+    SET status = 'ASSIGNED'
+    WHERE complaint_id = p_complaint_id;
 END;
 $$;
 
 -- ============================================================================
--- 3. VIEWS
+-- 3. ANALYTICAL & OPERATIONAL VIEWS
 -- ============================================================================
 
--- View 1: floor-ordered active queue per technician.
--- Filters on the ASSIGNMENT's state as well as the ticket's. Previously it
--- filtered on ticket status only, so after a rejected ticket was reassigned
--- to someone else, the first technician's old (DECLINED) assignment showed
--- up in their queue again as live work.
-DROP VIEW IF EXISTS view_staff_active_queue;
-CREATE VIEW view_staff_active_queue AS
-SELECT
+-- View 1: Floor-Optimized Active Queue for Staff
+CREATE OR REPLACE VIEW view_staff_active_queue AS
+SELECT 
     ca.assignment_id,
     ca.staff_user_id,
     u_staff.full_name AS staff_name,
@@ -574,24 +420,19 @@ JOIN complaint_categories cat ON sub.category_id = cat.category_id
 LEFT JOIN rooms r ON c.room_id = r.room_id
 LEFT JOIN common_areas ca_area ON c.common_area_id = ca_area.area_id
 WHERE c.status IN ('ASSIGNED', 'IN_PROGRESS')
-  AND ca.current_state IN ('ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS')
-ORDER BY
+ORDER BY 
     COALESCE(r.floor_number, ca_area.floor_number) ASC,
-    CASE c.priority
-        WHEN 'EMERGENCY' THEN 1
-        WHEN 'HIGH' THEN 2
-        WHEN 'MEDIUM' THEN 3
-        WHEN 'LOW' THEN 4
+    CASE c.priority 
+        WHEN 'EMERGENCY' THEN 1 
+        WHEN 'HIGH' THEN 2 
+        WHEN 'MEDIUM' THEN 3 
+        WHEN 'LOW' THEN 4 
     END ASC,
     ca.assigned_at ASC;
 
--- View 2: per-block KPI summary.
--- Ratings are aggregated per complaint first. Joining complaint_feedback
--- directly would count a complaint once per verification round, inflating
--- every count for tickets that were rejected and reworked.
-DROP VIEW IF EXISTS view_block_supervisor_summary;
-CREATE VIEW view_block_supervisor_summary AS
-SELECT
+-- View 2: Block Supervisor Real-Time KPI Summary
+CREATE OR REPLACE VIEW view_block_supervisor_summary AS
+SELECT 
     b.block_id,
     b.block_name,
     COUNT(c.complaint_id) AS total_complaints,
@@ -601,21 +442,15 @@ SELECT
     COUNT(CASE WHEN c.status = 'COMPLETED' THEN 1 END) AS resolved_count,
     COUNT(CASE WHEN c.status = 'ESCALATED' THEN 1 END) AS escalated_count,
     COUNT(CASE WHEN c.ticket_scope = 'COMMON_AREA' THEN 1 END) AS common_area_issues,
-    ROUND(COALESCE(AVG(fb.accepted_rating), 0), 2) AS average_student_rating
+    ROUND(COALESCE(AVG(fb.rating), 0), 2) AS average_student_rating
 FROM hostel_blocks b
 LEFT JOIN complaints c ON b.block_id = c.block_id
-LEFT JOIN (
-    SELECT complaint_id, MAX(rating) AS accepted_rating
-    FROM complaint_feedback
-    WHERE is_satisfactorily_resolved = TRUE AND rating IS NOT NULL
-    GROUP BY complaint_id
-) fb ON c.complaint_id = fb.complaint_id
+LEFT JOIN complaint_feedback fb ON c.complaint_id = fb.complaint_id
 GROUP BY b.block_id, b.block_name;
 
--- View 3: recurring defects in the last 14 days.
-DROP VIEW IF EXISTS view_recurring_defects_alert;
-CREATE VIEW view_recurring_defects_alert AS
-SELECT
+-- View 3: Recurring Defects & Outage Hotspot Monitor (Last 14 Days)
+CREATE OR REPLACE VIEW view_recurring_defects_alert AS
+SELECT 
     c.block_id,
     c.ticket_scope,
     COALESCE(r.room_number, ca_area.description) AS asset_location,
@@ -631,6 +466,7 @@ WHERE c.created_at >= (CURRENT_TIMESTAMP - INTERVAL '14 days')
 GROUP BY c.block_id, c.ticket_scope, COALESCE(r.room_number, ca_area.description), cat.category_name
 HAVING COUNT(c.complaint_id) >= 2
 ORDER BY incident_count_14_days DESC;
+
 
 -- >>>>> PART 3: REALISTIC SEED DATA (VIT L-BLOCK) <<<<<
 -- ============================================================================
@@ -681,29 +517,27 @@ INSERT INTO common_areas (area_id, block_id, floor_number, area_type, descriptio
 ON CONFLICT (area_id) DO NOTHING;
 
 -- 4. Insert Unified Users (Admins, Supervisors, Staff, Students)
--- Password for all seed users is 'Password@123' (bcrypt, cost 12, verified to match).
--- This is a shared demo credential for local development only - rotate it before
--- any deployment that isn't strictly local.
+-- Password for all seed users is 'Password@123' (BCrypt hash)
 INSERT INTO users (user_id, reg_or_emp_id, full_name, email, phone_number, password_hash, role, specialization, is_available) VALUES
 -- Admin
-('u001-admin-0001-uuid-000000000001', 'ADMIN_ESTATES_01', 'Chief Warden / Estates Admin', 'admin.hostels@vit.ac.in', '9876543210', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'ADMIN', NULL, TRUE),
+('u001-admin-0001-uuid-000000000001', 'ADMIN_ESTATES_01', 'Chief Warden / Estates Admin', 'admin.hostels@vit.ac.in', '9876543210', '$2a$12$eKx6v1s97N8zL6a1k2qJ6.k4pZ2hY6dG9oP4eN1mB3vC7xS5tU0q2', 'ADMIN', NULL, TRUE),
 
 -- Supervisors
-('u002-supv-0001-uuid-000000000002', 'SUP_LBLOCK_01', 'Mr. R. Sundaram (L-Block Supervisor)', 'supervisor.lblock@vit.ac.in', '9876543211', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'SUPERVISOR', NULL, TRUE),
+('u002-supv-0001-uuid-000000000002', 'SUP_LBLOCK_01', 'Mr. R. Sundaram (L-Block Supervisor)', 'supervisor.lblock@vit.ac.in', '9876543211', '$2a$12$eKx6v1s97N8zL6a1k2qJ6.k4pZ2hY6dG9oP4eN1mB3vC7xS5tU0q2', 'SUPERVISOR', NULL, TRUE),
 
 -- Maintenance Staff (5 Specializations)
-('u003-staf-clean-uuid-000000000003', 'EMP_CLN_01', 'Murugan K (Housekeeper)', 'murugan.cln@vit.ac.in', '9876543220', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'CLEANING', TRUE),
-('u004-staf-clean-uuid-000000000004', 'EMP_CLN_02', 'Ramesh P (Housekeeper)', 'ramesh.cln@vit.ac.in', '9876543221', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'CLEANING', TRUE),
-('u005-staf-elec-uuid-000000000005', 'EMP_ELEC_01', 'Suresh Kumar (Electrician)', 'suresh.elec@vit.ac.in', '9876543222', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'ELECTRICIAN', TRUE),
-('u006-staf-carp-uuid-000000000006', 'EMP_CARP_01', 'Govindraj M (Carpenter)', 'govind.carp@vit.ac.in', '9876543223', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'CARPENTER', TRUE),
-('u007-staf-actech-uuid-000000000007', 'EMP_AC_01', 'Dhanush V (AC Specialist)', 'dhanush.ac@vit.ac.in', '9876543224', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'AC_TECH', TRUE),
-('u008-staf-plumb-uuid-000000000008', 'EMP_PLB_01', 'Karthik N (Plumber)', 'karthik.plb@vit.ac.in', '9876543225', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'PLUMBER', TRUE),
+('u003-staf-clean-uuid-000000000003', 'EMP_CLN_01', 'Murugan K (Housekeeper)', 'murugan.cln@vit.ac.in', '9876543220', '$2a$12$eKx6v1s97N8zL6a1k2qJ6.k4pZ2hY6dG9oP4eN1mB3vC7xS5tU0q2', 'STAFF', 'CLEANING', TRUE),
+('u004-staf-clean-uuid-000000000004', 'EMP_CLN_02', 'Ramesh P (Housekeeper)', 'ramesh.cln@vit.ac.in', '9876543221', '$2a$12$eKx6v1s97N8zL6a1k2qJ6.k4pZ2hY6dG9oP4eN1mB3vC7xS5tU0q2', 'STAFF', 'CLEANING', TRUE),
+('u005-staf-elec-uuid-000000000005', 'EMP_ELEC_01', 'Suresh Kumar (Electrician)', 'suresh.elec@vit.ac.in', '9876543222', '$2a$12$eKx6v1s97N8zL6a1k2qJ6.k4pZ2hY6dG9oP4eN1mB3vC7xS5tU0q2', 'STAFF', 'ELECTRICIAN', TRUE),
+('u006-staf-carp-uuid-000000000006', 'EMP_CARP_01', 'Govindraj M (Carpenter)', 'govind.carp@vit.ac.in', '9876543223', '$2a$12$eKx6v1s97N8zL6a1k2qJ6.k4pZ2hY6dG9oP4eN1mB3vC7xS5tU0q2', 'STAFF', 'CARPENTER', TRUE),
+('u007-staf-actech-uuid-000000000007', 'EMP_AC_01', 'Dhanush V (AC Specialist)', 'dhanush.ac@vit.ac.in', '9876543224', '$2a$12$eKx6v1s97N8zL6a1k2qJ6.k4pZ2hY6dG9oP4eN1mB3vC7xS5tU0q2', 'STAFF', 'AC_TECH', TRUE),
+('u008-staf-plumb-uuid-000000000008', 'EMP_PLB_01', 'Karthik N (Plumber)', 'karthik.plb@vit.ac.in', '9876543225', '$2a$12$eKx6v1s97N8zL6a1k2qJ6.k4pZ2hY6dG9oP4eN1mB3vC7xS5tU0q2', 'STAFF', 'PLUMBER', TRUE),
 
 -- Students residing in L-Block
-('u009-stud-0843-uuid-000000000009', '21BCE0843', 'Vihaan Sharma', 'vihaan.sharma2021@vitstudent.ac.in', '9876543230', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STUDENT', NULL, TRUE),
-('u010-stud-0810-uuid-000000000010', '21BCE1042', 'Rahul Varma', 'rahul.varma2021@vitstudent.ac.in', '9876543231', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STUDENT', NULL, TRUE),
-('u011-stud-0825-uuid-000000000011', '21BCE1523', 'Aditya Nair', 'aditya.nair2021@vitstudent.ac.in', '9876543232', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STUDENT', NULL, TRUE),
-('u012-stud-0305-uuid-000000000012', '22BCE0190', 'Priya Iyer', 'priya.iyer2022@vitstudent.ac.in', '9876543233', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STUDENT', NULL, TRUE)
+('u009-stud-0843-uuid-000000000009', '21BCE0843', 'Vihaan Sharma', 'vihaan.sharma2021@vitstudent.ac.in', '9876543230', '$2a$12$eKx6v1s97N8zL6a1k2qJ6.k4pZ2hY6dG9oP4eN1mB3vC7xS5tU0q2', 'STUDENT', NULL, TRUE),
+('u010-stud-0810-uuid-000000000010', '21BCE1042', 'Rahul Varma', 'rahul.varma2021@vitstudent.ac.in', '9876543231', '$2a$12$eKx6v1s97N8zL6a1k2qJ6.k4pZ2hY6dG9oP4eN1mB3vC7xS5tU0q2', 'STUDENT', NULL, TRUE),
+('u011-stud-0825-uuid-000000000011', '21BCE1523', 'Aditya Nair', 'aditya.nair2021@vitstudent.ac.in', '9876543232', '$2a$12$eKx6v1s97N8zL6a1k2qJ6.k4pZ2hY6dG9oP4eN1mB3vC7xS5tU0q2', 'STUDENT', NULL, TRUE),
+('u012-stud-0305-uuid-000000000012', '22BCE0190', 'Priya Iyer', 'priya.iyer2022@vitstudent.ac.in', '9876543233', '$2a$12$eKx6v1s97N8zL6a1k2qJ6.k4pZ2hY6dG9oP4eN1mB3vC7xS5tU0q2', 'STUDENT', NULL, TRUE)
 ON CONFLICT (user_id) DO NOTHING;
 
 -- 5. Insert Student Room Allotments
@@ -794,7 +628,7 @@ ON CONFLICT DO NOTHING;
 -- 10. Insert Feedback for Completed Complaint
 INSERT INTO complaint_feedback (complaint_id, student_id, is_satisfactorily_resolved, rating, student_comments, verified_at) VALUES
 ('cmp-825-0001-uuid-000000000004', 'u011-stud-0825-uuid-000000000011', TRUE, 5, 'AC technician cleaned the drainage pipe thoroughly. No more leaking.', CURRENT_TIMESTAMP - INTERVAL '1 day')
-ON CONFLICT (complaint_id) WHERE is_satisfactorily_resolved = TRUE DO NOTHING;
+ON CONFLICT (complaint_id) DO NOTHING;
 
 -- 11. Insert Audit History Logs
 INSERT INTO complaint_logs (complaint_id, changed_by_user_id, previous_status, new_status, action_note, timestamp) VALUES
@@ -804,9 +638,3 @@ INSERT INTO complaint_logs (complaint_id, changed_by_user_id, previous_status, n
 ('cmp-825-0001-uuid-000000000004', 'u011-stud-0825-uuid-000000000011', 'PENDING_VERIFICATION', 'COMPLETED', 'Student verified work and gave 5 stars', CURRENT_TIMESTAMP - INTERVAL '1 day')
 ON CONFLICT DO NOTHING;
 
--- 12. Re-sync serial sequences.
--- Categories and subcategories above are inserted with explicit ids, which
--- does not advance their sequences. Without this the next category or
--- subcategory created through the column default collides with id 1.
-SELECT setval(pg_get_serial_sequence('complaint_categories', 'category_id'), (SELECT MAX(category_id) FROM complaint_categories));
-SELECT setval(pg_get_serial_sequence('complaint_subcategories', 'subcategory_id'), (SELECT MAX(subcategory_id) FROM complaint_subcategories));

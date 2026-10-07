@@ -99,7 +99,7 @@ ORDER BY timestamp DESC;
 -- ----------------------------------------------------------------------------
 CALL sp_confirm_resolution(
     'cmp-810-0001-uuid-000000000003',
-    'u010-stud-0810-uuid-0000000010',
+    'u010-stud-0810-uuid-000000000010',
     TRUE,
     5,
     'Carpenter fixed the chair backrest and table screws perfectly.'

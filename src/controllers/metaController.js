@@ -41,10 +41,10 @@ exports.getStaff = asyncHandler(async (req, res) => {
             u.full_name,
             u.specialization,
             u.is_available,
-            COUNT(ca.assignment_id) FILTER (WHERE ca.current_state IN ('ASSIGNED', 'IN_PROGRESS')) AS active_task_count
+            (COUNT(ca.assignment_id) FILTER (WHERE ca.current_state IN ('ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS')))::int AS active_task_count
         FROM users u
         LEFT JOIN complaint_assignments ca ON ca.staff_user_id = u.user_id
-        WHERE u.role = 'STAFF'
+        WHERE u.role = 'STAFF' AND u.is_active = TRUE
     `;
     const params = [];
     if (specialization) {
