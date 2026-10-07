@@ -1,11 +1,23 @@
 const { Pool } = require('pg');
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
+const { connectionConfig } = require('./dbConfig');
+
+const int = (value, fallback) => {
+    const n = parseInt(value, 10);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+};
 
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('neon.tech')
-        ? { rejectUnauthorized: false }
-        : false,
+    ...connectionConfig(),
+    max: int(process.env.DB_POOL_MAX, 10),
+    idleTimeoutMillis: int(process.env.DB_IDLE_TIMEOUT_MS, 30000),
+    // Fail fast instead of queueing forever when the database is unreachable
+    // or every pooled connection is busy.
+    connectionTimeoutMillis: int(process.env.DB_CONNECT_TIMEOUT_MS, 5000),
+    // A runaway query is cancelled server-side rather than pinning a
+    // connection (and the request waiting on it) indefinitely.
+    statement_timeout: int(process.env.DB_STATEMENT_TIMEOUT_MS, 15000),
+    application_name: 'fix_master_api',
 });
 
 pool.on('error', (err) => {
@@ -16,34 +28,22 @@ pool.on('error', (err) => {
  * Runs `work(client)` inside a single dedicated connection wrapped in
  * BEGIN/COMMIT/ROLLBACK.
  *
- * This exists because `pool.query('BEGIN')` followed by further
- * `pool.query(...)` calls does NOT guarantee the same underlying connection
- * for each statement - the pool is free to hand out a different client for
- * every query. Under load (pool exhausted, concurrent requests) that splits
- * a single "transaction" across two unrelated backend connections: the
- * BEGIN and COMMIT/ROLLBACK become no-ops on connections nobody else
- * touches, and the statements in between run un-transacted, so a failure
- * partway through leaves the database in a half-updated state instead of
- * rolling back.
+ * `pool.query('BEGIN')` followed by more `pool.query(...)` calls does NOT
+ * reuse one connection - the pool may hand out a different client per call,
+ * which splits a "transaction" across backends under load. `pool.connect()`
+ * pins one client for the whole callback.
  *
- * `pool.connect()` checks out one client for the whole callback, so every
- * statement - including BEGIN/COMMIT/ROLLBACK - runs on the same backend
- * connection.
- *
- * If `actingUserId` is provided, it is exposed to the transaction as the
- * Postgres session-local setting `app.current_user_id` via `SET LOCAL`.
- * `fn_audit_complaint_status_change()` reads that setting to attribute
- * automated audit log rows to the user who actually triggered the change,
- * instead of writing them with changed_by_user_id = NULL.
+ * If `actingUserId` is given it is exposed to the transaction as the
+ * session-local setting `app.current_user_id` (via parameterized
+ * `set_config(..., true)`, i.e. SET LOCAL semantics). The audit trigger
+ * fn_audit_complaint_status_change() reads it to attribute each status
+ * change to the user who caused it.
  */
 async function withTransaction(work, actingUserId = null) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         if (actingUserId) {
-            // SET LOCAL cannot take a bind parameter, so the value is
-            // escaped and inlined via format() equivalent (quote_literal)
-            // executed by Postgres itself, not string-concatenated here.
             await client.query('SELECT set_config($1, $2, true)', ['app.current_user_id', actingUserId]);
         }
         const result = await work(client);

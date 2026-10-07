@@ -1,14 +1,13 @@
 -- ============================================================================
--- FIX_MASTER: Relational Database Schema Specification
--- Course: BCSE307L - Database Systems (SCOPE, VIT Vellore)
--- Database Engine: PostgreSQL 15+
--- Normalized to 3NF / BCNF
+-- GENERATED FILE - DO NOT EDIT BY HAND.
+-- Built by scripts/build-sql-bundles.js from: migrations/001_schema.sql
+-- Change the schema by adding a migration under database/migrations/.
 -- ============================================================================
 
--- Enable UUID extension for globally unique primary keys
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- Drop existing tables in reverse dependency order
+-- DEVELOPMENT ONLY: everything below starts by DROPPING every table.
+-- Never run this against a database whose data you want to keep; production
+-- schemas are created and upgraded with `npm run db:migrate`.
+DROP TABLE IF EXISTS schema_migrations CASCADE;
 DROP TABLE IF EXISTS complaint_logs CASCADE;
 DROP TABLE IF EXISTS complaint_feedback CASCADE;
 DROP TABLE IF EXISTS complaint_assignments CASCADE;
@@ -22,19 +21,32 @@ DROP TABLE IF EXISTS rooms CASCADE;
 DROP TABLE IF EXISTS hostel_blocks CASCADE;
 
 -- ============================================================================
+-- FIX_MASTER migration 001: tables, constraints and indexes
+-- ----------------------------------------------------------------------------
+-- Source of truth for the table layer. Applied by scripts/migrate.js, which
+-- records it in schema_migrations so it runs exactly once per database.
+-- Every statement is IF NOT EXISTS so this is also safe against a database
+-- that was originally built with the old, destructive init_all.sql; 002
+-- then reconciles any constraint differences on such a database.
+--
+-- Never put DROP TABLE in a migration. Schema changes go in a new numbered
+-- file (004_..., 005_...), never by editing an already-applied one.
+-- ============================================================================
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ============================================================================
 -- 1. INFRASTRUCTURE & SPATIAL HIERARCHY
 -- ============================================================================
 
--- 1. Hostel Blocks Master Table
-CREATE TABLE hostel_blocks (
+CREATE TABLE IF NOT EXISTS hostel_blocks (
     block_id VARCHAR(10) PRIMARY KEY,
     block_name VARCHAR(50) NOT NULL,
     total_floors INT NOT NULL CHECK (total_floors > 0),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. Hostel Rooms Table
-CREATE TABLE rooms (
+CREATE TABLE IF NOT EXISTS rooms (
     room_id VARCHAR(20) PRIMARY KEY, -- e.g. 'L-843'
     block_id VARCHAR(10) NOT NULL REFERENCES hostel_blocks(block_id) ON DELETE CASCADE,
     room_number VARCHAR(10) NOT NULL,
@@ -46,8 +58,7 @@ CREATE TABLE rooms (
     CONSTRAINT uq_block_room UNIQUE (block_id, room_number)
 );
 
--- 3. Common Areas & Public Facilities Table
-CREATE TABLE common_areas (
+CREATE TABLE IF NOT EXISTS common_areas (
     area_id VARCHAR(30) PRIMARY KEY, -- e.g. 'L-F08-COOLER-01'
     block_id VARCHAR(10) NOT NULL REFERENCES hostel_blocks(block_id) ON DELETE CASCADE,
     floor_number INT NOT NULL,
@@ -62,49 +73,55 @@ CREATE TABLE common_areas (
 -- 2. USER MANAGEMENT & RBAC (SINGLE USERS TABLE)
 -- ============================================================================
 
--- 4. Unified Users Table
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     user_id VARCHAR(36) PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-    reg_or_emp_id VARCHAR(30) UNIQUE NOT NULL, -- Student RegNo or Staff Employee ID
+    reg_or_emp_id VARCHAR(30) UNIQUE NOT NULL, -- Student RegNo or Staff Employee ID (stored upper-case)
     full_name VARCHAR(100) NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,         -- stored lower-case
     phone_number VARCHAR(15) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(20) NOT NULL CHECK (role IN ('STUDENT', 'STAFF', 'SUPERVISOR', 'ADMIN')),
     specialization VARCHAR(30) CHECK (
-        specialization IS NULL OR 
+        specialization IS NULL OR
         specialization IN ('CLEANING', 'ELECTRICIAN', 'CARPENTER', 'AC_TECH', 'PLUMBER')
     ),
-    is_available BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    is_available BOOLEAN DEFAULT TRUE,   -- on/off duty (staff); used by auto-dispatch
+    is_active BOOLEAN NOT NULL DEFAULT TRUE, -- account enabled; FALSE blocks login and every API call
+    -- Set on password change/reset. Tokens issued before it are rejected, so
+    -- changing a password signs out every other session.
+    credentials_changed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    -- A STAFF account without a trade can never be matched by dispatch, and a
+    -- trade on a non-staff account is meaningless.
+    CONSTRAINT chk_staff_specialization CHECK ((role = 'STAFF') = (specialization IS NOT NULL))
 );
 
--- 5. Student Room Allotment Table
-CREATE TABLE student_room_allotments (
+-- Case-insensitive identity: '21bce0843' and '21BCE0843' are the same person.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_reg_or_emp_id_ci ON users (UPPER(reg_or_emp_id));
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_ci ON users (LOWER(email));
+
+CREATE TABLE IF NOT EXISTS student_room_allotments (
     allotment_id SERIAL PRIMARY KEY,
     student_id VARCHAR(36) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     room_id VARCHAR(20) NOT NULL REFERENCES rooms(room_id) ON DELETE RESTRICT,
     academic_year VARCHAR(10) NOT NULL, -- e.g. '2026-2027'
     is_current BOOLEAN DEFAULT TRUE,
     assigned_date DATE DEFAULT CURRENT_DATE
-    -- NOTE: uniqueness of the *current* allotment is enforced below via a partial
-    -- unique index, not a table constraint. A plain UNIQUE(student_id, is_current)
-    -- caps a student at one FALSE row for their entire history, which rejects a
-    -- second past allotment as a duplicate. See uq_student_current_allotment.
 );
 
--- Only one CURRENT allotment per student is allowed; any number of historical
--- (is_current = FALSE) allotments are fine.
-CREATE UNIQUE INDEX uq_student_current_allotment
+-- At most one CURRENT allotment per student; any number of historical rows.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_student_current_allotment
     ON student_room_allotments (student_id)
+    WHERE is_current = TRUE;
+CREATE INDEX IF NOT EXISTS idx_allotments_room_current
+    ON student_room_allotments (room_id)
     WHERE is_current = TRUE;
 
 -- ============================================================================
 -- 3. CATEGORIES & TAXONOMY
 -- ============================================================================
 
--- 6. Complaint Categories Master
-CREATE TABLE complaint_categories (
+CREATE TABLE IF NOT EXISTS complaint_categories (
     category_id SERIAL PRIMARY KEY,
     category_code VARCHAR(30) UNIQUE NOT NULL,
     category_name VARCHAR(50) NOT NULL,
@@ -112,8 +129,7 @@ CREATE TABLE complaint_categories (
     default_sla_hours INT NOT NULL DEFAULT 24 CHECK (default_sla_hours > 0)
 );
 
--- 7. Granular Complaint Subcategories & Fault Types
-CREATE TABLE complaint_subcategories (
+CREATE TABLE IF NOT EXISTS complaint_subcategories (
     subcategory_id SERIAL PRIMARY KEY,
     category_id INT NOT NULL REFERENCES complaint_categories(category_id) ON DELETE CASCADE,
     subcategory_code VARCHAR(30) UNIQUE NOT NULL,
@@ -129,8 +145,7 @@ CREATE TABLE complaint_subcategories (
 -- 4. COMPLAINTS, DISPATCH & FEEDBACK
 -- ============================================================================
 
--- 8. Core Complaints Registry
-CREATE TABLE complaints (
+CREATE TABLE IF NOT EXISTS complaints (
     complaint_id VARCHAR(36) PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     ticket_scope VARCHAR(15) NOT NULL CHECK (ticket_scope IN ('ROOM', 'COMMON_AREA')),
     room_id VARCHAR(20) REFERENCES rooms(room_id) ON DELETE SET NULL,
@@ -154,8 +169,7 @@ CREATE TABLE complaints (
     )
 );
 
--- 9. Staff Task Dispatch Queue
-CREATE TABLE complaint_assignments (
+CREATE TABLE IF NOT EXISTS complaint_assignments (
     assignment_id SERIAL PRIMARY KEY,
     complaint_id VARCHAR(36) NOT NULL REFERENCES complaints(complaint_id) ON DELETE CASCADE,
     staff_user_id VARCHAR(36) NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
@@ -168,10 +182,12 @@ CREATE TABLE complaint_assignments (
     )
 );
 
--- 10. Student Closed-Loop Verification & Feedback
-CREATE TABLE complaint_feedback (
+-- One feedback row per verification ROUND. A rejected round (ESCALATED) is
+-- kept as history and the ticket goes back for rework, so the same complaint
+-- legitimately collects several rows - but only one can ever accept the work.
+CREATE TABLE IF NOT EXISTS complaint_feedback (
     feedback_id SERIAL PRIMARY KEY,
-    complaint_id VARCHAR(36) UNIQUE NOT NULL REFERENCES complaints(complaint_id) ON DELETE CASCADE,
+    complaint_id VARCHAR(36) NOT NULL REFERENCES complaints(complaint_id) ON DELETE CASCADE,
     student_id VARCHAR(36) NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
     is_satisfactorily_resolved BOOLEAN NOT NULL,
     rating INT CHECK (rating BETWEEN 1 AND 5),
@@ -179,8 +195,12 @@ CREATE TABLE complaint_feedback (
     verified_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 11. Immutable Complaint Audit Trail
-CREATE TABLE complaint_logs (
+CREATE INDEX IF NOT EXISTS idx_feedback_complaint ON complaint_feedback (complaint_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_feedback_single_acceptance
+    ON complaint_feedback (complaint_id)
+    WHERE is_satisfactorily_resolved = TRUE;
+
+CREATE TABLE IF NOT EXISTS complaint_logs (
     log_id SERIAL PRIMARY KEY,
     complaint_id VARCHAR(36) NOT NULL REFERENCES complaints(complaint_id) ON DELETE CASCADE,
     changed_by_user_id VARCHAR(36) REFERENCES users(user_id) ON DELETE SET NULL,
@@ -194,8 +214,14 @@ CREATE TABLE complaint_logs (
 -- 5. PERFORMANCE INDEXES
 -- ============================================================================
 
-CREATE INDEX idx_complaints_block_status ON complaints(block_id, status);
-CREATE INDEX idx_complaints_raised_by ON complaints(raised_by_user_id, status);
-CREATE INDEX idx_complaints_room ON complaints(room_id);
-CREATE INDEX idx_assignments_staff_state ON complaint_assignments(staff_user_id, current_state);
-CREATE INDEX idx_users_staff_dispatch ON users(role, specialization, is_available) WHERE role = 'STAFF';
+CREATE INDEX IF NOT EXISTS idx_complaints_block_status ON complaints(block_id, status);
+CREATE INDEX IF NOT EXISTS idx_complaints_raised_by ON complaints(raised_by_user_id, status);
+CREATE INDEX IF NOT EXISTS idx_complaints_room ON complaints(room_id);
+CREATE INDEX IF NOT EXISTS idx_complaints_common_area ON complaints(common_area_id);
+CREATE INDEX IF NOT EXISTS idx_complaints_created_at ON complaints(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_assignments_staff_state ON complaint_assignments(staff_user_id, current_state);
+-- Foreign-key side of every complaint -> assignment/log join. Without these,
+-- each lookup by complaint_id is a sequential scan of the whole table.
+CREATE INDEX IF NOT EXISTS idx_assignments_complaint ON complaint_assignments(complaint_id);
+CREATE INDEX IF NOT EXISTS idx_logs_complaint_time ON complaint_logs(complaint_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_users_staff_dispatch ON users(role, specialization, is_available) WHERE role = 'STAFF';

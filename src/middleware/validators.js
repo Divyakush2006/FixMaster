@@ -6,6 +6,11 @@ const TICKET_SCOPES = ['ROOM', 'COMMON_AREA'];
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'];
 const STATUSES = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING_VERIFICATION', 'COMPLETED', 'ESCALATED', 'REJECTED'];
 
+// bcrypt only uses the first 72 BYTES of a password and silently ignores the
+// rest, so two passwords sharing a 72-byte prefix are interchangeable.
+// Reject longer ones outright instead of pretending they are fully checked.
+const BCRYPT_MAX_BYTES = 72;
+
 /** Runs after a validation chain; returns a single friendly 400 on the first failure. */
 function handleValidation(req, res, next) {
     const errors = validationResult(req);
@@ -15,19 +20,56 @@ function handleValidation(req, res, next) {
     next();
 }
 
-const registerValidators = [
-    body('reg_or_emp_id').trim().notEmpty().withMessage('reg_or_emp_id is required.'),
-    body('full_name').trim().notEmpty().withMessage('full_name is required.'),
-    body('email').trim().isEmail().withMessage('A valid email is required.').normalizeEmail(),
+const newPassword = (field) =>
+    body(field)
+        .isString()
+        .withMessage(`${field} is required.`)
+        .bail()
+        .isLength({ min: 8 })
+        .withMessage(`${field} must be at least 8 characters.`)
+        .bail()
+        .custom((value) => Buffer.byteLength(value, 'utf8') <= BCRYPT_MAX_BYTES)
+        .withMessage(`${field} must be at most ${BCRYPT_MAX_BYTES} bytes.`);
+
+// Login IDs are case-insensitive and stored upper-case (migration 002 adds a
+// case-insensitive unique index), so '21bce0843' and '21BCE0843' are one user.
+const regOrEmpId = () =>
+    body('reg_or_emp_id')
+        .trim()
+        .notEmpty()
+        .withMessage('reg_or_emp_id is required.')
+        .bail()
+        .toUpperCase()
+        .matches(/^[A-Z0-9_-]{3,30}$/)
+        .withMessage('reg_or_emp_id must be 3-30 letters, digits, "_" or "-".');
+
+// Emails are stored lower-case. Deliberately NOT normalizeEmail(): its
+// defaults rewrite addresses (they strip dots and +tags from Gmail), which
+// stored a different address than the one the user typed.
+const email = () =>
+    body('email')
+        .trim()
+        .isEmail()
+        .withMessage('A valid email is required.')
+        .bail()
+        .isLength({ max: 100 })
+        .withMessage('email must be at most 100 characters.')
+        .toLowerCase();
+
+const userProfileRules = [
+    regOrEmpId(),
+    body('full_name').trim().notEmpty().withMessage('full_name is required.').bail().isLength({ max: 100 }),
+    email(),
     body('phone_number').trim().matches(/^\d{10}$/).withMessage('phone_number must be exactly 10 digits.'),
-    body('password').isString().withMessage('password is required.').bail().isLength({ min: 8 }).withMessage('password must be at least 8 characters.'),
+    newPassword('password'),
     body('role').optional().isIn(ROLES).withMessage(`role must be one of: ${ROLES.join(', ')}.`),
     body('specialization')
         .optional({ nullable: true })
         .isIn(SPECIALIZATIONS)
         .withMessage(`specialization must be one of: ${SPECIALIZATIONS.join(', ')}.`),
-    handleValidation,
 ];
+
+const registerValidators = [...userProfileRules, handleValidation];
 
 const loginValidators = [
     body('reg_or_emp_id').trim().notEmpty().withMessage('reg_or_emp_id is required.'),
@@ -38,15 +80,31 @@ const loginValidators = [
 const createComplaintValidators = [
     body('ticket_scope').isIn(TICKET_SCOPES).withMessage(`ticket_scope must be one of: ${TICKET_SCOPES.join(', ')}.`),
     body('block_id').trim().notEmpty().withMessage('block_id is required.'),
-    body('subcategory_id').isInt({ min: 1 }).withMessage('subcategory_id must be a positive integer.'),
+    body('subcategory_id').isInt({ min: 1 }).withMessage('subcategory_id must be a positive integer.').toInt(),
     body('room_id')
         .if(body('ticket_scope').equals('ROOM'))
-        .trim().notEmpty().withMessage('room_id is required when ticket_scope is ROOM.'),
+        .trim()
+        .notEmpty()
+        .withMessage('room_id is required when ticket_scope is ROOM.'),
     body('common_area_id')
         .if(body('ticket_scope').equals('COMMON_AREA'))
-        .trim().notEmpty().withMessage('common_area_id is required when ticket_scope is COMMON_AREA.'),
-    body('description').optional({ nullable: true }).isString().isLength({ max: 500 }).withMessage('description must be at most 500 characters.'),
-    body('photo_evidence_url').optional({ nullable: true }).isString().isLength({ max: 255 }),
+        .trim()
+        .notEmpty()
+        .withMessage('common_area_id is required when ticket_scope is COMMON_AREA.'),
+    body('description')
+        .optional({ nullable: true })
+        .isString()
+        .isLength({ max: 500 })
+        .withMessage('description must be at most 500 characters.'),
+    // Only http(s) links. Anything else - notably `javascript:` - would be
+    // stored and later rendered as a clickable link in the UI (stored XSS).
+    body('photo_evidence_url')
+        .optional({ nullable: true, checkFalsy: true })
+        .isURL({ protocols: ['http', 'https'], require_protocol: true })
+        .withMessage('photo_evidence_url must be an http(s) URL.')
+        .bail()
+        .isLength({ max: 255 })
+        .withMessage('photo_evidence_url must be at most 255 characters.'),
     body('priority').optional({ nullable: true }).isIn(PRIORITIES).withMessage(`priority must be one of: ${PRIORITIES.join(', ')}.`),
     body('preferred_timeslot').optional({ nullable: true }).isString().isLength({ max: 50 }),
     handleValidation,
@@ -55,11 +113,13 @@ const createComplaintValidators = [
 const listComplaintsValidators = [
     query('status').optional().isIn(STATUSES).withMessage(`status must be one of: ${STATUSES.join(', ')}.`),
     query('block_id').optional().trim().notEmpty(),
+    query('limit').optional().isInt({ min: 1, max: 500 }).withMessage('limit must be between 1 and 500.').toInt(),
+    query('offset').optional().isInt({ min: 0 }).withMessage('offset must be 0 or more.').toInt(),
     handleValidation,
 ];
 
 const complaintIdParamValidators = [
-    param('id').trim().notEmpty().withMessage('complaint id is required.'),
+    param('id').trim().notEmpty().isLength({ max: 36 }).withMessage('complaint id is invalid.'),
     handleValidation,
 ];
 
@@ -81,8 +141,8 @@ const assignmentIdParamValidators = [
 
 const feedbackValidators = [
     body('complaint_id').trim().notEmpty().withMessage('complaint_id is required.'),
-    body('is_satisfied').isBoolean().withMessage('is_satisfied must be true or false.').toBoolean(),
-    body('rating').optional({ nullable: true }).isInt({ min: 1, max: 5 }).withMessage('rating must be between 1 and 5.'),
+    body('is_satisfied').isBoolean({ strict: true }).withMessage('is_satisfied must be true or false.'),
+    body('rating').optional({ nullable: true }).isInt({ min: 1, max: 5 }).withMessage('rating must be between 1 and 5.').toInt(),
     body('comments').optional({ nullable: true }).isString().isLength({ max: 1000 }),
     handleValidation,
 ];
@@ -94,6 +154,60 @@ const blockIdParamValidators = [
 
 const listStaffValidators = [
     query('specialization').optional().isIn(SPECIALIZATIONS).withMessage(`specialization must be one of: ${SPECIALIZATIONS.join(', ')}.`),
+    handleValidation,
+];
+
+// ---- /api/me -----------------------------------------------------------------
+
+const changePasswordValidators = [
+    body('current_password').isString().notEmpty().withMessage('current_password is required.'),
+    newPassword('new_password'),
+    handleValidation,
+];
+
+const availabilityValidators = [
+    body('is_available').isBoolean({ strict: true }).withMessage('is_available must be true or false.'),
+    handleValidation,
+];
+
+// ---- /api/admin --------------------------------------------------------------
+
+const userIdParam = param('user_id').trim().notEmpty().isLength({ max: 36 }).withMessage('user id is invalid.');
+
+const adminCreateUserValidators = [
+    ...userProfileRules, // same rules as registration...
+    body('role').exists().withMessage('role is required.'), // ...but role is mandatory here
+    handleValidation,
+];
+
+const adminListUsersValidators = [
+    query('role').optional().isIn(ROLES).withMessage(`role must be one of: ${ROLES.join(', ')}.`),
+    handleValidation,
+];
+
+const adminUpdateUserValidators = [
+    userIdParam,
+    body('is_active').optional().isBoolean({ strict: true }).withMessage('is_active must be true or false.'),
+    body('is_available').optional().isBoolean({ strict: true }).withMessage('is_available must be true or false.'),
+    body().custom((value) => value && (value.is_active !== undefined || value.is_available !== undefined))
+        .withMessage('Provide is_active and/or is_available.'),
+    handleValidation,
+];
+
+const adminResetPasswordValidators = [userIdParam, newPassword('new_password'), handleValidation];
+
+const adminAllotValidators = [
+    body('student_id').trim().notEmpty().withMessage('student_id is required.'),
+    body('room_id').trim().notEmpty().withMessage('room_id is required.'),
+    body('academic_year')
+        .trim()
+        .matches(/^\d{4}-\d{4}$/)
+        .withMessage('academic_year must look like 2026-2027.'),
+    handleValidation,
+];
+
+const adminEndAllotmentValidators = [
+    param('student_id').trim().notEmpty().withMessage('student id is required.'),
     handleValidation,
 ];
 
@@ -112,4 +226,12 @@ module.exports = {
     feedbackValidators,
     blockIdParamValidators,
     listStaffValidators,
+    changePasswordValidators,
+    availabilityValidators,
+    adminCreateUserValidators,
+    adminListUsersValidators,
+    adminUpdateUserValidators,
+    adminResetPasswordValidators,
+    adminAllotValidators,
+    adminEndAllotmentValidators,
 };

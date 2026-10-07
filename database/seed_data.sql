@@ -159,7 +159,7 @@ ON CONFLICT DO NOTHING;
 -- 10. Insert Feedback for Completed Complaint
 INSERT INTO complaint_feedback (complaint_id, student_id, is_satisfactorily_resolved, rating, student_comments, verified_at) VALUES
 ('cmp-825-0001-uuid-000000000004', 'u011-stud-0825-uuid-000000000011', TRUE, 5, 'AC technician cleaned the drainage pipe thoroughly. No more leaking.', CURRENT_TIMESTAMP - INTERVAL '1 day')
-ON CONFLICT (complaint_id) DO NOTHING;
+ON CONFLICT (complaint_id) WHERE is_satisfactorily_resolved = TRUE DO NOTHING;
 
 -- 11. Insert Audit History Logs
 INSERT INTO complaint_logs (complaint_id, changed_by_user_id, previous_status, new_status, action_note, timestamp) VALUES
@@ -168,3 +168,10 @@ INSERT INTO complaint_logs (complaint_id, changed_by_user_id, previous_status, n
 ('cmp-843-0001-uuid-000000000001', 'u003-staf-clean-uuid-000000000003', 'ASSIGNED', 'IN_PROGRESS', 'Staff arrived at Room 843 and commenced cleaning', CURRENT_TIMESTAMP - INTERVAL '30 mins'),
 ('cmp-825-0001-uuid-000000000004', 'u011-stud-0825-uuid-000000000011', 'PENDING_VERIFICATION', 'COMPLETED', 'Student verified work and gave 5 stars', CURRENT_TIMESTAMP - INTERVAL '1 day')
 ON CONFLICT DO NOTHING;
+
+-- 12. Re-sync serial sequences.
+-- Categories and subcategories above are inserted with explicit ids, which
+-- does not advance their sequences. Without this the next category or
+-- subcategory created through the column default collides with id 1.
+SELECT setval(pg_get_serial_sequence('complaint_categories', 'category_id'), (SELECT MAX(category_id) FROM complaint_categories));
+SELECT setval(pg_get_serial_sequence('complaint_subcategories', 'subcategory_id'), (SELECT MAX(subcategory_id) FROM complaint_subcategories));

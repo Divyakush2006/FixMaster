@@ -1,25 +1,43 @@
 const rateLimit = require('express-rate-limit');
 
-// Applied to /api/auth/* only. Login/register are the only unauthenticated,
-// credential-guessing-prone endpoints in this API - everything else already
-// requires a valid JWT, which is a much stronger throttle than IP-based
-// limiting alone.
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 20,
-    standardHeaders: true,
+const int = (value, fallback) => {
+    const n = parseInt(value, 10);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+
+// NOTE: counters live in this process's memory. With more than one API
+// instance behind a load balancer each instance counts separately; use a
+// shared store (e.g. rate-limit-redis) if the API is scaled horizontally.
+// Behind a reverse proxy, TRUST_PROXY must be set (see app.js) or every
+// client is counted as the proxy's single IP and they all share one limit.
+
+// POST /api/auth/login: credential guessing. Only FAILED attempts count, so a
+// user who logs in successfully a few times is never locked out by normal use.
+const loginLimiter = rateLimit({
+    windowMs: int(process.env.RATE_LIMIT_AUTH_WINDOW_MS, 15 * 60 * 1000),
+    limit: int(process.env.RATE_LIMIT_AUTH_MAX, 20),
+    skipSuccessfulRequests: true,
+    standardHeaders: 'draft-7',
     legacyHeaders: false,
-    message: { error: 'Too many auth attempts from this IP. Please try again later.' },
+    message: { error: 'Too many failed attempts from this IP. Please try again later.' },
 });
 
-// A looser, general-purpose ceiling for the rest of the API, mainly to blunt
-// accidental client-side retry loops and trivial scripted abuse.
+// POST /api/auth/register: every attempt counts, successful or not - here the
+// abuse is automated account creation, which succeeds.
+const registerLimiter = rateLimit({
+    windowMs: int(process.env.RATE_LIMIT_REGISTER_WINDOW_MS, 60 * 60 * 1000),
+    limit: int(process.env.RATE_LIMIT_REGISTER_MAX, 10),
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Too many registrations from this IP. Please try again later.' },
+});
+
 const generalLimiter = rateLimit({
-    windowMs: 60 * 1000, // 1 minute
-    max: 120,
-    standardHeaders: true,
+    windowMs: int(process.env.RATE_LIMIT_WINDOW_MS, 60 * 1000),
+    limit: int(process.env.RATE_LIMIT_MAX, 300),
+    standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: { error: 'Too many requests. Please slow down.' },
 });
 
-module.exports = { authLimiter, generalLimiter };
+module.exports = { loginLimiter, registerLimiter, generalLimiter };
