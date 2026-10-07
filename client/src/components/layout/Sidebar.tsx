@@ -13,6 +13,7 @@ import {
   Users,
   BedDouble,
   UserCircle2,
+  Building,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -65,7 +66,7 @@ export const Sidebar: React.FC = () => {
           <div className="text-[10px] font-bold text-slate-500 px-3 tracking-wider uppercase mb-1">
             Management Portal
           </div>
-          <NavLink to="/supervisor" end className={linkClass}>
+          <NavLink to={user.role === 'ADMIN' ? '/admin/dashboard' : '/supervisor'} end className={linkClass}>
             <LayoutDashboard className="w-4 h-4 text-cyan-400" />
             <span>KPI Dashboard</span>
           </NavLink>
@@ -92,6 +93,10 @@ export const Sidebar: React.FC = () => {
           <NavLink to="/admin/users" className={linkClass}>
             <Users className="w-4 h-4 text-purple-400" />
             <span>User Accounts</span>
+          </NavLink>
+          <NavLink to="/admin/infrastructure" className={linkClass}>
+            <Building className="w-4 h-4 text-amber-400" />
+            <span>Blocks & Rooms</span>
           </NavLink>
           <NavLink to="/admin/allotments" className={linkClass}>
             <BedDouble className="w-4 h-4 text-blue-400" />

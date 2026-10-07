@@ -11,18 +11,26 @@ const int = (value, fallback) => {
 // Behind a reverse proxy, TRUST_PROXY must be set (see app.js) or every
 // client is counted as the proxy's single IP and they all share one limit.
 
-// POST /api/auth/login: credential guessing. Only FAILED attempts count, so a
-// user who logs in successfully a few times is never locked out by normal use.
-const loginLimiter = rateLimit({
-    windowMs: int(process.env.RATE_LIMIT_AUTH_WINDOW_MS, 15 * 60 * 1000),
-    limit: int(process.env.RATE_LIMIT_AUTH_MAX, 20),
-    skipSuccessfulRequests: true,
-    standardHeaders: 'draft-7',
-    legacyHeaders: false,
-    message: { error: 'Too many failed attempts from this IP. Please try again later.' },
-});
+// Login endpoints: credential guessing. Only FAILED attempts count, so a user
+// who signs in successfully a few times is never locked out by normal use.
+// Each portal gets its own counter, and the admin portal a stricter limit.
+const loginLimiterFor = (max) =>
+    rateLimit({
+        windowMs: int(process.env.RATE_LIMIT_AUTH_WINDOW_MS, 15 * 60 * 1000),
+        limit: max,
+        skipSuccessfulRequests: true,
+        standardHeaders: 'draft-7',
+        legacyHeaders: false,
+        message: { error: 'Too many failed attempts from this IP. Please try again later.' },
+    });
 
-// POST /api/auth/register: every attempt counts, successful or not - here the
+const loginLimiters = {
+    student: loginLimiterFor(int(process.env.RATE_LIMIT_AUTH_MAX, 20)),
+    staff: loginLimiterFor(int(process.env.RATE_LIMIT_AUTH_MAX, 20)),
+    admin: loginLimiterFor(int(process.env.RATE_LIMIT_ADMIN_AUTH_MAX, 10)),
+};
+
+// POST /api/auth/student/register: every attempt counts, successful or not - here the
 // abuse is automated account creation, which succeeds.
 const registerLimiter = rateLimit({
     windowMs: int(process.env.RATE_LIMIT_REGISTER_WINDOW_MS, 60 * 60 * 1000),
@@ -40,4 +48,4 @@ const generalLimiter = rateLimit({
     message: { error: 'Too many requests. Please slow down.' },
 });
 
-module.exports = { loginLimiter, registerLimiter, generalLimiter };
+module.exports = { loginLimiters, registerLimiter, generalLimiter };

@@ -20,15 +20,95 @@ describe('authentication & account security', () => {
         ...extra,
     });
 
-    it('seed accounts log in with the documented demo password', async () => {
-        for (const id of Object.values(SEED).filter((v) => typeof v === 'string')) {
-            const r = await t.api('/auth/login', { method: 'POST', body: { reg_or_emp_id: id, password: 'Password@123' } });
-            assert.equal(r.status, 200, `${id} should log in`);
+    it('seed accounts log in through their own portal with the documented demo password', async () => {
+        const portalOf = {
+            [SEED.student]: 'student',
+            [SEED.student2]: 'student',
+            [SEED.electrician]: 'staff',
+            [SEED.cleaner1]: 'staff',
+            [SEED.cleaner2]: 'staff',
+            [SEED.plumber]: 'staff',
+            [SEED.supervisor]: 'staff',
+            [SEED.admin]: 'admin',
+        };
+        for (const [id, portal] of Object.entries(portalOf)) {
+            const r = await t.api(`/auth/${portal}/login`, { method: 'POST', body: { reg_or_emp_id: id, password: 'Password@123' } });
+            assert.equal(r.status, 200, `${id} should log in via ${portal}`);
+            assert.equal(r.data.portal, portal);
         }
     });
 
+    describe('three separate portals', () => {
+        const attempt = (portal, id, password = 'Password@123') =>
+            t.api(`/auth/${portal}/login`, { method: 'POST', body: { reg_or_emp_id: id, password } });
+
+        it('a student cannot sign in through the staff tab, and is told which tab to use', async () => {
+            const r = await attempt('staff', SEED.student);
+            assert.equal(r.status, 403);
+            assert.match(r.data.error, /Student tab/);
+        });
+
+        it('staff and supervisors cannot sign in through the student tab', async () => {
+            for (const id of [SEED.electrician, SEED.supervisor]) {
+                const r = await attempt('student', id);
+                assert.equal(r.status, 403);
+                assert.match(r.data.error, /Staff tab/);
+            }
+        });
+
+        it('the wrong-tab hint is only given after the password is verified', async () => {
+            const r = await attempt('staff', SEED.student, 'wrong-password');
+            assert.equal(r.status, 401);
+            assert.equal(r.data.error, 'Invalid credentials.');
+        });
+
+        it('admin accounts are invisible to the student and staff portals', async () => {
+            for (const portal of ['student', 'staff']) {
+                const r = await attempt(portal, SEED.admin);
+                assert.equal(r.status, 401);
+                assert.equal(r.data.error, 'Invalid credentials.');
+            }
+        });
+
+        it('only admin accounts can sign in at the admin portal', async () => {
+            for (const id of [SEED.student, SEED.electrician, SEED.supervisor]) {
+                const r = await attempt('admin', id);
+                assert.equal(r.status, 401);
+                assert.equal(r.data.error, 'Invalid credentials.');
+            }
+            assert.equal((await attempt('admin', SEED.admin)).status, 200);
+        });
+
+        it('a token is bound to its portal: re-signing a student token for another portal fails', async () => {
+            const token = await t.login(SEED.student);
+            const payload = jwt.decode(token);
+            for (const portal of ['staff', 'admin']) {
+                const forged = jwt.sign({ userId: payload.userId, role: 'STUDENT', portal }, process.env.JWT_SECRET, {
+                    audience: `fixmaster:${portal}`,
+                });
+                assert.equal((await t.api('/me', { token: forged })).status, 401, `student token claiming ${portal}`);
+            }
+            const noAudience = jwt.sign({ userId: payload.userId, role: 'STUDENT', portal: 'student' }, process.env.JWT_SECRET);
+            assert.equal((await t.api('/me', { token: noAudience })).status, 401, 'token without an audience');
+        });
+
+        it('only students can self-register, and the old shared endpoints are gone', async () => {
+            const body = { reg_or_emp_id: SEED.student, password: 'Password@123' };
+            assert.equal((await t.api('/auth/login', { method: 'POST', body })).status, 404);
+            assert.equal((await t.api('/auth/register', { method: 'POST', body: {} })).status, 404);
+            assert.equal((await t.api('/auth/staff/register', { method: 'POST', body: {} })).status, 404);
+            assert.equal((await t.api('/auth/admin/register', { method: 'POST', body: {} })).status, 404);
+        });
+
+        it('admin sessions are shorter-lived than student and staff sessions', async () => {
+            const adminTok = jwt.decode(await t.login(SEED.admin));
+            const studentTok = jwt.decode(await t.login(SEED.student));
+            assert.ok(adminTok.exp - adminTok.iat < studentTok.exp - studentTok.iat);
+        });
+    });
+
     it('public registration always creates a STUDENT, whatever role is requested', async () => {
-        const r = await t.api('/auth/register', {
+        const r = await t.api('/auth/student/register', {
             method: 'POST',
             body: newStudent(1, { role: 'ADMIN', specialization: 'PLUMBER' }),
         });
@@ -39,16 +119,16 @@ describe('authentication & account security', () => {
     });
 
     it('login IDs are case-insensitive and stored upper-case', async () => {
-        await t.api('/auth/register', { method: 'POST', body: newStudent(2, { reg_or_emp_id: 'tstu2' }) });
-        const r = await t.api('/auth/login', { method: 'POST', body: { reg_or_emp_id: 'TsTu2', password: 'Test@12345' } });
+        await t.api('/auth/student/register', { method: 'POST', body: newStudent(2, { reg_or_emp_id: 'tstu2' }) });
+        const r = await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: 'TsTu2', password: 'Test@12345' } });
         assert.equal(r.status, 200);
         assert.equal(r.data.user.reg_or_emp_id, 'TSTU2');
     });
 
     it('rejects duplicate IDs and emails regardless of case', async () => {
-        const id = await t.api('/auth/register', { method: 'POST', body: newStudent(3, { reg_or_emp_id: '21bce0843' }) });
+        const id = await t.api('/auth/student/register', { method: 'POST', body: newStudent(3, { reg_or_emp_id: '21bce0843' }) });
         assert.equal(id.status, 409);
-        const mail = await t.api('/auth/register', {
+        const mail = await t.api('/auth/student/register', {
             method: 'POST',
             body: newStudent(4, { email: 'VIHAAN.SHARMA2021@VITSTUDENT.AC.IN' }),
         });
@@ -56,27 +136,27 @@ describe('authentication & account security', () => {
     });
 
     it('stores the email exactly as typed (lower-cased), without rewriting it', async () => {
-        const r = await t.api('/auth/register', { method: 'POST', body: newStudent(5, { email: 'First.Last+hostel@Gmail.com' }) });
+        const r = await t.api('/auth/student/register', { method: 'POST', body: newStudent(5, { email: 'First.Last+hostel@Gmail.com' }) });
         assert.equal(r.status, 201);
         assert.equal(r.data.user.email, 'first.last+hostel@gmail.com');
     });
 
     it('rejects passwords longer than 72 bytes instead of silently truncating them', async () => {
-        const r = await t.api('/auth/register', { method: 'POST', body: newStudent(6, { password: 'A'.repeat(73) }) });
+        const r = await t.api('/auth/student/register', { method: 'POST', body: newStudent(6, { password: 'A'.repeat(73) }) });
         assert.equal(r.status, 400);
         assert.match(r.data.error, /72 bytes/);
     });
 
     it('gives the same answer for an unknown ID and a wrong password', async () => {
-        const unknown = await t.api('/auth/login', { method: 'POST', body: { reg_or_emp_id: 'NOBODY_HERE', password: 'whatever1' } });
-        const wrong = await t.api('/auth/login', { method: 'POST', body: { reg_or_emp_id: SEED.student, password: 'wrong-pass' } });
+        const unknown = await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: 'NOBODY_HERE', password: 'whatever1' } });
+        const wrong = await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: SEED.student, password: 'wrong-pass' } });
         assert.equal(unknown.status, 401);
         assert.equal(wrong.status, 401);
         assert.deepEqual(unknown.data, wrong.data);
     });
 
     it('returns 400 (not 500) for a malformed JSON body', async () => {
-        const r = await t.api('/auth/login', { method: 'POST', raw: '{"reg_or_emp_id": "x", broken' });
+        const r = await t.api('/auth/student/login', { method: 'POST', raw: '{"reg_or_emp_id": "x", broken' });
         assert.equal(r.status, 400);
         assert.equal(r.data.error, 'Request body is not valid JSON.');
     });
@@ -107,12 +187,13 @@ describe('authentication & account security', () => {
         const token = await t.login(SEED.student);
         const payload = jwt.decode(token);
         // A token claiming ADMIN for a student's id, signed with the real secret.
-        const claimsAdmin = jwt.sign({ ...payload, role: 'ADMIN' }, process.env.JWT_SECRET);
+        const { iat, exp, aud, ...claims } = payload;
+        const claimsAdmin = jwt.sign({ ...claims, role: 'ADMIN' }, process.env.JWT_SECRET, { audience: aud });
         assert.equal((await t.api('/admin/users', { token: claimsAdmin })).status, 403);
     });
 
     it('password change revokes every other session and returns a working new token', async () => {
-        await t.api('/auth/register', { method: 'POST', body: newStudent(7) });
+        await t.api('/auth/student/register', { method: 'POST', body: newStudent(7) });
         const oldToken = await t.login('TSTU7', 'Test@12345');
         // tokens carry one-second resolution; make sure the change lands in a later second
         await new Promise((r) => setTimeout(r, 1100));
@@ -132,19 +213,19 @@ describe('authentication & account security', () => {
         assert.equal(r.status, 200);
         assert.equal((await t.api('/me', { token: oldToken })).status, 401, 'old token must be revoked');
         assert.equal((await t.api('/me', { token: r.data.token })).status, 200, 'returned token must work');
-        assert.equal((await t.api('/auth/login', { method: 'POST', body: { reg_or_emp_id: 'TSTU7', password: 'Changed@123' } })).status, 200);
+        assert.equal((await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: 'TSTU7', password: 'Changed@123' } })).status, 200);
     });
 
     it('a deactivated account cannot log in and its existing tokens stop working', async () => {
         const admin = await t.login(SEED.admin);
-        await t.api('/auth/register', { method: 'POST', body: newStudent(8) });
+        await t.api('/auth/student/register', { method: 'POST', body: newStudent(8) });
         const token = await t.login('TSTU8', 'Test@12345');
         const { rows } = await t.sql("SELECT user_id FROM users WHERE reg_or_emp_id = 'TSTU8'");
 
         const r = await t.api(`/admin/users/${rows[0].user_id}`, { method: 'PATCH', token: admin, body: { is_active: false } });
         assert.equal(r.status, 200);
         assert.equal((await t.api('/me', { token })).status, 401);
-        const relogin = await t.api('/auth/login', { method: 'POST', body: { reg_or_emp_id: 'TSTU8', password: 'Test@12345' } });
+        const relogin = await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: 'TSTU8', password: 'Test@12345' } });
         assert.equal(relogin.status, 403);
     });
 

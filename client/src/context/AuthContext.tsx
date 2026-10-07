@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { User, RegisterPayload } from '../types';
+import { User, RegisterPayload, Portal } from '../types';
 import { authApi } from '../api/endpoints';
 import { queryClient } from '../api/queryClient';
 import {
@@ -16,7 +16,8 @@ interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (reg_or_emp_id: string, password: string) => Promise<User>;
+  /** Sign in through one of the three portals; each only accepts its own accounts. */
+  login: (portal: Portal, reg_or_emp_id: string, password: string) => Promise<User>;
   register: (payload: RegisterPayload) => Promise<User>;
   logout: () => void;
   /** After a password change the server issues a new token (old ones are revoked). */
@@ -52,15 +53,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       case 'STAFF':
         return '/staff';
       case 'SUPERVISOR':
-      case 'ADMIN':
         return '/supervisor';
+      case 'ADMIN':
+        return '/admin/dashboard';
       default:
         return '/login';
     }
   };
 
-  const login = async (reg_or_emp_id: string, password: string): Promise<User> => {
-    const res = await authApi.login({ reg_or_emp_id, password });
+  const login = async (portal: Portal, reg_or_emp_id: string, password: string): Promise<User> => {
+    const res = await authApi.login(portal, { reg_or_emp_id, password });
     // Nothing cached by a previous user on this browser may survive.
     queryClient.clear();
     saveSession(res.token, res.user);
@@ -70,7 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const register = async (payload: RegisterPayload): Promise<User> => {
-    const res = await authApi.register(payload);
+    const res = await authApi.registerStudent(payload);
     return res.user;
   };
 

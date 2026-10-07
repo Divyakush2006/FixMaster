@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
 const { TEST_DB_URL, resetDatabase } = require('./helpers');
-const { migrate } = require('../scripts/migrate');
+const { migrate, listMigrations } = require('../scripts/migrate');
 
 const withDb = async (url, fn) => {
     const c = new Client({ connectionString: url });
@@ -54,7 +54,7 @@ describe('database migrations', () => {
             await withDb(legacyUrl, (c) => c.query(legacySql));
 
             const applied = await migrate({ connectionString: legacyUrl, log: () => {} });
-            assert.equal(applied.length, 3);
+            assert.equal(applied.length, listMigrations().length);
 
             await withDb(legacyUrl, async (c) => {
                 const counts = await c.query('SELECT (SELECT COUNT(*) FROM users)::int AS users, (SELECT COUNT(*) FROM complaints)::int AS complaints');
@@ -70,6 +70,14 @@ describe('database migrations', () => {
 
                 const col = await c.query("SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'is_active'");
                 assert.equal(col.rows.length, 1);
+
+                // Blocks A-T added alongside the original three; original rows untouched.
+                const blocks = await c.query('SELECT COUNT(*)::int AS n FROM hostel_blocks');
+                assert.equal(blocks.rows[0].n, 22, 'A-T plus PRP and MH');
+                const l = await c.query("SELECT block_name, total_floors FROM hostel_blocks WHERE block_id = 'L_BLOCK'");
+                assert.deepEqual(l.rows[0], { block_name: 'L-Block (Ladies/Mens Hostel)', total_floors: 10 });
+                const floors = await c.query("SELECT COUNT(*)::int AS n FROM block_floors WHERE block_id = 'L_BLOCK'");
+                assert.equal(floors.rows[0].n, 11, 'Ground + 1..10 backfilled for an existing block');
 
                 // The original location loophole is closed on the upgraded database too.
                 await assert.rejects(

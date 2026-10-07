@@ -68,7 +68,7 @@ export const RegisterScreen: React.FC = () => {
       showToast('Account registered successfully! Logging you in...', 'success');
 
       // Auto login after registration
-      const user = await login(regOrEmpId.trim(), password);
+      const user = await login('student', regOrEmpId.trim(), password);
       navigate(getHomeRouteForRole(user.role), { replace: true });
     } catch (err: any) {
       const msg = err.message || 'Registration failed.';

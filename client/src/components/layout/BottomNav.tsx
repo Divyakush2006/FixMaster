@@ -49,7 +49,7 @@ export const BottomNav: React.FC = () => {
 
       {(user.role === 'SUPERVISOR' || user.role === 'ADMIN') && (
         <>
-          <NavLink to="/supervisor" end className={itemClass}>
+          <NavLink to={user.role === 'ADMIN' ? '/admin/dashboard' : '/supervisor'} end className={itemClass}>
             <LayoutDashboard className="w-5 h-5 mb-0.5" />
             <span>KPIs</span>
           </NavLink>

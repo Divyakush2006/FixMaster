@@ -65,9 +65,45 @@ export interface AdminAllotment {
   assigned_date: string;
 }
 
+/** The three separate sign-in portals. */
+export type Portal = 'student' | 'staff' | 'admin';
+
 export interface AuthResponse {
   token: string;
+  portal: Portal;
   user: User;
+}
+
+export type RoomType = 'AC' | 'NON_AC' | 'DELUXE_AC';
+
+export interface AdminBlock {
+  block_id: string;
+  block_code: string;
+  block_name: string;
+  total_floors: number;
+  floor_count: number;
+  room_count: number;
+  active_room_count: number;
+  total_beds: number;
+  occupied_beds: number;
+}
+
+export interface BlockFloor {
+  floor_number: number;
+  floor_code: string;
+  room_count: number;
+  common_area_count: number;
+}
+
+export interface AdminRoom {
+  room_id: string;
+  block_id: string;
+  room_number: string;
+  floor_number: number;
+  room_type: RoomType;
+  bed_capacity: number;
+  is_active: boolean;
+  occupied_beds: number;
 }
 
 export interface RegisterPayload {

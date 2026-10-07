@@ -436,6 +436,9 @@ npm run dev
 cd client && npm ci && npm run dev
 ```
 
+Sign in at http://localhost:3000/login (Student and Staff tabs) or, for
+administrators, at http://localhost:3000/admin.
+
 `npm run db:reset -- --yes` wipes and rebuilds a development database. Never run
 `database/init_all.sql` against a database you want to keep: it drops every table.
 

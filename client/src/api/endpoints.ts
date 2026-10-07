@@ -20,17 +20,24 @@ import {
   AdminAllotment,
   CreateUserPayload,
   Role,
+  Portal,
+  AdminBlock,
+  BlockFloor,
+  AdminRoom,
+  RoomType,
 } from '../types';
 
+// Three separate sign-in portals; each endpoint only accepts its own accounts.
 export const authApi = {
-  login: (data: { reg_or_emp_id: string; password: string }) =>
-    apiFetch<AuthResponse>('/auth/login', {
+  login: (portal: Portal, data: { reg_or_emp_id: string; password: string }) =>
+    apiFetch<AuthResponse>(`/auth/${portal}/login`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
-  register: (data: RegisterPayload) =>
-    apiFetch<{ message: string; user: User }>('/auth/register', {
+  // Public self-registration exists for students only.
+  registerStudent: (data: RegisterPayload) =>
+    apiFetch<{ message: string; user: User }>('/auth/student/register', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -169,4 +176,42 @@ export const adminApi = {
 
   endAllotment: (studentId: string) =>
     apiFetch<{ message: string }>(`/admin/allotments/${studentId}`, { method: 'DELETE' }),
+
+  // ---- Infrastructure: blocks -> floors -> rooms ----
+  listBlocks: () => apiFetch<AdminBlock[]>('/admin/blocks', { method: 'GET' }),
+
+  createBlock: (block_code: string, block_name: string, top_floor: number) =>
+    apiFetch<AdminBlock>('/admin/blocks', {
+      method: 'POST',
+      body: JSON.stringify({ block_code, block_name, top_floor }),
+    }),
+
+  renameBlock: (blockId: string, block_name: string) =>
+    apiFetch<AdminBlock>(`/admin/blocks/${blockId}`, { method: 'PATCH', body: JSON.stringify({ block_name }) }),
+
+  listFloors: (blockId: string) => apiFetch<BlockFloor[]>(`/admin/blocks/${blockId}/floors`, { method: 'GET' }),
+
+  // Without a floor number the next floor above the current top floor is added.
+  addFloor: (blockId: string, floor_number?: number) =>
+    apiFetch<{ floor_number: number; floor_code: string }>(`/admin/blocks/${blockId}/floors`, {
+      method: 'POST',
+      body: JSON.stringify(floor_number === undefined ? {} : { floor_number }),
+    }),
+
+  removeFloor: (blockId: string, floorNumber: number) =>
+    apiFetch<{ message: string }>(`/admin/blocks/${blockId}/floors/${floorNumber}`, { method: 'DELETE' }),
+
+  listRooms: (blockId: string) => apiFetch<AdminRoom[]>(`/admin/blocks/${blockId}/rooms`, { method: 'GET' }),
+
+  createRooms: (
+    blockId: string,
+    data: { floor_number: number; from: number; to: number; room_type: RoomType; bed_capacity: number }
+  ) =>
+    apiFetch<{ message: string; created: string[]; skipped: string[] }>(`/admin/blocks/${blockId}/rooms`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateRoom: (roomId: string, changes: { is_active?: boolean; room_type?: RoomType; bed_capacity?: number }) =>
+    apiFetch<AdminRoom>(`/admin/rooms/${roomId}`, { method: 'PATCH', body: JSON.stringify(changes) }),
 };
