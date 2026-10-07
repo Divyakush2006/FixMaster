@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   AlertTriangle,
   Flame,
+  Users,
 } from 'lucide-react';
 
 export const BottomNav: React.FC = () => {
@@ -64,6 +65,12 @@ export const BottomNav: React.FC = () => {
             <Flame className="w-5 h-5 mb-0.5" />
             <span>Hotspots</span>
           </NavLink>
+          {user.role === 'ADMIN' && (
+            <NavLink to="/admin/users" className={itemClass}>
+              <Users className="w-5 h-5 mb-0.5" />
+              <span>Admin</span>
+            </NavLink>
+          )}
         </>
       )}
     </nav>

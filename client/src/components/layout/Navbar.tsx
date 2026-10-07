@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { RoleBadge } from '../common/Badges';
 import { LogOut, Wrench } from 'lucide-react';
@@ -29,12 +30,13 @@ export const Navbar: React.FC = () => {
 
       {user && (
         <div className="flex items-center gap-3">
-          <div className="text-right hidden xs:block">
-            <div className="text-xs font-bold text-slate-100">{user.full_name}</div>
-            <div className="text-[10px] text-slate-400 font-mono">{user.reg_or_emp_id}</div>
-          </div>
-
-          <RoleBadge role={user.role} />
+          <Link to="/account" title="My account" className="flex items-center gap-3 rounded-xl px-1.5 py-1 hover:bg-slate-900">
+            <div className="text-right hidden sm:block">
+              <div className="text-xs font-bold text-slate-100">{user.full_name}</div>
+              <div className="text-[10px] text-slate-400 font-mono">{user.reg_or_emp_id}</div>
+            </div>
+            <RoleBadge role={user.role} />
+          </Link>
 
           <button
             onClick={logout}

@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { metaApi, complaintsApi, meApi } from '../../api/endpoints';
-import { getSavedAllotment, saveAllotment } from '../../api/gaps';
+import { metaApi, complaintsApi } from '../../api/endpoints';
+import { useMyAllotment } from '../../hooks/useMyAllotment';
 import { useToast } from '../../components/ui/Toast';
 import { StatusBadge, PriorityBadge } from '../../components/common/Badges';
-import { AllotmentModal } from './AllotmentModal';
 import { VerificationModal } from './VerificationModal';
 import { Complaint, Subcategory } from '../../types';
 import { formatRelativeTime } from '../../utils/formatters';
@@ -12,7 +11,6 @@ import {
   Sparkles,
   Zap,
   Building2,
-  Edit2,
   AlertCircle,
   ArrowRight,
   ShieldCheck,
@@ -21,48 +19,25 @@ import {
 import { Link } from 'react-router-dom';
 
 export const StudentHome: React.FC = () => {
-  const [allotment, setAllotment] = useState(() => getSavedAllotment());
-  const [isAllotmentModalOpen, setIsAllotmentModalOpen] = useState(false);
-  const [pendingQuickSubcategory, setPendingQuickSubcategory] = useState<Subcategory | null>(null);
-
   // Verification modal state
   const [verifyingComplaint, setVerifyingComplaint] = useState<Complaint | null>(null);
 
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
-  // The student's real allotment, straight from the database. When present
-  // it's cached to localStorage so the Quick Action tiles and NewComplaintForm
-  // (which read the cache synchronously, not via this query) pick it up too,
-  // and the one-time AllotmentModal prompt is skipped entirely. A 404 (no
-  // current allotment on record) is expected and left unhandled here - the
-  // localStorage-backed manual flow below remains the fallback.
-  const { data: realAllotment } = useQuery({
-    queryKey: ['my-allotment'],
-    queryFn: meApi.getMyAllotment,
-    retry: false,
-    staleTime: Infinity,
-  });
-
-  useEffect(() => {
-    if (realAllotment) {
-      saveAllotment(realAllotment.block_id, realAllotment.room_id);
-      setAllotment({ block_id: realAllotment.block_id, room_id: realAllotment.room_id });
-    }
-  }, [realAllotment]);
+  // The student's real room, from the server. Quick actions file against it;
+  // without an allotment there is nothing to file against (and the API would
+  // reject any room the student picked themselves).
+  const { allotment, isLoading: isLoadingAllotment } = useMyAllotment();
 
   // Fetch categories with subcategories
   const { data: categories = [], isLoading: isLoadingCategories } = useQuery({
     queryKey: ['meta-categories'],
     queryFn: async () => {
       const data = await metaApi.getCategories();
-      // Sort client-side by category_id & filter out null subcategories
-      return data
-        .sort((a, b) => a.category_id - b.category_id)
-        .map((cat) => ({
-          ...cat,
-          subcategories: (cat.subcategories || []).filter((sub): sub is Subcategory => sub !== null),
-        }));
+      // The server orders categories and never returns null subcategories;
+      // sorting here too keeps the tile order stable regardless.
+      return [...data].sort((a, b) => a.category_id - b.category_id);
     },
   });
 
@@ -80,42 +55,25 @@ export const StudentHome: React.FC = () => {
       // Optimistically update cache
       queryClient.setQueryData(['complaints'], (old: Complaint[] = []) => [res.complaint, ...old]);
       queryClient.invalidateQueries({ queryKey: ['complaints'] });
-      setPendingQuickSubcategory(null);
     },
     onError: (err: any) => {
       showToast(err.message || 'Failed to dispatch quick action', 'error');
-      setPendingQuickSubcategory(null);
     },
   });
 
   const handleQuickActionClick = (sub: Subcategory) => {
-    const currentAllotment = getSavedAllotment();
-    if (!currentAllotment || !currentAllotment.block_id || !currentAllotment.room_id) {
-      setPendingQuickSubcategory(sub);
-      setIsAllotmentModalOpen(true);
+    if (!allotment) {
+      showToast('No room allotted yet', 'info', 'Ask the hostel office to allot your room, then try again.');
       return;
     }
-
-    fireQuickAction(sub, currentAllotment.block_id, currentAllotment.room_id);
-  };
-
-  const fireQuickAction = (sub: Subcategory, block_id: string, room_id: string) => {
     quickActionMutation.mutate({
       ticket_scope: 'ROOM',
-      block_id,
-      room_id,
+      block_id: allotment.block_id,
+      room_id: allotment.room_id,
       subcategory_id: sub.subcategory_id,
       priority: sub.priority_level,
       description: `1-Click Quick Action: ${sub.issue_name}`,
     });
-  };
-
-  const handleAllotmentSave = (block_id: string, room_id: string) => {
-    setAllotment({ block_id, room_id });
-    showToast('Room allotment saved!', 'success');
-    if (pendingQuickSubcategory) {
-      fireQuickAction(pendingQuickSubcategory, block_id, room_id);
-    }
   };
 
   // Quick action categories filter
@@ -160,26 +118,20 @@ export const StudentHome: React.FC = () => {
                   Your Room Allotment
                 </div>
                 <div className="text-xs font-extrabold text-slate-100 flex items-center gap-1">
-                  {allotment ? (
+                  {isLoadingAllotment ? (
+                    <span className="text-slate-500">Loading...</span>
+                  ) : allotment ? (
                     <>
                       <span>{allotment.block_id}</span>
                       <span className="text-slate-500">•</span>
                       <span>{allotment.room_id}</span>
                     </>
                   ) : (
-                    <span className="text-amber-400 font-semibold">Not Set</span>
+                    <span className="text-amber-400 font-semibold">Not allotted yet</span>
                   )}
                 </div>
               </div>
             </div>
-
-            <button
-              onClick={() => setIsAllotmentModalOpen(true)}
-              className="p-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors"
-              title="Change Room Allotment"
-            >
-              <Edit2 className="w-3.5 h-3.5" />
-            </button>
           </div>
         </div>
       </div>
@@ -228,6 +180,19 @@ export const StudentHome: React.FC = () => {
         </section>
       )}
 
+      {!isLoadingAllotment && !allotment && (
+        <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+          <div>
+            <p className="font-bold text-amber-300">No room has been allotted to your account yet.</p>
+            <p className="mt-0.5 text-amber-200/80">
+              Room tickets and 1-click actions become available once the hostel office allots your room.
+              You can still report problems in common areas from the full complaint form.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* QUICK ACTIONS TILES */}
       <section className="space-y-4">
         <div className="flex items-center justify-between">
@@ -258,8 +223,8 @@ export const StudentHome: React.FC = () => {
                 <button
                   key={sub.subcategory_id}
                   onClick={() => handleQuickActionClick(sub)}
-                  disabled={quickActionMutation.isPending}
-                  className="group relative p-5 rounded-2xl bg-slate-900/90 border border-slate-800 hover:border-cyan-500/50 hover:bg-slate-800/80 transition-all text-left shadow-lg hover:shadow-cyan-500/10 flex flex-col justify-between overflow-hidden"
+                  disabled={quickActionMutation.isPending || !allotment}
+                  className="group relative p-5 rounded-2xl bg-slate-900/90 border border-slate-800 hover:border-cyan-500/50 hover:bg-slate-800/80 transition-all text-left shadow-lg hover:shadow-cyan-500/10 flex flex-col justify-between overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-slate-800"
                 >
                   <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-cyan-500/10 to-transparent rounded-bl-full pointer-events-none group-hover:scale-125 transition-transform" />
 
@@ -362,15 +327,6 @@ export const StudentHome: React.FC = () => {
           </div>
         )}
       </section>
-
-      {/* Room Allotment Modal */}
-      <AllotmentModal
-        isOpen={isAllotmentModalOpen}
-        onClose={() => setIsAllotmentModalOpen(false)}
-        onSave={handleAllotmentSave}
-        initialBlockId={allotment?.block_id}
-        initialRoomId={allotment?.room_id}
-      />
 
       {/* Verification Modal */}
       {verifyingComplaint && (

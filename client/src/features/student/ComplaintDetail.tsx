@@ -2,7 +2,7 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Modal } from '../../components/ui/Modal';
 import { StatusBadge, PriorityBadge } from '../../components/common/Badges';
-import { reconstructTimeline } from '../../api/gaps';
+import { reconstructTimeline } from '../../utils/timeline';
 import { complaintsApi } from '../../api/endpoints';
 import { Complaint, ComplaintStatus, TimelineEvent } from '../../types';
 import { formatDateTime } from '../../utils/formatters';
@@ -162,14 +162,16 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
           </div>
         )}
 
-        {/* Photo Evidence */}
-        {complaint.photo_evidence_url && (
+        {/* Photo Evidence - only http(s) links are ever rendered as links.
+            The API rejects anything else now, but records stored before that
+            validation existed may still hold e.g. a javascript: URL. */}
+        {complaint.photo_evidence_url && /^https?:\/\//i.test(complaint.photo_evidence_url) && (
           <div className="space-y-1">
             <h4 className="text-xs font-bold text-slate-300">Photo Evidence</h4>
             <a
               href={complaint.photo_evidence_url}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 underline font-semibold"
             >
               <span>View attached photo evidence</span>

@@ -17,6 +17,9 @@ import {
   CommonAreaItem,
   Specialization,
   Allotment,
+  AdminAllotment,
+  CreateUserPayload,
+  Role,
 } from '../types';
 
 export const authApi = {
@@ -59,11 +62,9 @@ export const dispatchApi = {
       method: 'PATCH',
     }),
 
-  markTaskCompleted: (assignmentId: string, complaintId: string) =>
-    apiFetch<{ message: string }>(`/dispatch/tasks/${assignmentId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ complaint_id: complaintId }),
-    }),
+  // The complaint is identified server-side from the assignment itself.
+  markTaskCompleted: (assignmentId: string) =>
+    apiFetch<{ message: string }>(`/dispatch/tasks/${assignmentId}`, { method: 'PATCH' }),
 
   assignTechnician: (complaintId: string, staffUserId: string) =>
     apiFetch<{ message: string }>('/dispatch/assign', {
@@ -122,4 +123,50 @@ export const meApi = {
 
   // Throws ApiError with status 404 when the student has no current allotment.
   getMyAllotment: () => apiFetch<Allotment>('/me/allotment', { method: 'GET' }),
+
+  // Returns a fresh token: the change revokes every token issued before it,
+  // including the one used for this request.
+  changePassword: (current_password: string, new_password: string) =>
+    apiFetch<{ message: string; token: string }>('/me/password', {
+      method: 'PATCH',
+      body: JSON.stringify({ current_password, new_password }),
+    }),
+
+  setAvailability: (is_available: boolean) =>
+    apiFetch<{ is_available: boolean }>('/me/availability', {
+      method: 'PATCH',
+      body: JSON.stringify({ is_available }),
+    }),
+};
+
+// ADMIN only.
+export const adminApi = {
+  listUsers: (role?: Role) => apiFetch<User[]>('/admin/users', { method: 'GET', params: { role } }),
+
+  createUser: (data: CreateUserPayload) =>
+    apiFetch<{ message: string; user: User }>('/admin/users', { method: 'POST', body: JSON.stringify(data) }),
+
+  updateUser: (userId: string, changes: { is_active?: boolean; is_available?: boolean }) =>
+    apiFetch<User & { released_tickets: number }>(`/admin/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(changes),
+    }),
+
+  resetPassword: (userId: string, new_password: string) =>
+    apiFetch<{ message: string }>(`/admin/users/${userId}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ new_password }),
+    }),
+
+  listAllotments: (blockId?: string) =>
+    apiFetch<AdminAllotment[]>('/admin/allotments', { method: 'GET', params: { block_id: blockId } }),
+
+  allotRoom: (student_id: string, room_id: string, academic_year: string) =>
+    apiFetch<{ message: string }>('/admin/allotments', {
+      method: 'POST',
+      body: JSON.stringify({ student_id, room_id, academic_year }),
+    }),
+
+  endAllotment: (studentId: string) =>
+    apiFetch<{ message: string }>(`/admin/allotments/${studentId}`, { method: 'DELETE' }),
 };

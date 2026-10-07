@@ -1,6 +1,15 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, AuthResponse, RegisterPayload } from '../types';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { User, RegisterPayload } from '../types';
 import { authApi } from '../api/endpoints';
+import { queryClient } from '../api/queryClient';
+import {
+  clearSession,
+  getStoredUser,
+  getToken,
+  isTokenExpired,
+  replaceToken,
+  saveSession,
+} from '../api/session';
 
 interface AuthContextType {
   user: User | null;
@@ -10,6 +19,8 @@ interface AuthContextType {
   login: (reg_or_emp_id: string, password: string) => Promise<User>;
   register: (payload: RegisterPayload) => Promise<User>;
   logout: () => void;
+  /** After a password change the server issues a new token (old ones are revoked). */
+  updateToken: (token: string) => void;
   getHomeRouteForRole: (role?: string) => string;
 }
 
@@ -21,26 +32,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    try {
-      const storedToken = localStorage.getItem('fixmaster_token');
-      const storedUser = localStorage.getItem('fixmaster_user');
-
-      if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
-      }
-    } catch (err) {
-      console.error('Failed to rehydrate auth state:', err);
-      localStorage.removeItem('fixmaster_token');
-      localStorage.removeItem('fixmaster_user');
-    } finally {
-      setIsLoading(false);
+    const storedToken = getToken();
+    const storedUser = getStoredUser();
+    // An expired token would only fail on the first API call; drop it up front
+    // so the user lands on the login page instead of a screen of errors.
+    if (storedToken && storedUser && !isTokenExpired(storedToken)) {
+      setToken(storedToken);
+      setUser(storedUser);
+    } else {
+      clearSession();
     }
+    setIsLoading(false);
   }, []);
 
   const getHomeRouteForRole = (role?: string): string => {
-    const targetRole = role || user?.role;
-    switch (targetRole) {
+    switch (role || user?.role) {
       case 'STUDENT':
         return '/student';
       case 'STAFF':
@@ -54,9 +60,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const login = async (reg_or_emp_id: string, password: string): Promise<User> => {
-    const res: AuthResponse = await authApi.login({ reg_or_emp_id, password });
-    localStorage.setItem('fixmaster_token', res.token);
-    localStorage.setItem('fixmaster_user', JSON.stringify(res.user));
+    const res = await authApi.login({ reg_or_emp_id, password });
+    // Nothing cached by a previous user on this browser may survive.
+    queryClient.clear();
+    saveSession(res.token, res.user);
     setToken(res.token);
     setUser(res.user);
     return res.user;
@@ -67,12 +74,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return res.user;
   };
 
-  const logout = () => {
-    localStorage.removeItem('fixmaster_token');
-    localStorage.removeItem('fixmaster_user');
+  const logout = useCallback(() => {
+    clearSession();
+    queryClient.clear();
     setToken(null);
     setUser(null);
-  };
+  }, []);
+
+  const updateToken = useCallback((newToken: string) => {
+    replaceToken(newToken);
+    setToken(newToken);
+  }, []);
 
   return (
     <AuthContext.Provider
@@ -84,6 +96,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         register,
         logout,
+        updateToken,
         getHomeRouteForRole,
       }}
     >

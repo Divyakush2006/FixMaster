@@ -10,6 +10,9 @@ import {
   Flame,
   AlertTriangle,
   HelpCircle,
+  Users,
+  BedDouble,
+  UserCircle2,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -80,6 +83,29 @@ export const Sidebar: React.FC = () => {
           </NavLink>
         </nav>
       )}
+
+      {user.role === 'ADMIN' && (
+        <nav className="flex flex-col gap-1.5">
+          <div className="text-[10px] font-bold text-slate-500 px-3 tracking-wider uppercase mb-1">
+            Administration
+          </div>
+          <NavLink to="/admin/users" className={linkClass}>
+            <Users className="w-4 h-4 text-purple-400" />
+            <span>User Accounts</span>
+          </NavLink>
+          <NavLink to="/admin/allotments" className={linkClass}>
+            <BedDouble className="w-4 h-4 text-blue-400" />
+            <span>Room Allotments</span>
+          </NavLink>
+        </nav>
+      )}
+
+      <nav className="flex flex-col gap-1.5">
+        <NavLink to="/account" className={linkClass}>
+          <UserCircle2 className="w-4 h-4 text-slate-300" />
+          <span>My Account</span>
+        </NavLink>
+      </nav>
 
       <div className="mt-auto p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
         <div className="flex items-center gap-2 text-slate-300 font-semibold mb-1">

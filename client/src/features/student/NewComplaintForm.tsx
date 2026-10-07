@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { metaApi, complaintsApi } from '../../api/endpoints';
-import { getSavedAllotment } from '../../api/gaps';
+import { useMyAllotment } from '../../hooks/useMyAllotment';
 import { useToast } from '../../components/ui/Toast';
 import { SpecializationBadge } from '../../components/common/Badges';
-import { TicketScope, Priority, Subcategory, CommonAreaItem } from '../../types';
+import { TicketScope, Priority, CommonAreaItem } from '../../types';
 import {
   PlusCircle,
   Building2,
@@ -19,12 +19,27 @@ import {
 } from 'lucide-react';
 
 export const NewComplaintForm: React.FC = () => {
-  const allotment = getSavedAllotment();
+  // Room tickets can only be raised for the student's own allotted room (the
+  // API enforces this), so the room is not a choice here - it is the
+  // allotment. Common-area tickets can be raised for any block.
+  const { allotment, isLoading: isLoadingAllotment } = useMyAllotment();
 
   const [ticketScope, setTicketScope] = useState<TicketScope>('ROOM');
-  const [blockId, setBlockId] = useState<string>(allotment?.block_id || '');
-  const [roomId, setRoomId] = useState<string>(allotment?.room_id || '');
+  const [blockId, setBlockId] = useState<string>('');
   const [commonAreaId, setCommonAreaId] = useState<string>('');
+
+  // Once the allotment is known: default the block to the student's own, and
+  // fall back to COMMON_AREA when there is no room to raise a ticket for.
+  useEffect(() => {
+    if (isLoadingAllotment) return;
+    if (allotment) {
+      setBlockId((current) => current || allotment.block_id);
+    } else {
+      setTicketScope('COMMON_AREA');
+    }
+  }, [allotment, isLoadingAllotment]);
+
+  const effectiveBlockId = ticketScope === 'ROOM' ? allotment?.block_id || '' : blockId;
 
   const [categoryId, setCategoryId] = useState<number | ''>('');
   const [subcategoryId, setSubcategoryId] = useState<number | ''>('');
@@ -45,12 +60,6 @@ export const NewComplaintForm: React.FC = () => {
     queryFn: metaApi.getBlocks,
   });
 
-  const { data: rooms = [], isLoading: isLoadingRooms } = useQuery({
-    queryKey: ['meta-rooms', blockId],
-    queryFn: () => metaApi.getRoomsByBlock(blockId),
-    enabled: !!blockId && ticketScope === 'ROOM',
-  });
-
   const { data: commonAreas = [], isLoading: isLoadingCommonAreas } = useQuery({
     queryKey: ['meta-common-areas', blockId],
     queryFn: () => metaApi.getCommonAreas(blockId),
@@ -59,15 +68,7 @@ export const NewComplaintForm: React.FC = () => {
 
   const { data: categories = [] } = useQuery({
     queryKey: ['meta-categories'],
-    queryFn: async () => {
-      const data = await metaApi.getCategories();
-      return data
-        .sort((a, b) => a.category_id - b.category_id)
-        .map((cat) => ({
-          ...cat,
-          subcategories: (cat.subcategories || []).filter((sub): sub is Subcategory => sub !== null),
-        }));
-    },
+    queryFn: async () => [...(await metaApi.getCategories())].sort((a, b) => a.category_id - b.category_id),
   });
 
   // Available subcategories for selected category
@@ -99,13 +100,13 @@ export const NewComplaintForm: React.FC = () => {
     e.preventDefault();
     setFormError(null);
 
-    if (!blockId) {
-      setFormError('Please select a Hostel Block.');
+    if (ticketScope === 'ROOM' && !allotment) {
+      setFormError('No room is allotted to your account, so room tickets are unavailable.');
       return;
     }
 
-    if (ticketScope === 'ROOM' && !roomId) {
-      setFormError('Please select your Room Number.');
+    if (!effectiveBlockId) {
+      setFormError('Please select a Hostel Block.');
       return;
     }
 
@@ -121,8 +122,8 @@ export const NewComplaintForm: React.FC = () => {
 
     mutation.mutate({
       ticket_scope: ticketScope,
-      block_id: blockId,
-      room_id: ticketScope === 'ROOM' ? roomId : null,
+      block_id: effectiveBlockId,
+      room_id: ticketScope === 'ROOM' ? allotment!.room_id : null,
       common_area_id: ticketScope === 'COMMON_AREA' ? commonAreaId : null,
       subcategory_id: Number(subcategoryId),
       description: description.trim() || null,
@@ -167,7 +168,9 @@ export const NewComplaintForm: React.FC = () => {
             <button
               type="button"
               onClick={() => setTicketScope('ROOM')}
-              className={`p-3.5 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+              disabled={!allotment}
+              title={!allotment ? 'No room is allotted to your account yet' : undefined}
+              className={`p-3.5 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                 ticketScope === 'ROOM'
                   ? 'bg-cyan-600/20 border-cyan-500 text-cyan-400 shadow-lg shadow-cyan-500/10'
                   : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
@@ -190,62 +193,50 @@ export const NewComplaintForm: React.FC = () => {
               <span>COMMON AREA</span>
             </button>
           </div>
+          {!isLoadingAllotment && !allotment && (
+            <p className="text-[11px] text-amber-400 mt-2">
+              No room is allotted to your account yet, so only common-area problems can be reported.
+              Contact the hostel office to have your room allotted.
+            </p>
+          )}
         </div>
 
-        {/* 2. Block & Location Selection */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-              <Building2 className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Hostel Block *</span>
-            </label>
-            <select
-              value={blockId}
-              onChange={(e) => {
-                setBlockId(e.target.value);
-                setRoomId('');
-                setCommonAreaId('');
-              }}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
-              required
-            >
-              <option value="">Choose Block...</option>
-              {blocks.map((b) => (
-                <option key={b.block_id} value={b.block_id}>
-                  {b.block_name} ({b.block_id})
-                </option>
-              ))}
-            </select>
+        {/* 2. Location */}
+        {ticketScope === 'ROOM' && allotment ? (
+          <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs">
+            <span className="text-slate-400 flex items-center gap-1.5">
+              <DoorOpen className="w-3.5 h-3.5 text-cyan-400" />
+              Your allotted room
+            </span>
+            <span className="font-bold text-slate-100">
+              {allotment.block_id} • Room {allotment.room_number} (Floor {allotment.floor_number})
+            </span>
           </div>
-
-          {ticketScope === 'ROOM' ? (
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-                <DoorOpen className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Room Number *</span>
+                <Building2 className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Hostel Block *</span>
               </label>
               <select
-                value={roomId}
-                onChange={(e) => setRoomId(e.target.value)}
-                disabled={!blockId || isLoadingRooms}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 disabled:opacity-50"
+                value={blockId}
+                onChange={(e) => {
+                  setBlockId(e.target.value);
+                  setCommonAreaId('');
+                }}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
                 required
               >
-                <option value="">
-                  {!blockId
-                    ? 'Select block first...'
-                    : isLoadingRooms
-                    ? 'Loading rooms...'
-                    : 'Choose Room...'}
-                </option>
-                {rooms.map((r) => (
-                  <option key={r.room_id} value={r.room_id}>
-                    Room {r.room_number} (Floor {r.floor_number})
+                <option value="">Choose Block...</option>
+                {blocks.map((b) => (
+                  <option key={b.block_id} value={b.block_id}>
+                    {b.block_name} ({b.block_id})
                   </option>
                 ))}
               </select>
             </div>
-          ) : (
+
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
                 <Building2 className="w-3.5 h-3.5 text-cyan-400" />
@@ -263,17 +254,19 @@ export const NewComplaintForm: React.FC = () => {
                     ? 'Select block first...'
                     : isLoadingCommonAreas
                     ? 'Loading facilities...'
+                    : commonAreas.length === 0
+                    ? 'No facilities registered for this block'
                     : 'Choose Facility...'}
                 </option>
                 {commonAreas.map((ca: CommonAreaItem) => (
                   <option key={ca.area_id} value={ca.area_id}>
-                    {ca.description}
+                    {ca.description} (Floor {ca.floor_number})
                   </option>
                 ))}
               </select>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* 3. Category & Subcategory Cascade */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
