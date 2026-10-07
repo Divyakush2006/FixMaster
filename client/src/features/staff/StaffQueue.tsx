@@ -1,30 +1,29 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { AlertOctagon, CheckCircle2, ClipboardList, Layers, Phone, PlayCircle, RefreshCw, User, Wrench } from 'lucide-react';
 import { dispatchApi, meApi } from '../../api/endpoints';
 import { useToast } from '../../components/ui/Toast';
-import { PriorityBadge } from '../../components/common/Badges';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { StatCard } from '../../components/ui/StatCard';
+import { Button } from '../../components/ui/Button';
+import { Badge } from '../../components/ui/Badge';
+import { Switch } from '../../components/ui/Switch';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Skeleton } from '../../components/ui/PageLoader';
+import { cn } from '../../components/ui/cn';
+import { PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
 import { MarkDoneSheet } from './MarkDoneSheet';
 import { StaffTask } from '../../types';
-import { formatRelativeTime, floorLabel } from '../../utils/formatters';
-import {
-  ListTodo,
-  Phone,
-  CheckCircle2,
-  MapPin,
-  User,
-  Wrench,
-  Navigation,
-  Loader2,
-  Power,
-} from 'lucide-react';
+import { formatDateTime, formatRelativeTime, floorLabel } from '../../utils/formatters';
+import { ticketRef } from '../../utils/labels';
 
 export const StaffQueue: React.FC = () => {
   const [selectedTask, setSelectedTask] = useState<StaffTask | null>(null);
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
-  const { data: queue = [], isLoading, refetch } = useQuery({
+  const { data: queue = [], isLoading, refetch, isFetching } = useQuery({
     queryKey: ['staff-queue'],
     queryFn: dispatchApi.getQueue,
   });
@@ -39,239 +38,160 @@ export const StaffQueue: React.FC = () => {
       showToast(
         res.is_available ? 'You are on duty' : 'You are off duty',
         'info',
-        res.is_available ? 'New tickets can be auto-dispatched to you.' : 'You will not receive auto-dispatched tickets.'
+        res.is_available ? 'New tickets can be dispatched to you automatically.' : 'You will not receive automatically dispatched tickets.'
       );
     },
-    onError: (err: any) => showToast(err.message || 'Could not update duty status', 'error'),
+    onError: (err: Error) => showToast('Could not update duty status', 'error', err.message),
   });
 
   const startWorkMutation = useMutation({
     mutationFn: (assignmentId: string) => dispatchApi.startWork(assignmentId),
     onSuccess: () => {
-      showToast('Work Started', 'success', 'Ticket moved to IN_PROGRESS.');
+      showToast('Work started', 'success', 'The student can now see the ticket is in progress.');
       queryClient.invalidateQueries({ queryKey: ['staff-queue'] });
     },
-    onError: (err: any) => {
-      showToast(err.message || 'Failed to start task', 'error');
-    },
+    onError: (err: Error) => showToast('Could not start the task', 'error', err.message),
   });
 
-  // Group tasks by floor while PRESERVING server ordering
+  // Group by floor while keeping the server's walking order.
   const floorGroups = useMemo(() => {
     const groups: { floor: number; tasks: StaffTask[] }[] = [];
-
     queue.forEach((task) => {
       const floor = task.floor_number ?? 0;
-      let existingGroup = groups.find((g) => g.floor === floor);
-      if (!existingGroup) {
-        existingGroup = { floor, tasks: [] };
-        groups.push(existingGroup);
+      let group = groups.find((g) => g.floor === floor);
+      if (!group) {
+        group = { floor, tasks: [] };
+        groups.push(group);
       }
-      existingGroup.tasks.push(task);
+      group.tasks.push(task);
     });
-
     return groups;
   }, [queue]);
 
   const emergencyCount = queue.filter((t) => t.priority === 'EMERGENCY').length;
   const highCount = queue.filter((t) => t.priority === 'HIGH').length;
+  const inProgressCount = queue.filter((t) => t.assignment_state === 'IN_PROGRESS').length;
 
   return (
-    <div className="space-y-6 font-sans max-w-2xl mx-auto">
-      {/* Header Bar */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-slate-950 border border-slate-800 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-emerald-600/20 border border-emerald-500/30 text-emerald-400">
-            <ListTodo className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-lg font-extrabold text-slate-100">Walking Task Queue</h1>
-            <p className="text-xs text-slate-400">Floor-ordered technician route</p>
-          </div>
-        </div>
+    <div>
+      <PageHeader
+        title="My work queue"
+        description="Ordered floor by floor, so each floor can be covered in a single visit."
+        actions={
+          <>
+            <div className="flex h-9 items-center rounded-md border border-slate-300 bg-white px-3 shadow-xs">
+              <Switch checked={isOnDuty} onChange={(next) => dutyMutation.mutate(next)} label={isOnDuty ? 'On duty' : 'Off duty'} showLabel disabled={!me || dutyMutation.isPending} />
+            </div>
+            <Button variant="secondary" icon={RefreshCw} onClick={() => refetch()} loading={isFetching && !isLoading}>
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => dutyMutation.mutate(!isOnDuty)}
-            disabled={!me || dutyMutation.isPending}
-            aria-pressed={isOnDuty}
-            className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 min-h-[40px] ${
-              isOnDuty
-                ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300'
-                : 'bg-slate-900 border-slate-700 text-slate-400'
-            }`}
-          >
-            <Power className="w-3.5 h-3.5" />
-            <span>{isOnDuty ? 'On duty' : 'Off duty'}</span>
-          </button>
-          <button
-            onClick={() => refetch()}
-            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors min-h-[40px]"
-          >
-            <Navigation className="w-3.5 h-3.5" />
-            <span>Refresh</span>
-          </button>
-        </div>
+      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard title="Assigned to me" value={queue.length} icon={ClipboardList} tone="brand" loading={isLoading} />
+        <StatCard title="In progress" value={inProgressCount} icon={Wrench} tone="info" loading={isLoading} />
+        <StatCard title="Emergency" value={emergencyCount} icon={AlertOctagon} tone="danger" highlight={emergencyCount > 0} loading={isLoading} />
+        <StatCard title="High priority" value={highCount} icon={Layers} tone="warning" loading={isLoading} />
       </div>
 
-      {/* Stats Bar */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="p-3 rounded-2xl bg-slate-900 border border-slate-800 text-center">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
-            Total Tasks
-          </span>
-          <span className="text-xl font-black text-slate-100">{queue.length}</span>
-        </div>
-
-        <div className="p-3 rounded-2xl bg-rose-950/30 border border-rose-900/50 text-center">
-          <span className="text-[10px] uppercase font-bold text-rose-400 tracking-wider block">
-            Emergency
-          </span>
-          <span className="text-xl font-black text-rose-300">{emergencyCount}</span>
-        </div>
-
-        <div className="p-3 rounded-2xl bg-amber-950/30 border border-amber-900/50 text-center">
-          <span className="text-[10px] uppercase font-bold text-amber-400 tracking-wider block">
-            High Priority
-          </span>
-          <span className="text-xl font-black text-amber-300">{highCount}</span>
-        </div>
-      </div>
-
-      {/* Queue Tasks List Grouped by Floor */}
       {isLoading ? (
         <div className="space-y-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-36 bg-slate-900/60 rounded-2xl animate-pulse" />
+          {[1, 2].map((i) => (
+            <Skeleton key={i} className="h-44" />
           ))}
         </div>
       ) : queue.length === 0 ? (
         <EmptyState
-          title="No tasks assigned"
-          description="Your walking task queue is currently empty. Check back when a supervisor assigns new tickets."
+          icon={CheckCircle2}
+          title="Your queue is clear"
+          description="No tasks are assigned to you right now. New assignments appear here as soon as a supervisor dispatches them."
         />
       ) : (
         <div className="space-y-6">
           {floorGroups.map((group) => (
-            <section key={group.floor} className="space-y-3">
-              {/* Sticky Floor Header */}
-              <div className="sticky top-16 z-30 py-2 px-3 rounded-xl bg-slate-950/90 border border-slate-800 backdrop-blur-md flex items-center justify-between shadow-md">
-                <div className="flex items-center gap-2 text-cyan-400 font-black text-sm">
-                  <Navigation className="w-4 h-4" />
-                  <span>{floorLabel(group.floor)}</span>
-                </div>
-                <span className="text-xs text-slate-400 font-semibold">
+            <Card key={group.floor} className="overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/80 px-5 py-2.5">
+                <h2 className="text-[13px] font-semibold text-slate-900">{floorLabel(group.floor)}</h2>
+                <span className="text-xs text-slate-500">
                   {group.tasks.length} {group.tasks.length === 1 ? 'task' : 'tasks'}
                 </span>
               </div>
-
-              {/* Task Cards */}
-              <div className="space-y-3">
+              <ul className="divide-y divide-slate-100">
                 {group.tasks.map((task) => {
                   const isEmergency = task.priority === 'EMERGENCY';
-
+                  const inProgress = task.assignment_state === 'IN_PROGRESS';
+                  const starting = startWorkMutation.isPending && startWorkMutation.variables === task.assignment_id;
                   return (
-                    <div
-                      key={task.assignment_id}
-                      className={`p-4 sm:p-5 rounded-2xl bg-slate-900 border transition-all shadow-xl space-y-4 ${
-                        isEmergency
-                          ? 'border-2 border-red-500/80 bg-red-950/20 shadow-red-500/10'
-                          : 'border-slate-800 hover:border-slate-700'
-                      }`}
-                    >
-                      {/* Top Header: Location + Badges */}
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="flex items-center gap-1.5 text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">
-                            <MapPin className="w-3.5 h-3.5 text-cyan-400" />
-                            <span>Location</span>
+                    <li key={task.assignment_id} className={cn('relative px-5 py-4', isEmergency && 'bg-rose-50/40')}>
+                      {isEmergency && <span className="absolute inset-y-0 left-0 w-1 bg-rose-600" aria-hidden />}
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex min-w-0 gap-4">
+                          <div className="w-20 shrink-0">
+                            <p className="eyebrow">Location</p>
+                            <p className="mt-0.5 font-mono text-lg font-semibold leading-6 text-slate-900">{task.location_identifier}</p>
                           </div>
-                          <div className="text-xl font-black text-slate-100 tracking-tight">
-                            {task.location_identifier}
+                          <div className="min-w-0 space-y-1.5">
+                            <p className="font-medium text-slate-900">{task.issue_name}</p>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                              <PriorityBadge priority={task.priority} />
+                              <SpecializationBadge specialization={task.specialization} />
+                              {inProgress && (
+                                <Badge tone="brand" dot>
+                                  In progress
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                              <span className="font-mono">{ticketRef(task.complaint_id)}</span>
+                              <span title={formatDateTime(task.assigned_at)}>Assigned {formatRelativeTime(task.assigned_at)}</span>
+                              <span className="inline-flex items-center gap-1">
+                                <User className="h-3 w-3" aria-hidden />
+                                {task.student_name}
+                              </span>
+                              {task.student_phone && (
+                                <a href={`tel:${task.student_phone}`} className="link inline-flex items-center gap-1">
+                                  <Phone className="h-3 w-3" aria-hidden />
+                                  {task.student_phone}
+                                </a>
+                              )}
+                            </p>
                           </div>
                         </div>
-
-                        <div className="flex flex-col items-end gap-1">
-                          <PriorityBadge priority={task.priority} size="md" />
-                          <span className="text-[10px] text-slate-400 font-mono mt-0.5">
-                            Assigned {formatRelativeTime(task.assigned_at)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Issue Details */}
-                      <div>
-                        <h3 className="text-base font-bold text-slate-100">{task.issue_name}</h3>
-                        <p className="text-xs text-slate-400">Trade: {task.category_name}</p>
-                      </div>
-
-                      {/* Student Info & Phone Call CTA */}
-                      <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2 text-xs">
-                        <div className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-slate-400" />
-                          <span className="font-semibold text-slate-200">{task.student_name}</span>
-                        </div>
-
-                        {task.student_phone ? (
-                          <a
-                            href={`tel:${task.student_phone}`}
-                            className="px-3 py-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-400 border border-cyan-500/30 font-bold text-xs flex items-center gap-1.5 transition-colors min-h-[36px]"
+                        <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex">
+                          {!inProgress && (
+                            <Button
+                              variant="secondary"
+                              icon={PlayCircle}
+                              loading={starting}
+                              disabled={startWorkMutation.isPending}
+                              onClick={() => startWorkMutation.mutate(task.assignment_id)}
+                              className="h-10 sm:h-9"
+                            >
+                              Start work
+                            </Button>
+                          )}
+                          <Button
+                            variant="success"
+                            icon={CheckCircle2}
+                            onClick={() => setSelectedTask(task)}
+                            className={cn('h-10 sm:h-9', inProgress && 'col-span-2')}
                           >
-                            <Phone className="w-3.5 h-3.5" />
-                            <span>Call Student</span>
-                          </a>
-                        ) : (
-                          <span className="text-[11px] text-slate-500">No phone provided</span>
-                        )}
+                            Mark complete
+                          </Button>
+                        </div>
                       </div>
-
-                      {/* Action Buttons (Large Tap Target >= 48px) */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                        {task.assignment_state === 'IN_PROGRESS' ? (
-                          <div className="py-3 px-4 rounded-xl bg-cyan-950/30 border border-cyan-500/30 text-cyan-400 text-xs font-semibold flex items-center justify-center gap-1.5">
-                            <Wrench className="w-4 h-4" />
-                            <span>Work In Progress</span>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => startWorkMutation.mutate(task.assignment_id)}
-                            disabled={startWorkMutation.isPending}
-                            className="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors min-h-[48px]"
-                          >
-                            {startWorkMutation.isPending && startWorkMutation.variables === task.assignment_id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Wrench className="w-4 h-4" />
-                            )}
-                            <span>Start Work</span>
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => setSelectedTask(task)}
-                          className="py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 active:scale-95 transition-all min-h-[48px]"
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>MARK WORK DONE</span>
-                        </button>
-                      </div>
-                    </div>
+                    </li>
                   );
                 })}
-              </div>
-            </section>
+              </ul>
+            </Card>
           ))}
         </div>
       )}
 
-      {/* Mark Done Sheet */}
-      {selectedTask && (
-        <MarkDoneSheet
-          isOpen={true}
-          onClose={() => setSelectedTask(null)}
-          task={selectedTask}
-        />
-      )}
+      {selectedTask && <MarkDoneSheet isOpen onClose={() => setSelectedTask(null)} task={selectedTask} />}
     </div>
   );
 };

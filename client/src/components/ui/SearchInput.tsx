@@ -1,35 +1,35 @@
 import React from 'react';
 import { Search, X } from 'lucide-react';
+import { cn } from './cn';
 
 interface SearchInputProps {
   value: string;
   onChange: (val: string) => void;
   placeholder?: string;
+  className?: string;
+  label?: string;
 }
 
-export const SearchInput: React.FC<SearchInputProps> = ({
-  value,
-  onChange,
-  placeholder = 'Search tickets, issues, locations...',
-}) => {
-  return (
-    <div className="relative flex-1">
-      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full pl-9 pr-8 py-2 text-xs bg-slate-900 border border-slate-700/80 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
-      />
-      {value && (
-        <button
-          onClick={() => onChange('')}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      )}
-    </div>
-  );
-};
+export const SearchInput: React.FC<SearchInputProps> = ({ value, onChange, placeholder = 'Search', className, label = 'Search' }) => (
+  <div className={cn('relative w-full', className)}>
+    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
+    <input
+      type="search"
+      aria-label={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="form-control pl-9 pr-8 [&::-webkit-search-cancel-button]:hidden"
+    />
+    {value && (
+      <button
+        type="button"
+        onClick={() => onChange('')}
+        aria-label="Clear search"
+        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    )}
+  </div>
+);

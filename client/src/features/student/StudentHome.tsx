@@ -1,27 +1,32 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ArrowRight, BedDouble, CheckCircle2, ClipboardCheck, Clock3, Plus, ShieldCheck, Zap } from 'lucide-react';
 import { metaApi, complaintsApi } from '../../api/endpoints';
+import { useAuth } from '../../context/AuthContext';
 import { useMyAllotment } from '../../hooks/useMyAllotment';
 import { useToast } from '../../components/ui/Toast';
-import { StatusBadge, PriorityBadge } from '../../components/common/Badges';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card, CardBody, CardHeader } from '../../components/ui/Card';
+import { StatCard } from '../../components/ui/StatCard';
+import { Alert } from '../../components/ui/Alert';
+import { Button, ButtonLink } from '../../components/ui/Button';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { Skeleton } from '../../components/ui/PageLoader';
+import { Spinner } from '../../components/ui/Spinner';
+import { SPECIALIZATION_ICON } from '../../components/common/Badges';
 import { VerificationModal } from './VerificationModal';
+import { ComplaintDetailModal } from './ComplaintDetail';
+import { TicketsTable } from './TicketsTable';
 import { Complaint, Subcategory } from '../../types';
-import { formatRelativeTime } from '../../utils/formatters';
-import {
-  Sparkles,
-  Zap,
-  Building2,
-  AlertCircle,
-  ArrowRight,
-  ShieldCheck,
-  PlusCircle,
-} from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { floorLabel } from '../../utils/formatters';
+import { blockLabel, greeting, isOpenStatus, PRIORITY_LABEL, ROOM_TYPE_LABEL, SPECIALIZATION_LABEL, ticketLocation, ticketRef } from '../../utils/labels';
 
 export const StudentHome: React.FC = () => {
-  // Verification modal state
   const [verifyingComplaint, setVerifyingComplaint] = useState<Complaint | null>(null);
+  const [viewingComplaint, setViewingComplaint] = useState<Complaint | null>(null);
 
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
@@ -30,38 +35,27 @@ export const StudentHome: React.FC = () => {
   // reject any room the student picked themselves).
   const { allotment, isLoading: isLoadingAllotment } = useMyAllotment();
 
-  // Fetch categories with subcategories
   const { data: categories = [], isLoading: isLoadingCategories } = useQuery({
     queryKey: ['meta-categories'],
-    queryFn: async () => {
-      const data = await metaApi.getCategories();
-      // The server orders categories and never returns null subcategories;
-      // sorting here too keeps the tile order stable regardless.
-      return [...data].sort((a, b) => a.category_id - b.category_id);
-    },
+    queryFn: async () => [...(await metaApi.getCategories())].sort((a, b) => a.category_id - b.category_id),
   });
 
-  // Fetch student's own complaints
   const { data: complaints = [], isLoading: isLoadingComplaints } = useQuery({
     queryKey: ['complaints'],
     queryFn: () => complaintsApi.list(),
   });
 
-  // Quick Action mutation
   const quickActionMutation = useMutation({
     mutationFn: complaintsApi.create,
     onSuccess: (res) => {
-      showToast('1-Click Request Dispatched!', 'success', `Ticket Reference: ${res.complaint.complaint_id}`);
-      // Optimistically update cache
+      showToast('Request submitted', 'success', `${res.complaint.issue_name} · ${ticketRef(res.complaint.complaint_id)}`);
       queryClient.setQueryData(['complaints'], (old: Complaint[] = []) => [res.complaint, ...old]);
       queryClient.invalidateQueries({ queryKey: ['complaints'] });
     },
-    onError: (err: any) => {
-      showToast(err.message || 'Failed to dispatch quick action', 'error');
-    },
+    onError: (err: Error) => showToast('Request not submitted', 'error', err.message),
   });
 
-  const handleQuickActionClick = (sub: Subcategory) => {
+  const handleQuickAction = (sub: Subcategory) => {
     if (!allotment) {
       showToast('No room allotted yet', 'info', 'Ask the hostel office to allot your room, then try again.');
       return;
@@ -76,270 +70,216 @@ export const StudentHome: React.FC = () => {
     });
   };
 
-  // Quick action categories filter
-  const quickActionCategories = categories.filter((c) => c.is_quick_action);
-
-  // Active & Pending verification complaints
-  const pendingVerificationTickets = complaints.filter(
-    (c) => c.status === 'PENDING_VERIFICATION'
-  );
-  const activeTickets = complaints.filter(
-    (c) => !['COMPLETED', 'REJECTED'].includes(c.status)
-  );
+  const quickServices = categories.filter((c) => c.is_quick_action).flatMap((c) => c.subcategories);
+  const pendingVerification = complaints.filter((c) => c.status === 'PENDING_VERIFICATION');
+  const activeTickets = complaints.filter((c) => isOpenStatus(c.status));
+  const closedCount = complaints.filter((c) => c.status === 'COMPLETED').length;
+  const firstName = user?.full_name.split(' ')[0] ?? '';
 
   return (
-    <div className="space-y-8 font-sans">
-      {/* Header Banner */}
-      <div className="p-6 rounded-3xl bg-gradient-to-r from-cyan-950/80 via-slate-900 to-blue-950/80 border border-slate-800 shadow-2xl relative overflow-hidden">
-        <div className="absolute -right-6 -top-6 w-48 h-48 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none" />
+    <div>
+      <PageHeader
+        title={`${greeting()}, ${firstName}`}
+        description="Raise maintenance requests for your room and follow them through to completion."
+        actions={
+          <ButtonLink to="/student/new" icon={Plus}>
+            Raise a ticket
+          </ButtonLink>
+        }
+      />
 
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
-          <div>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-bold mb-2">
-              <Zap className="w-3.5 h-3.5" />
-              <span>1-CLICK SERVICE DISPATCH</span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-100">
-              Hostel Maintenance Portal
-            </h1>
-            <p className="text-xs text-slate-400 mt-1 max-w-xl leading-relaxed">
-              Tap any quick service tile below to request immediate room maintenance.
-            </p>
-          </div>
-
-          {/* Room Allotment Pill */}
-          <div className="bg-slate-950/80 border border-slate-800 p-3.5 rounded-2xl flex items-center justify-between gap-3 shrink-0">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400">
-                <Building2 className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                  Your Room Allotment
-                </div>
-                <div className="text-xs font-extrabold text-slate-100 flex items-center gap-1">
-                  {isLoadingAllotment ? (
-                    <span className="text-slate-500">Loading...</span>
-                  ) : allotment ? (
-                    <>
-                      <span>{allotment.block_id}</span>
-                      <span className="text-slate-500">•</span>
-                      <span>{allotment.room_id}</span>
-                    </>
-                  ) : (
-                    <span className="text-amber-400 font-semibold">Not allotted yet</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* PINNED PENDING VERIFICATION TICKETS (CRITICAL CLOSED-LOOP STEP) */}
-      {pendingVerificationTickets.length > 0 && (
-        <section className="space-y-3 animate-fadeIn">
-          <div className="flex items-center gap-2 text-amber-400 font-extrabold text-sm">
-            <AlertCircle className="w-5 h-5 animate-pulse" />
-            <span>ACTION REQUIRED — Confirm & Rate Completed Work</span>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3">
-            {pendingVerificationTickets.map((complaint) => (
-              <div
-                key={complaint.complaint_id}
-                className="p-4 sm:p-5 rounded-2xl bg-amber-950/30 border-2 border-amber-500/50 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <StatusBadge status={complaint.status} />
-                    <PriorityBadge priority={complaint.priority} />
-                    <span className="text-[11px] text-slate-400 font-mono">
-                      {complaint.created_at && formatRelativeTime(complaint.created_at)}
-                    </span>
-                  </div>
-                  <h3 className="text-base font-bold text-slate-100">{complaint.issue_name}</h3>
-                  <p className="text-xs text-slate-300">
-                    Location:{' '}
-                    <strong className="text-slate-100">
-                      {complaint.room_id || complaint.common_area_id || complaint.block_id}
-                    </strong>
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => setVerifyingComplaint(complaint)}
-                  className="px-5 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition-all hover:scale-[1.02]"
-                >
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>CONFIRM & RATE WORK</span>
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {!isLoadingAllotment && !allotment && (
-        <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-2.5">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
-          <div>
-            <p className="font-bold text-amber-300">No room has been allotted to your account yet.</p>
-            <p className="mt-0.5 text-amber-200/80">
-              Room tickets and 1-click actions become available once the hostel office allots your room.
-              You can still report problems in common areas from the full complaint form.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* QUICK ACTIONS TILES */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-lg font-extrabold text-slate-100">1-Click Quick Actions</h2>
-          </div>
-          <span className="text-xs text-slate-400">One tap files immediately</span>
-        </div>
-
-        {isLoadingCategories ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="h-32 rounded-2xl bg-slate-800/40 animate-pulse border border-slate-800"
-              />
-            ))}
-          </div>
-        ) : quickActionCategories.length === 0 ? (
-          <div className="p-6 text-center text-xs text-slate-400 bg-slate-900 border border-slate-800 rounded-2xl">
-            No quick action subcategories configured.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {quickActionCategories.flatMap((cat) =>
-              cat.subcategories.map((sub) => (
-                <button
-                  key={sub.subcategory_id}
-                  onClick={() => handleQuickActionClick(sub)}
-                  disabled={quickActionMutation.isPending || !allotment}
-                  className="group relative p-5 rounded-2xl bg-slate-900/90 border border-slate-800 hover:border-cyan-500/50 hover:bg-slate-800/80 transition-all text-left shadow-lg hover:shadow-cyan-500/10 flex flex-col justify-between overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-slate-800"
-                >
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-cyan-500/10 to-transparent rounded-bl-full pointer-events-none group-hover:scale-125 transition-transform" />
-
-                  <div className="flex items-start justify-between gap-2 mb-4">
-                    <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 group-hover:bg-cyan-500 group-hover:text-slate-950 transition-colors">
-                      <Zap className="w-5 h-5" />
-                    </div>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                      {sub.required_specialization}
-                    </span>
-                  </div>
-
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-100 group-hover:text-cyan-300 transition-colors">
-                      {sub.issue_name}
-                    </h3>
-                    <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
-                      <span>Category: {cat.category_name}</span>
+      <div className="space-y-6">
+        {pendingVerification.length > 0 && (
+          <Card className="border-amber-200">
+            <CardHeader
+              className="border-amber-100 bg-amber-50/60"
+              icon={
+                <span className="flex h-8 w-8 items-center justify-center rounded-md bg-amber-100 text-amber-700">
+                  <ShieldCheck className="h-4 w-4" />
+                </span>
+              }
+              title="Your confirmation is needed"
+              description="The technician has marked this work as done. Check it and confirm, or report that the problem remains."
+            />
+            <ul className="divide-y divide-slate-100">
+              {pendingVerification.map((c) => (
+                <li key={c.complaint_id} className="flex flex-col gap-3 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-900">{c.issue_name}</p>
+                    <p className="text-xs text-slate-500">
+                      <span className="font-mono">{ticketRef(c.complaint_id)}</span> · {ticketLocation(c)}
                     </p>
                   </div>
-
-                  <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-cyan-400 font-semibold group-hover:translate-x-1 transition-transform">
-                    <span>Tap to File Ticket</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
+                  <Button size="sm" icon={ShieldCheck} onClick={() => setVerifyingComplaint(c)}>
+                    Review and confirm
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </Card>
         )}
-      </section>
 
-      {/* ACTIVE TICKETS STRIP */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-extrabold text-slate-100 flex items-center gap-2">
-            <span>Active Tickets</span>
-            <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 text-xs">
-              {activeTickets.length}
-            </span>
-          </h2>
+        {!isLoadingAllotment && !allotment && (
+          <Alert tone="warning" title="No room has been allotted to your account yet">
+            Room requests become available once the hostel office allots your room. You can still report problems in common areas.
+          </Alert>
+        )}
 
-          <div className="flex items-center gap-3">
-            <Link
-              to="/student/new"
-              className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>Full Complaint Form</span>
-            </Link>
-            <Link
-              to="/student/complaints"
-              className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
-            >
-              <span>View All</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <div className="space-y-6 xl:col-span-2">
+            <div className="grid grid-cols-3 gap-3 sm:gap-4">
+              <StatCard title="Open" value={activeTickets.length} icon={Clock3} tone="brand" loading={isLoadingComplaints} />
+              <StatCard
+                title="To confirm"
+                value={pendingVerification.length}
+                icon={ClipboardCheck}
+                tone="warning"
+                loading={isLoadingComplaints}
+              />
+              <StatCard title="Closed" value={closedCount} icon={CheckCircle2} tone="success" loading={isLoadingComplaints} />
+            </div>
+
+            <Card>
+              <CardHeader
+                title="Quick requests"
+                description={allotment ? `Submitted instantly for room ${allotment.room_id}.` : 'Available once a room is allotted to you.'}
+                icon={
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-brand-50 text-brand-600">
+                    <Zap className="h-4 w-4" />
+                  </span>
+                }
+              />
+              <CardBody>
+                {isLoadingCategories ? (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    {[1, 2, 3].map((i) => (
+                      <Skeleton key={i} className="h-[92px]" />
+                    ))}
+                  </div>
+                ) : quickServices.length === 0 ? (
+                  <p className="text-[13px] text-slate-500">No quick requests are configured.</p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    {quickServices.map((sub) => {
+                      const Icon = SPECIALIZATION_ICON[sub.required_specialization] ?? Zap;
+                      const pending = quickActionMutation.isPending && quickActionMutation.variables?.subcategory_id === sub.subcategory_id;
+                      return (
+                        <button
+                          key={sub.subcategory_id}
+                          type="button"
+                          onClick={() => handleQuickAction(sub)}
+                          disabled={quickActionMutation.isPending || !allotment}
+                          className="group flex items-center gap-3 rounded-lg sm:flex-col sm:items-start border border-slate-200 bg-white p-4 text-left transition-all hover:border-brand-300 hover:shadow-card disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:shadow-none"
+                        >
+                          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-100 text-slate-600 transition-colors group-hover:bg-brand-50 group-hover:text-brand-600">
+                            {pending ? <Spinner /> : <Icon className="h-[18px] w-[18px]" />}
+                          </span>
+                          <span>
+                            <span className="block text-[13px] font-medium leading-snug text-slate-900">{sub.issue_name.replace(/^1-Click\s+/i, '')}</span>
+                            <span className="mt-0.5 block text-xs text-slate-500">
+                              {SPECIALIZATION_LABEL[sub.required_specialization]} · {PRIORITY_LABEL[sub.priority_level]} priority
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          </div>
+
+          <div className="space-y-6">
+            <Card>
+              <CardHeader
+                title="Your room"
+                icon={
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+                    <BedDouble className="h-4 w-4" />
+                  </span>
+                }
+              />
+              <CardBody>
+                {isLoadingAllotment ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-7 w-24" />
+                    <Skeleton className="h-4 w-40" />
+                  </div>
+                ) : allotment ? (
+                  <div>
+                    <p className="font-mono text-2xl font-semibold tracking-tight text-slate-900">{allotment.room_id}</p>
+                    <dl className="mt-4 space-y-2.5 text-[13px]">
+                      {[
+                        ['Block', blockLabel(allotment.block_id)],
+                        ['Floor', floorLabel(allotment.floor_number)],
+                        ['Room type', ROOM_TYPE_LABEL[allotment.room_type as keyof typeof ROOM_TYPE_LABEL] ?? allotment.room_type],
+                        ['Academic year', allotment.academic_year],
+                      ].map(([k, v]) => (
+                        <div key={k} className="flex justify-between gap-4">
+                          <dt className="text-slate-500">{k}</dt>
+                          <dd className="font-medium text-slate-900">{v}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                ) : (
+                  <p className="text-[13px] text-slate-500">Not allotted yet. The hostel office will assign your room.</p>
+                )}
+              </CardBody>
+            </Card>
           </div>
         </div>
 
-        {isLoadingComplaints ? (
-          <div className="space-y-3">
-            {[1, 2].map((i) => (
-              <div key={i} className="h-20 bg-slate-800/40 rounded-xl animate-pulse" />
-            ))}
-          </div>
-        ) : activeTickets.length === 0 ? (
-          <div className="p-6 rounded-2xl bg-slate-900/40 border border-slate-800 text-center text-xs text-slate-400">
-            No active maintenance complaints. Use 1-Click Quick Actions above or file a new ticket.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-3">
-            {activeTickets.slice(0, 4).map((ticket) => (
-              <div
-                key={ticket.complaint_id}
-                className="p-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <StatusBadge status={ticket.status} size="sm" />
-                    <PriorityBadge priority={ticket.priority} size="sm" />
-                    <span className="text-[11px] text-slate-400 font-mono">
-                      {formatRelativeTime(ticket.created_at)}
-                    </span>
-                  </div>
-                  <h4 className="text-sm font-bold text-slate-100">{ticket.issue_name}</h4>
-                  <p className="text-xs text-slate-400">
-                    Location: {ticket.room_id || ticket.common_area_id || ticket.block_id}
-                  </p>
-                </div>
+        <Card>
+          <CardHeader
+            title="Open tickets"
+            description="Your requests that are still in progress."
+            actions={
+              <Link to="/student/complaints" className="link inline-flex items-center gap-1 text-[13px]">
+                View all tickets
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            }
+          />
+          {!isLoadingComplaints && activeTickets.length === 0 ? (
+            <EmptyState
+              bare
+              icon={CheckCircle2}
+              title="Nothing open"
+              description="You have no requests in progress. Use a quick request above or raise a ticket."
+            />
+          ) : (
+            <TicketsTable
+              complaints={activeTickets.slice(0, 5)}
+              loading={isLoadingComplaints}
+              onView={setViewingComplaint}
+              onVerify={setVerifyingComplaint}
+              skeletonRows={3}
+            />
+          )}
+        </Card>
+      </div>
 
-                <Link
-                  to={`/student/complaints?id=${ticket.complaint_id}`}
-                  className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold text-center border border-slate-700"
-                >
-                  View Details
-                </Link>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      {viewingComplaint && (
+        <ComplaintDetailModal
+          isOpen
+          onClose={() => setViewingComplaint(null)}
+          complaint={viewingComplaint}
+          onOpenVerification={() => {
+            const c = viewingComplaint;
+            setViewingComplaint(null);
+            setVerifyingComplaint(c);
+          }}
+        />
+      )}
 
-      {/* Verification Modal */}
       {verifyingComplaint && (
         <VerificationModal
-          isOpen={true}
+          isOpen
           onClose={() => setVerifyingComplaint(null)}
           complaintId={verifyingComplaint.complaint_id}
           issueName={verifyingComplaint.issue_name}
-          locationIdentifier={
-            verifyingComplaint.room_id ||
-            verifyingComplaint.common_area_id ||
-            verifyingComplaint.block_id
-          }
+          locationIdentifier={ticketLocation(verifyingComplaint)}
         />
       )}
     </div>

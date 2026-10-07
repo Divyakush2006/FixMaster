@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/ui/Toast';
-import { ArrowLeft, UserPlus, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Alert } from '../../components/ui/Alert';
+import { Button } from '../../components/ui/Button';
+import { Field, Input, PasswordInput } from '../../components/ui/Form';
+import { AuthHeading, AuthLayout } from './AuthLayout';
 
-// This screen only ever registers STUDENT accounts. The backend's
-// POST /auth/register forces role=STUDENT for any caller that isn't already
-// authenticated as ADMIN (see authController.register) - so a public role
-// picker here would let someone pick STAFF/SUPERVISOR/ADMIN, submit, and
-// silently get back a STUDENT account with no explanation. STAFF and
-// SUPERVISOR accounts are provisioned by an ADMIN out of band.
+// This screen only ever registers STUDENT accounts (POST /auth/student/register).
+// Staff, supervisor and admin accounts are created by an administrator.
 export const RegisterScreen: React.FC = () => {
   const [regOrEmpId, setRegOrEmpId] = useState('');
   const [fullName, setFullName] = useState('');
@@ -27,24 +27,19 @@ export const RegisterScreen: React.FC = () => {
 
   const validate = () => {
     const errs: Record<string, string> = {};
-
-    if (!regOrEmpId.trim()) errs.regOrEmpId = 'Register No or Employee ID is required.';
-    if (!fullName.trim()) errs.fullName = 'Full Name is required.';
-
+    if (!regOrEmpId.trim()) errs.regOrEmpId = 'Enter your registration number.';
+    if (!fullName.trim()) errs.fullName = 'Enter your full name.';
     if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      errs.email = 'Valid email address is required (e.g. name@vitstudent.ac.in).';
+      errs.email = 'Enter a valid email address, e.g. name@vitstudent.ac.in.';
     }
-
     if (!phone.trim() || !/^\d{10}$/.test(phone.trim())) {
-      errs.phone = 'Phone number must be exactly 10 digits.';
+      errs.phone = 'Enter a 10-digit mobile number.';
     }
-
     if (!password || password.length < 8) {
-      errs.password = 'Password must be at least 8 characters long.';
+      errs.password = 'Use at least 8 characters.';
     } else if (new TextEncoder().encode(password).length > 72) {
-      errs.password = 'Password must be at most 72 bytes.';
+      errs.password = 'Use at most 72 bytes.';
     }
-
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -65,19 +60,18 @@ export const RegisterScreen: React.FC = () => {
         password,
       });
 
-      showToast('Account registered successfully! Logging you in...', 'success');
-
-      // Auto login after registration
+      // Sign straight in with the new account.
       const user = await login('student', regOrEmpId.trim(), password);
+      showToast('Your account is ready', 'success', 'You are now signed in.');
       navigate(getHomeRouteForRole(user.role), { replace: true });
-    } catch (err: any) {
-      const msg = err.message || 'Registration failed.';
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Registration failed.';
       setServerError(msg);
       if (msg.includes('already exists') || msg.includes('Register') || msg.includes('Email')) {
         setErrors((prev) => ({
           ...prev,
-          regOrEmpId: 'ID or Email is already registered.',
-          email: 'ID or Email is already registered.',
+          regOrEmpId: 'This registration number or email is already registered.',
+          email: 'This registration number or email is already registered.',
         }));
       }
     } finally {
@@ -86,121 +80,72 @@ export const RegisterScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 py-8 font-sans relative">
-      <div className="w-full max-w-lg bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl">
-        <Link
-          to="/login"
-          className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-cyan-400 mb-6 transition-colors font-semibold"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Login</span>
-        </Link>
+    <AuthLayout
+      width="md"
+      panelTag="Student registration"
+      panelTitle="Your room, looked after."
+      panelText="Create your account once. When the hostel office allots your room, you can raise and track maintenance requests for it."
+      panelPoints={[
+        'One-tap housekeeping requests for your room',
+        'Track every request through to completion',
+        'Confirm the work before a ticket is closed',
+      ]}
+    >
+      <Link to="/login" className="mb-6 inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 hover:text-slate-900">
+        <ArrowLeft className="h-4 w-4" aria-hidden />
+        Back to sign in
+      </Link>
+      <AuthHeading title="Create your student account" subtitle="All fields are required." />
 
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2.5 rounded-2xl bg-cyan-600/20 border border-cyan-500/30 text-cyan-400">
-            <UserPlus className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-extrabold text-slate-100">Create FIX_MASTER Account</h1>
-            <p className="text-xs text-slate-400">VIT Vellore Hostel Portal</p>
-          </div>
+      {serverError && (
+        <Alert tone="danger" className="mb-4">
+          {serverError}
+        </Alert>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Registration number" required error={errors.regOrEmpId}>
+            {(a) => (
+              <Input {...a} value={regOrEmpId} onChange={(e) => setRegOrEmpId(e.target.value)} placeholder="21BCE0843" autoComplete="username" spellCheck={false} />
+            )}
+          </Field>
+          <Field label="Full name" required error={errors.fullName}>
+            {(a) => <Input {...a} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="As on your ID card" autoComplete="name" />}
+          </Field>
+          <Field label="Email" required error={errors.email}>
+            {(a) => (
+              <Input {...a} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@vitstudent.ac.in" autoComplete="email" />
+            )}
+          </Field>
+          <Field label="Mobile number" required error={errors.phone}>
+            {(a) => (
+              <Input
+                {...a}
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                placeholder="10 digits"
+                autoComplete="tel-national"
+              />
+            )}
+          </Field>
         </div>
 
-        {serverError && (
-          <div className="mb-6 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{serverError}</span>
-          </div>
-        )}
+        <Field label="Password" required error={errors.password} hint="At least 8 characters.">
+          {(a) => <PasswordInput {...a} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />}
+        </Field>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Register No / Emp ID *
-              </label>
-              <input
-                type="text"
-                value={regOrEmpId}
-                onChange={(e) => setRegOrEmpId(e.target.value)}
-                placeholder="21BCE0843"
-                className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 placeholder-slate-500 text-xs focus:outline-none focus:border-cyan-500"
-              />
-              {errors.regOrEmpId && <p className="text-[11px] text-rose-400 mt-1">{errors.regOrEmpId}</p>}
-            </div>
+        <Button type="submit" size="lg" block loading={isLoading}>
+          Create account
+        </Button>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Full Name *</label>
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Vihaan Sharma"
-                className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 placeholder-slate-500 text-xs focus:outline-none focus:border-cyan-500"
-              />
-              {errors.fullName && <p className="text-[11px] text-rose-400 mt-1">{errors.fullName}</p>}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Email *</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="vihaan@vitstudent.ac.in"
-                className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 placeholder-slate-500 text-xs focus:outline-none focus:border-cyan-500"
-              />
-              {errors.email && <p className="text-[11px] text-rose-400 mt-1">{errors.email}</p>}
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Phone Number *</label>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="9876543210"
-                className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 placeholder-slate-500 text-xs focus:outline-none focus:border-cyan-500"
-              />
-              {errors.phone && <p className="text-[11px] text-rose-400 mt-1">{errors.phone}</p>}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Password *</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Min 8 characters"
-              className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 placeholder-slate-500 text-xs focus:outline-none focus:border-cyan-500"
-            />
-            {errors.password && <p className="text-[11px] text-rose-400 mt-1">{errors.password}</p>}
-          </div>
-
-          <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-400 leading-relaxed">
-            This form creates a <strong className="text-slate-300">STUDENT</strong> account.
-            Staff and supervisor accounts are created by an administrator.
-          </div>
-
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full py-3 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-lg shadow-cyan-600/25 flex items-center justify-center gap-2 disabled:opacity-50 transition-all mt-4"
-          >
-            {isLoading ? (
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <>
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Register Account</span>
-              </>
-            )}
-          </button>
-        </form>
-      </div>
-    </div>
+        <p className="text-center text-xs text-slate-500">
+          This creates a student account. Staff and supervisor accounts are issued by the hostel office.
+        </p>
+      </form>
+    </AuthLayout>
   );
 };

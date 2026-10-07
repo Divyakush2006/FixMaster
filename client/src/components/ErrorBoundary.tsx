@@ -25,21 +25,22 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
   render() {
     if (!this.state.error) return this.props.children;
     return (
-      <div className="min-h-[60vh] flex items-center justify-center p-6">
-        <div className="max-w-md w-full p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center space-y-4">
-          <div className="inline-flex p-3 rounded-2xl bg-rose-500/15 text-rose-400">
-            <AlertTriangle className="w-6 h-6" />
+      <div className="flex min-h-[60vh] items-center justify-center p-6">
+        <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 text-center shadow-card">
+          <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+            <AlertTriangle className="h-5 w-5" />
           </div>
-          <h2 className="text-base font-extrabold text-slate-100">Something went wrong on this screen</h2>
-          <p className="text-xs text-slate-400">
-            Your data is safe. Reloading usually fixes this - especially right after an update.
+          <h2 className="text-base font-semibold text-slate-900">This page couldn't be displayed</h2>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
+            Your data is safe. Reloading usually fixes this, especially right after an update.
           </p>
           <button
+            type="button"
             onClick={() => window.location.reload()}
-            className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs inline-flex items-center gap-2"
+            className="mt-5 inline-flex h-9 items-center gap-2 rounded-md bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700"
           >
-            <RotateCcw className="w-4 h-4" />
-            <span>Reload</span>
+            <RotateCcw className="h-4 w-4" />
+            Reload page
           </button>
         </div>
       </div>

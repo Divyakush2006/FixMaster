@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './api/queryClient';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './components/ui/Toast';
+import { ConfirmProvider } from './components/ui/ConfirmDialog';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AppShell } from './components/layout/AppShell';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -32,7 +33,7 @@ const InfrastructurePage = named(() => import('./features/admin/InfrastructurePa
 
 const RoleRedirect: React.FC = () => {
   const { user, getHomeRouteForRole, isAuthenticated, isLoading } = useAuth();
-  if (isLoading) return <PageLoader />;
+  if (isLoading) return <PageLoader fullScreen />;
   if (!isAuthenticated || !user) return <Navigate to="/login" replace />;
   return <Navigate to={getHomeRouteForRole(user.role)} replace />;
 };
@@ -45,51 +46,53 @@ export const App: React.FC = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-        <AuthProvider>
-          <BrowserRouter>
-            <ErrorBoundary>
-              <Suspense fallback={<PageLoader />}>
-                <Routes>
-                  {/* Sign-in: /login has the Student and Staff sign-ins, /admin is the
-                      separate administrator sign-in. */}
-                  <Route path="/login" element={<LoginScreen />} />
-                  <Route path="/register" element={<RegisterScreen />} />
-                  <Route path="/admin" element={<AdminLoginScreen />} />
+        <ConfirmProvider>
+          <AuthProvider>
+            <BrowserRouter>
+              <ErrorBoundary>
+                <Suspense fallback={<PageLoader fullScreen />}>
+                  <Routes>
+                    {/* Sign-in: /login has the Student and Staff sign-ins, /admin is the
+                        separate administrator sign-in. */}
+                    <Route path="/login" element={<LoginScreen />} />
+                    <Route path="/register" element={<RegisterScreen />} />
+                    <Route path="/admin" element={<AdminLoginScreen />} />
 
-                  {/* Protected App Shell */}
-                  <Route element={<AppShell />}>
-                    <Route path="/" element={<RoleRedirect />} />
+                    {/* Protected App Shell */}
+                    <Route element={<AppShell />}>
+                      <Route path="/" element={<RoleRedirect />} />
 
-                    {/* Every signed-in role */}
-                    <Route path="/account" element={guard(undefined, <AccountPage />)} />
+                      {/* Every signed-in role */}
+                      <Route path="/account" element={guard(undefined, <AccountPage />)} />
 
-                    {/* Student Portal */}
-                    <Route path="/student" element={guard(['STUDENT'], <StudentHome />)} />
-                    <Route path="/student/new" element={guard(['STUDENT'], <NewComplaintForm />)} />
-                    <Route path="/student/complaints" element={guard(['STUDENT'], <MyComplaints />)} />
+                      {/* Student Portal */}
+                      <Route path="/student" element={guard(['STUDENT'], <StudentHome />)} />
+                      <Route path="/student/new" element={guard(['STUDENT'], <NewComplaintForm />)} />
+                      <Route path="/student/complaints" element={guard(['STUDENT'], <MyComplaints />)} />
 
-                    {/* Staff Portal */}
-                    <Route path="/staff" element={guard(['STAFF'], <StaffQueue />)} />
+                      {/* Staff Portal */}
+                      <Route path="/staff" element={guard(['STAFF'], <StaffQueue />)} />
 
-                    {/* Supervisor / Admin Portal */}
-                    <Route path="/supervisor" element={guard(['SUPERVISOR', 'ADMIN'], <SupervisorDashboard />)} />
-                    <Route path="/supervisor/all-complaints" element={guard(['SUPERVISOR', 'ADMIN'], <AllComplaintsTable />)} />
-                    <Route path="/supervisor/hotspots" element={guard(['SUPERVISOR', 'ADMIN'], <HotspotsTable />)} />
-                    <Route path="/supervisor/escalated" element={guard(['SUPERVISOR', 'ADMIN'], <EscalatedQueue />)} />
+                      {/* Supervisor / Admin Portal */}
+                      <Route path="/supervisor" element={guard(['SUPERVISOR', 'ADMIN'], <SupervisorDashboard />)} />
+                      <Route path="/supervisor/all-complaints" element={guard(['SUPERVISOR', 'ADMIN'], <AllComplaintsTable />)} />
+                      <Route path="/supervisor/hotspots" element={guard(['SUPERVISOR', 'ADMIN'], <HotspotsTable />)} />
+                      <Route path="/supervisor/escalated" element={guard(['SUPERVISOR', 'ADMIN'], <EscalatedQueue />)} />
 
-                    {/* Administration (signed in through /admin) */}
-                    <Route path="/admin/dashboard" element={guard(['ADMIN'], <SupervisorDashboard />)} />
-                    <Route path="/admin/users" element={guard(['ADMIN'], <UsersPage />)} />
-                    <Route path="/admin/allotments" element={guard(['ADMIN'], <AllotmentsPage />)} />
-                    <Route path="/admin/infrastructure" element={guard(['ADMIN'], <InfrastructurePage />)} />
-                  </Route>
+                      {/* Administration (signed in through /admin) */}
+                      <Route path="/admin/dashboard" element={guard(['ADMIN'], <SupervisorDashboard />)} />
+                      <Route path="/admin/users" element={guard(['ADMIN'], <UsersPage />)} />
+                      <Route path="/admin/allotments" element={guard(['ADMIN'], <AllotmentsPage />)} />
+                      <Route path="/admin/infrastructure" element={guard(['ADMIN'], <InfrastructurePage />)} />
+                    </Route>
 
-                  <Route path="*" element={<RoleRedirect />} />
-                </Routes>
-              </Suspense>
-            </ErrorBoundary>
-          </BrowserRouter>
-        </AuthProvider>
+                    <Route path="*" element={<RoleRedirect />} />
+                  </Routes>
+                </Suspense>
+              </ErrorBoundary>
+            </BrowserRouter>
+          </AuthProvider>
+        </ConfirmProvider>
       </ToastProvider>
     </QueryClientProvider>
   );

@@ -1,25 +1,40 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
+import { Plus } from 'lucide-react';
 import { complaintsApi } from '../../api/endpoints';
-import { StatusBadge, PriorityBadge } from '../../components/common/Badges';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Tabs } from '../../components/ui/Tabs';
 import { SearchInput } from '../../components/ui/SearchInput';
 import { Pagination } from '../../components/ui/Pagination';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { ButtonLink } from '../../components/ui/Button';
 import { VerificationModal } from './VerificationModal';
 import { ComplaintDetailModal } from './ComplaintDetail';
-import { Complaint } from '../../types';
-import { formatRelativeTime } from '../../utils/formatters';
-import { ListOrdered, ShieldCheck, Eye, PlusCircle } from 'lucide-react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { TicketsTable } from './TicketsTable';
+import { Complaint, ComplaintStatus } from '../../types';
+import { ticketLocation, ticketRef } from '../../utils/labels';
+
+type Filter = 'ALL' | 'ACTION' | 'ACTIVE' | 'COMPLETED' | 'ESCALATED';
+
+const FILTERS: { value: Filter; label: string; match: (s: ComplaintStatus) => boolean }[] = [
+  { value: 'ALL', label: 'All', match: () => true },
+  { value: 'ACTION', label: 'Needs confirmation', match: (s) => s === 'PENDING_VERIFICATION' },
+  { value: 'ACTIVE', label: 'In progress', match: (s) => ['OPEN', 'ASSIGNED', 'IN_PROGRESS'].includes(s) },
+  { value: 'ESCALATED', label: 'Escalated', match: (s) => s === 'ESCALATED' },
+  { value: 'COMPLETED', label: 'Closed', match: (s) => s === 'COMPLETED' || s === 'REJECTED' },
+];
+
+const PAGE_SIZE = 10;
 
 export const MyComplaints: React.FC = () => {
   const [searchParams] = useSearchParams();
   const selectedComplaintIdFromUrl = searchParams.get('id');
 
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const pageSize = 10;
+  const [filter, setFilter] = useState<Filter>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [verifyingComplaint, setVerifyingComplaint] = useState<Complaint | null>(null);
   const [viewingComplaint, setViewingComplaint] = useState<Complaint | null>(null);
@@ -29,207 +44,104 @@ export const MyComplaints: React.FC = () => {
     queryFn: () => complaintsApi.list(),
   });
 
-  // Auto open detail if query param id exists
-  React.useEffect(() => {
+  // Deep link: /student/complaints?id=<complaint id> opens that record.
+  useEffect(() => {
     if (selectedComplaintIdFromUrl && complaints.length > 0) {
       const match = complaints.find((c) => c.complaint_id === selectedComplaintIdFromUrl);
       if (match) setViewingComplaint(match);
     }
   }, [selectedComplaintIdFromUrl, complaints]);
 
-  // Client-side filtering & search
+  const counts = useMemo(
+    () => Object.fromEntries(FILTERS.map((f) => [f.value, complaints.filter((c) => f.match(c.status)).length])) as Record<Filter, number>,
+    [complaints]
+  );
+
   const filteredComplaints = useMemo(() => {
+    const rule = FILTERS.find((f) => f.value === filter)!;
+    const q = searchQuery.trim().toLowerCase();
     return complaints.filter((c) => {
-      // Status filter
-      if (statusFilter !== 'ALL' && c.status !== statusFilter) {
-        return false;
-      }
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesIssue = c.issue_name.toLowerCase().includes(q);
-        const matchesCategory = c.category_name.toLowerCase().includes(q);
-        const matchesDesc = (c.description || '').toLowerCase().includes(q);
-        const matchesLoc = (c.room_id || c.common_area_id || c.block_id).toLowerCase().includes(q);
-        return matchesIssue || matchesCategory || matchesDesc || matchesLoc;
-      }
-      return true;
+      if (!rule.match(c.status)) return false;
+      if (!q) return true;
+      return [c.issue_name, c.category_name, c.description || '', ticketLocation(c), ticketRef(c.complaint_id), c.complaint_id].some((v) =>
+        v.toLowerCase().includes(q)
+      );
     });
-  }, [complaints, statusFilter, searchQuery]);
+  }, [complaints, filter, searchQuery]);
 
-  // Client-side pagination
-  const totalPages = Math.ceil(filteredComplaints.length / pageSize) || 1;
-  const paginatedComplaints = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredComplaints.slice(start, start + pageSize);
-  }, [filteredComplaints, currentPage, pageSize]);
-
-  const filterTabs: { label: string; value: string }[] = [
-    { label: 'All Tickets', value: 'ALL' },
-    { label: 'Verification Needed', value: 'PENDING_VERIFICATION' },
-    { label: 'Open', value: 'OPEN' },
-    { label: 'Assigned', value: 'ASSIGNED' },
-    { label: 'In Progress', value: 'IN_PROGRESS' },
-    { label: 'Completed', value: 'COMPLETED' },
-    { label: 'Escalated', value: 'ESCALATED' },
-  ];
+  const totalPages = Math.ceil(filteredComplaints.length / PAGE_SIZE) || 1;
+  const page = Math.min(currentPage, totalPages);
+  const paginated = filteredComplaints.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const filtering = filter !== 'ALL' || searchQuery.trim() !== '';
 
   return (
-    <div className="space-y-6 font-sans">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-blue-600/20 border border-blue-500/30 text-blue-400">
-            <ListOrdered className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-extrabold text-slate-100">My Complaints</h1>
-            <p className="text-xs text-slate-400">Track and verify your raised maintenance tickets</p>
-          </div>
-        </div>
+    <div>
+      <PageHeader
+        breadcrumbs={[{ label: 'Service desk', to: '/student' }, { label: 'My tickets' }]}
+        title="My tickets"
+        description="Every maintenance request you have raised, with its current status."
+        actions={
+          <ButtonLink to="/student/new" icon={Plus}>
+            Raise a ticket
+          </ButtonLink>
+        }
+      />
 
-        <Link
-          to="/student/new"
-          className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-lg shadow-cyan-600/20 flex items-center justify-center gap-2 transition-all self-start sm:self-auto"
-        >
-          <PlusCircle className="w-4 h-4" />
-          <span>New Complaint</span>
-        </Link>
-      </div>
-
-      {/* Filter Tabs & Search Bar */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-          {filterTabs.map((tab) => (
-            <button
-              key={tab.value}
-              onClick={() => {
-                setStatusFilter(tab.value);
-                setCurrentPage(1);
-              }}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                statusFilter === tab.value
-                  ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/20'
-                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        <SearchInput
-          value={searchQuery}
-          onChange={(q) => {
-            setSearchQuery(q);
-            setCurrentPage(1);
-          }}
-          placeholder="Search by issue, location, description..."
-        />
-      </div>
-
-      {/* Tickets List */}
-      {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-28 bg-slate-900/60 rounded-2xl border border-slate-800 animate-pulse" />
-          ))}
-        </div>
-      ) : paginatedComplaints.length === 0 ? (
-        <EmptyState
-          title="No complaints found"
-          description={
-            searchQuery || statusFilter !== 'ALL'
-              ? 'Try resetting your search query or status filter.'
-              : 'You have not raised any maintenance tickets yet. Tap 1-Click Quick Actions to get started.'
-          }
-          action={
-            searchQuery || statusFilter !== 'ALL'
-              ? {
-                  label: 'Reset Filters',
-                  onClick: () => {
-                    setStatusFilter('ALL');
-                    setSearchQuery('');
-                  },
-                }
-              : undefined
-          }
-        />
-      ) : (
-        <div className="space-y-3">
-          {paginatedComplaints.map((complaint) => (
-            <div
-              key={complaint.complaint_id}
-              className={`p-4 sm:p-5 rounded-2xl bg-slate-900 border transition-all hover:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg ${
-                complaint.status === 'PENDING_VERIFICATION'
-                  ? 'border-amber-500/50 bg-amber-950/20'
-                  : 'border-slate-800'
-              }`}
-            >
-              <div className="space-y-1.5 flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <StatusBadge status={complaint.status} />
-                  <PriorityBadge priority={complaint.priority} size="sm" />
-                  <span className="text-[11px] text-slate-400 font-mono">
-                    {formatRelativeTime(complaint.created_at)}
-                  </span>
-                </div>
-
-                <h3 className="text-base font-bold text-slate-100 truncate">{complaint.issue_name}</h3>
-
-                <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
-                  <span>
-                    Location:{' '}
-                    <strong className="text-slate-200">
-                      {complaint.room_id || complaint.common_area_id || complaint.block_id}
-                    </strong>
-                  </span>
-                  <span>•</span>
-                  <span>Category: {complaint.category_name}</span>
-                </div>
-
-                {complaint.description && (
-                  <p className="text-xs text-slate-400 line-clamp-1 italic">
-                    "{complaint.description}"
-                  </p>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
-                {complaint.status === 'PENDING_VERIFICATION' && (
-                  <button
-                    onClick={() => setVerifyingComplaint(complaint)}
-                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs shadow-lg shadow-amber-500/20 flex items-center gap-1.5 transition-all"
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Confirm & Rate</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={() => setViewingComplaint(complaint)}
-                  className="px-3.5 py-2 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                >
-                  <Eye className="w-4 h-4" />
-                  <span>Details</span>
-                </button>
-              </div>
-            </div>
-          ))}
-
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-            totalItems={filteredComplaints.length}
-            pageSize={pageSize}
+      <Card>
+        <div className="px-5 pt-3">
+          <Tabs
+            ariaLabel="Filter tickets"
+            value={filter}
+            onChange={(v) => {
+              setFilter(v);
+              setCurrentPage(1);
+            }}
+            items={FILTERS.map((f) => ({ value: f.value, label: f.label, count: isLoading ? undefined : counts[f.value] }))}
           />
         </div>
-      )}
+        <div className="border-b border-slate-200 px-5 py-3">
+          <SearchInput
+            className="sm:max-w-sm"
+            value={searchQuery}
+            onChange={(q) => {
+              setSearchQuery(q);
+              setCurrentPage(1);
+            }}
+            placeholder="Search by issue, location or ticket number"
+            label="Search tickets"
+          />
+        </div>
 
-      {/* Detail Modal */}
+        {!isLoading && paginated.length === 0 ? (
+          <EmptyState
+            bare
+            title={filtering ? 'No matching tickets' : 'No tickets yet'}
+            description={
+              filtering ? 'Try a different search or filter.' : 'When you raise a maintenance request it will appear here with its status.'
+            }
+            action={
+              filtering
+                ? {
+                    label: 'Clear filters',
+                    onClick: () => {
+                      setFilter('ALL');
+                      setSearchQuery('');
+                    },
+                  }
+                : undefined
+            }
+          />
+        ) : (
+          <>
+            <TicketsTable complaints={paginated} loading={isLoading} onView={setViewingComplaint} onVerify={setVerifyingComplaint} />
+            <Pagination currentPage={page} totalPages={totalPages} onPageChange={setCurrentPage} totalItems={filteredComplaints.length} pageSize={PAGE_SIZE} />
+          </>
+        )}
+      </Card>
+
       {viewingComplaint && (
         <ComplaintDetailModal
-          isOpen={true}
+          isOpen
           onClose={() => setViewingComplaint(null)}
           complaint={viewingComplaint}
           onOpenVerification={() => {
@@ -240,18 +152,13 @@ export const MyComplaints: React.FC = () => {
         />
       )}
 
-      {/* Verification Modal */}
       {verifyingComplaint && (
         <VerificationModal
-          isOpen={true}
+          isOpen
           onClose={() => setVerifyingComplaint(null)}
           complaintId={verifyingComplaint.complaint_id}
           issueName={verifyingComplaint.issue_name}
-          locationIdentifier={
-            verifyingComplaint.room_id ||
-            verifyingComplaint.common_area_id ||
-            verifyingComplaint.block_id
-          }
+          locationIdentifier={ticketLocation(verifyingComplaint)}
         />
       )}
     </div>

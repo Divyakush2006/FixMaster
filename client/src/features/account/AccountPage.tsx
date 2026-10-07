@@ -1,13 +1,18 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { KeyRound } from 'lucide-react';
 import { meApi } from '../../api/endpoints';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/ui/Toast';
-import { RoleBadge } from '../../components/common/Badges';
-import { KeyRound, UserCircle2, AlertCircle, CheckCircle2 } from 'lucide-react';
-
-const inputClass =
-  'w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card, CardBody, CardFooter, CardHeader, DetailList } from '../../components/ui/Card';
+import { Alert } from '../../components/ui/Alert';
+import { Avatar } from '../../components/ui/Avatar';
+import { Button } from '../../components/ui/Button';
+import { Field, PasswordInput } from '../../components/ui/Form';
+import { Skeleton } from '../../components/ui/PageLoader';
+import { RoleBadge, SpecializationBadge } from '../../components/common/Badges';
+import { formatDateTime } from '../../utils/formatters';
 
 export const AccountPage: React.FC = () => {
   const { updateToken } = useAuth();
@@ -27,14 +32,15 @@ export const AccountPage: React.FC = () => {
       setCurrent('');
       setNext('');
       setConfirm('');
-      showToast('Password updated', 'success', 'Any other signed-in devices have been signed out.');
+      showToast('Password updated', 'success', 'You have been signed out on every other device.');
     },
-    onError: (err: any) => setError(err.message || 'Could not update password.'),
+    onError: (err: Error) => setError(err.message || 'Could not update the password.'),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!current) return setError('Enter your current password.');
     if (next.length < 8) return setError('The new password must be at least 8 characters.');
     if (new TextEncoder().encode(next).length > 72) return setError('The new password must be at most 72 bytes.');
     if (next !== confirm) return setError('The new passwords do not match.');
@@ -43,74 +49,84 @@ export const AccountPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 font-sans">
-      <div className="flex items-center gap-3">
-        <div className="p-3 rounded-2xl bg-cyan-600/20 border border-cyan-500/30 text-cyan-400">
-          <UserCircle2 className="w-6 h-6" />
-        </div>
-        <div>
-          <h1 className="text-xl font-extrabold text-slate-100">My Account</h1>
-          <p className="text-xs text-slate-400">Profile details and password</p>
-        </div>
+    <div className="mx-auto max-w-4xl">
+      <PageHeader title="My account" description="Your profile details and sign-in security." />
+
+      <div className="space-y-6">
+        <Card>
+          <CardBody className="py-5">
+            {isLoading || !me ? (
+              <div className="flex items-center gap-4">
+                <Skeleton className="h-14 w-14 rounded-full" />
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-6">
+                <div className="flex items-center gap-4">
+                  <Avatar name={me.full_name} size="lg" />
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-lg font-semibold text-slate-900">{me.full_name}</h2>
+                      <RoleBadge role={me.role} />
+                    </div>
+                    <p className="font-mono text-[13px] text-slate-500">{me.reg_or_emp_id}</p>
+                  </div>
+                </div>
+                <div className="border-t border-slate-100 pt-5">
+                  <DetailList
+                    columns={3}
+                    items={[
+                      { label: 'Email', value: me.email || '—' },
+                      { label: 'Mobile number', value: me.phone_number || '—' },
+                      ...(me.specialization ? [{ label: 'Trade', value: <SpecializationBadge specialization={me.specialization} /> }] : []),
+                      ...(me.created_at ? [{ label: 'Member since', value: formatDateTime(me.created_at).split(',')[0] }] : []),
+                    ]}
+                  />
+                </div>
+              </div>
+            )}
+          </CardBody>
+          <div className="rounded-b-lg border-t border-slate-200 bg-slate-50/70 px-5 py-3 text-xs text-slate-500">
+            To correct your details or room allotment, contact the hostel office.
+          </div>
+        </Card>
+
+        <Card>
+          <form onSubmit={handleSubmit} noValidate>
+            <CardHeader
+              title="Change password"
+              description="Changing your password signs you out on every other device."
+              icon={
+                <span className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+                  <KeyRound className="h-4 w-4" />
+                </span>
+              }
+            />
+            <CardBody className="space-y-4">
+              {error && <Alert tone="danger">{error}</Alert>}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <Field label="Current password" required>
+                  {(a) => <PasswordInput {...a} autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />}
+                </Field>
+                <Field label="New password" required hint="At least 8 characters.">
+                  {(a) => <PasswordInput {...a} autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />}
+                </Field>
+                <Field label="Confirm new password" required error={confirm && next !== confirm ? 'Does not match.' : null}>
+                  {(a) => <PasswordInput {...a} autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />}
+                </Field>
+              </div>
+            </CardBody>
+            <CardFooter>
+              <Button type="submit" loading={mutation.isPending}>
+                Update password
+              </Button>
+            </CardFooter>
+          </form>
+        </Card>
       </div>
-
-      <section className="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 text-xs">
-        {isLoading || !me ? (
-          <div className="h-24 bg-slate-950 rounded-2xl animate-pulse" />
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Name" value={me.full_name} />
-            <div>
-              <span className="text-slate-400 block mb-0.5">Role</span>
-              <RoleBadge role={me.role} />
-            </div>
-            <Field label="Register / Employee ID" value={me.reg_or_emp_id} mono />
-            <Field label="Email" value={me.email || '—'} />
-            <Field label="Phone" value={me.phone_number || '—'} />
-            {me.specialization && <Field label="Trade" value={me.specialization} />}
-          </div>
-        )}
-        <p className="text-[11px] text-slate-500">
-          To correct your details or your room allotment, contact the hostel office.
-        </p>
-      </section>
-
-      <section className="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-4">
-        <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-          <KeyRound className="w-4 h-4 text-cyan-400" />
-          Change Password
-        </h2>
-
-        {error && (
-          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <input type="password" autoComplete="current-password" placeholder="Current password" value={current} onChange={(e) => setCurrent(e.target.value)} className={inputClass} required />
-          <input type="password" autoComplete="new-password" placeholder="New password (min 8 characters)" value={next} onChange={(e) => setNext(e.target.value)} className={inputClass} required />
-          <input type="password" autoComplete="new-password" placeholder="Confirm new password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className={inputClass} required />
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={mutation.isPending}
-              className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-2 disabled:opacity-50"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{mutation.isPending ? 'Updating...' : 'Update Password'}</span>
-            </button>
-          </div>
-        </form>
-      </section>
     </div>
   );
 };
-
-const Field: React.FC<{ label: string; value: string; mono?: boolean }> = ({ label, value, mono }) => (
-  <div>
-    <span className="text-slate-400 block mb-0.5">{label}</span>
-    <span className={`font-bold text-slate-100 ${mono ? 'font-mono' : ''}`}>{value}</span>
-  </div>
-);

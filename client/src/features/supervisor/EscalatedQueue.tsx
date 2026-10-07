@@ -1,12 +1,18 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { ShieldCheck, UserCheck } from 'lucide-react';
 import { complaintsApi } from '../../api/endpoints';
-import { StatusBadge, PriorityBadge } from '../../components/common/Badges';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Skeleton } from '../../components/ui/PageLoader';
+import { PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
 import { DispatchDrawer } from './DispatchDrawer';
 import { Complaint } from '../../types';
-import { formatRelativeTime } from '../../utils/formatters';
-import { AlertTriangle, UserCheck, ShieldAlert, ArrowRight } from 'lucide-react';
+import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
+import { PRIORITY_RANK, ticketLocation, ticketRef } from '../../utils/labels';
 
 export const EscalatedQueue: React.FC = () => {
   const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null);
@@ -16,98 +22,57 @@ export const EscalatedQueue: React.FC = () => {
     queryFn: () => complaintsApi.list({ status: 'ESCALATED' }),
   });
 
-  return (
-    <div className="space-y-6 font-sans">
-      {/* Header */}
-      <div className="p-5 rounded-3xl bg-rose-950/40 border-2 border-rose-500/50 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-rose-500/20 text-rose-400">
-            <AlertTriangle className="w-6 h-6 animate-pulse" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-extrabold text-rose-200">Escalated Tickets Queue</h1>
-              <span className="px-2 py-0.5 rounded-full bg-rose-500/30 text-rose-300 font-bold text-xs">
-                {complaints.length} Urgent
-              </span>
-            </div>
-            <p className="text-xs text-rose-300/80 mt-0.5">
-              Tickets rejected by students — requiring supervisor re-inspection & reassignment
-            </p>
-          </div>
-        </div>
-      </div>
+  // Most urgent first, then oldest first.
+  const sorted = [...complaints].sort(
+    (a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
 
-      {/* Escalated Tickets List */}
+  return (
+    <div>
+      <PageHeader
+        breadcrumbs={[{ label: 'Operations' }, { label: 'Escalations' }]}
+        title="Escalations"
+        meta={!isLoading && complaints.length > 0 ? <Badge tone="danger">{complaints.length} open</Badge> : undefined}
+        description="Tickets where the student reported that the work did not fix the problem. Ordered by priority, then age."
+      />
+
       {isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-28 bg-slate-900/60 rounded-2xl animate-pulse" />
+            <Skeleton key={i} className="h-28" />
           ))}
         </div>
-      ) : complaints.length === 0 ? (
-        <EmptyState
-          icon={ShieldAlert}
-          title="No escalated tickets"
-          description="Great job! There are currently no unresolved escalated complaints requiring re-assignment."
-        />
+      ) : sorted.length === 0 ? (
+        <EmptyState icon={ShieldCheck} title="No escalations" description="Every completed ticket has been accepted by the student. Nothing needs re-inspection." />
       ) : (
-        <div className="space-y-4">
-          {complaints.map((complaint) => (
-            <div
-              key={complaint.complaint_id}
-              className="p-5 rounded-2xl bg-slate-900 border-2 border-rose-500/40 hover:border-rose-500/80 transition-all shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div className="space-y-2 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <StatusBadge status={complaint.status} size="md" />
-                  <PriorityBadge priority={complaint.priority} size="md" />
-                  <span className="text-[11px] text-slate-400 font-mono">
-                    Escalated {formatRelativeTime(complaint.created_at)}
-                  </span>
-                </div>
-
-                <h3 className="text-base font-extrabold text-slate-100">{complaint.issue_name}</h3>
-
-                <div className="text-xs text-slate-300 flex items-center gap-3 flex-wrap">
-                  <span>
-                    Location:{' '}
-                    <strong className="text-slate-100">
-                      {complaint.room_id || complaint.common_area_id || complaint.block_id}
-                    </strong>
-                  </span>
-                  <span>•</span>
-                  <span>Raised By: {complaint.student_name}</span>
-                </div>
-
-                {complaint.description && (
-                  <p className="text-xs text-rose-200/90 italic bg-rose-950/30 p-2.5 rounded-xl border border-rose-900/40">
-                    "{complaint.description}"
+        <Card className="overflow-hidden">
+          <ul className="divide-y divide-slate-100">
+            {sorted.map((c) => (
+              <li key={c.complaint_id} className="relative flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                <span className="absolute inset-y-0 left-0 w-1 bg-rose-500" aria-hidden />
+                <div className="min-w-0 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                    <span className="font-mono text-xs text-slate-500">{ticketRef(c.complaint_id)}</span>
+                    <PriorityBadge priority={c.priority} />
+                    <SpecializationBadge specialization={c.required_specialization} />
+                  </div>
+                  <p className="font-medium text-slate-900">{c.issue_name}</p>
+                  <p className="text-xs text-slate-500">
+                    <span className="font-medium text-slate-700">{ticketLocation(c)}</span> · Raised by {c.student_name} ·{' '}
+                    <span title={formatDateTime(c.created_at)}>{formatRelativeTime(c.created_at)}</span>
                   </p>
-                )}
-              </div>
-
-              <button
-                onClick={() => setSelectedComplaint(complaint)}
-                className="px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow-lg shadow-rose-600/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shrink-0"
-              >
-                <UserCheck className="w-4 h-4" />
-                <span>Re-assign Technician</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
+                  {c.description && <p className="line-clamp-2 max-w-3xl text-[13px] text-slate-600">{c.description}</p>}
+                </div>
+                <Button icon={UserCheck} onClick={() => setSelectedComplaint(c)} className="shrink-0 self-start lg:self-center">
+                  Review and reassign
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Card>
       )}
 
-      {/* Dispatch Drawer */}
-      {selectedComplaint && (
-        <DispatchDrawer
-          isOpen={true}
-          onClose={() => setSelectedComplaint(null)}
-          complaint={selectedComplaint}
-        />
-      )}
+      {selectedComplaint && <DispatchDrawer key={selectedComplaint.complaint_id} isOpen onClose={() => setSelectedComplaint(null)} complaint={selectedComplaint} />}
     </div>
   );
 };

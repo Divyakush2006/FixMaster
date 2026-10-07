@@ -1,94 +1,88 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { MapPin, ShieldCheck } from 'lucide-react';
 import { analyticsApi } from '../../api/endpoints';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card, CardHeader } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { coerceNumber, formatDateTime } from '../../utils/formatters';
-import { Flame, ShieldCheck, MapPin } from 'lucide-react';
+import { Badge } from '../../components/ui/Badge';
+import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
+import { cn } from '../../components/ui/cn';
+import { coerceNumber, formatDateTime, formatRelativeTime } from '../../utils/formatters';
+import { blockLabel, SCOPE_LABEL } from '../../utils/labels';
 
 export const HotspotsTable: React.FC = () => {
-  const { data: hotspots = [], isLoading } = useQuery({
-    queryKey: ['analytics-hotspots'],
-    queryFn: analyticsApi.getHotspots,
-  });
+  const { data: hotspots = [], isLoading } = useQuery({ queryKey: ['analytics-hotspots'], queryFn: analyticsApi.getHotspots });
+
+  const rows = [...hotspots].sort((a, b) => coerceNumber(b.incident_count_14_days) - coerceNumber(a.incident_count_14_days));
+  const max = Math.max(1, ...rows.map((h) => coerceNumber(h.incident_count_14_days)));
 
   return (
-    <div className="space-y-6 font-sans">
-      <div className="flex items-center gap-3">
-        <div className="p-3 rounded-2xl bg-amber-600/20 border border-amber-500/30 text-amber-400">
-          <Flame className="w-6 h-6" />
-        </div>
-        <div>
-          <h1 className="text-xl font-extrabold text-slate-100">Recurring Defect Hotspots</h1>
-          <p className="text-xs text-slate-400">
-            Facilities with 2+ reported incidents in the past 14 days
-          </p>
-        </div>
-      </div>
+    <div>
+      <PageHeader
+        breadcrumbs={[{ label: 'Operations' }, { label: 'Recurring issues' }]}
+        title="Recurring issues"
+        description="Locations with two or more incidents of the same kind in the last 14 days. These usually need a root-cause fix rather than another repair."
+      />
 
-      {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-20 bg-slate-900/60 rounded-2xl animate-pulse" />
-          ))}
-        </div>
-      ) : hotspots.length === 0 ? (
-        <EmptyState
-          icon={ShieldCheck}
-          title="No recurring hotspots detected"
-          description="Excellent! No common area or room facilities have registered 2 or more repeated incidents over the last 14 days."
-        />
+      {!isLoading && rows.length === 0 ? (
+        <EmptyState icon={ShieldCheck} title="No recurring issues" description="No location has had repeated incidents of the same kind in the last 14 days." />
       ) : (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800 uppercase tracking-wider">
-                  <th className="p-4">Location / Asset</th>
-                  <th className="p-4">Hostel Block</th>
-                  <th className="p-4">Scope</th>
-                  <th className="p-4">Category</th>
-                  <th className="p-4 text-center">14-Day Incidents</th>
-                  <th className="p-4">Most Recent Incident</th>
+        <Card>
+          <CardHeader title="Hotspots" description="Ranked by number of incidents." />
+          <TableWrap>
+            <Table>
+              <THead>
+                <tr>
+                  <Th>Location</Th>
+                  <Th>Block</Th>
+                  <Th>Type</Th>
+                  <Th>Category</Th>
+                  <Th className="w-[220px]">Incidents (14 days)</Th>
+                  <Th>Most recent</Th>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {hotspots.map((hotspot, idx) => {
-                  const incidentCount = coerceNumber(hotspot.incident_count_14_days);
-
-                  return (
-                    <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="p-4 font-bold text-slate-100 flex items-center gap-2">
-                        <MapPin className="w-4 h-4 text-amber-400 shrink-0" />
-                        <span>{hotspot.asset_location}</span>
-                      </td>
-
-                      <td className="p-4 text-slate-300 font-mono">{hotspot.block_id}</td>
-
-                      <td className="p-4">
-                        <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-medium">
-                          {hotspot.ticket_scope}
-                        </span>
-                      </td>
-
-                      <td className="p-4 text-slate-300">{hotspot.category_name}</td>
-
-                      <td className="p-4 text-center">
-                        <span className="px-3 py-1 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 font-extrabold text-xs inline-flex items-center gap-1">
-                          <Flame className="w-3.5 h-3.5" />
-                          <span>{incidentCount}</span>
-                        </span>
-                      </td>
-
-                      <td className="p-4 text-slate-400 font-mono">
-                        {formatDateTime(hotspot.most_recent_incident)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              </THead>
+              {isLoading ? (
+                <TableSkeleton columns={6} rows={4} />
+              ) : (
+                <TBody>
+                  {rows.map((h, idx) => {
+                    const count = coerceNumber(h.incident_count_14_days);
+                    return (
+                      <Tr key={`${h.asset_location}-${h.category_name}-${idx}`}>
+                        <Td>
+                          <span className="inline-flex items-center gap-2 font-medium text-slate-900">
+                            <MapPin className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+                            {h.asset_location}
+                          </span>
+                        </Td>
+                        <Td className="whitespace-nowrap">{blockLabel(h.block_id)}</Td>
+                        <Td>
+                          <Badge>{SCOPE_LABEL[h.ticket_scope] ?? h.ticket_scope}</Badge>
+                        </Td>
+                        <Td>{h.category_name}</Td>
+                        <Td>
+                          <div className="flex items-center gap-3">
+                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                              <div
+                                className={cn('h-full rounded-full', count >= 4 ? 'bg-rose-500' : count >= 3 ? 'bg-orange-500' : 'bg-amber-400')}
+                                style={{ width: `${(count / max) * 100}%` }}
+                              />
+                            </div>
+                            <span className="w-6 text-right font-semibold text-slate-900 tabular">{count}</span>
+                          </div>
+                        </Td>
+                        <Td className="whitespace-nowrap text-slate-500" title={formatDateTime(h.most_recent_incident)}>
+                          {formatRelativeTime(h.most_recent_incident)}
+                        </Td>
+                      </Tr>
+                    );
+                  })}
+                </TBody>
+              )}
+            </Table>
+          </TableWrap>
+        </Card>
       )}
     </div>
   );
