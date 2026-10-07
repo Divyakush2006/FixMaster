@@ -1,20 +1,18 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Modal } from '../../components/ui/Modal';
-import { StatusBadge, PriorityBadge } from '../../components/common/Badges';
+import { ExternalLink, ShieldCheck } from 'lucide-react';
+import { Drawer } from '../../components/ui/Drawer';
+import { DetailList } from '../../components/ui/Card';
+import { Alert } from '../../components/ui/Alert';
+import { Button } from '../../components/ui/Button';
+import { Skeleton } from '../../components/ui/PageLoader';
+import { StatusBadge, PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
+import { ActivityTimeline } from '../../components/common/ActivityTimeline';
 import { reconstructTimeline } from '../../utils/timeline';
 import { complaintsApi } from '../../api/endpoints';
 import { Complaint, ComplaintStatus, TimelineEvent } from '../../types';
 import { formatDateTime } from '../../utils/formatters';
-import {
-  Building2,
-  Clock,
-  User,
-  ShieldCheck,
-  CheckCircle2,
-  AlertCircle,
-  ExternalLink,
-} from 'lucide-react';
+import { CLOSED_STATUSES, SCOPE_LABEL, STATUS_LABEL, ticketLocation, ticketRef } from '../../utils/labels';
 
 interface ComplaintDetailModalProps {
   isOpen: boolean;
@@ -23,201 +21,128 @@ interface ComplaintDetailModalProps {
   onOpenVerification?: () => void;
 }
 
-const STATUS_LABELS: Record<ComplaintStatus, string> = {
-  OPEN: 'Complaint Registered',
-  ASSIGNED: 'Dispatched to Technician',
-  IN_PROGRESS: 'Work In Progress',
-  PENDING_VERIFICATION: 'Work Marked Completed',
-  COMPLETED: 'Closed & Verified',
-  ESCALATED: 'Escalated by Student',
+const STATUS_STEP: Record<ComplaintStatus, string> = {
+  OPEN: 'Ticket registered',
+  ASSIGNED: 'Technician assigned',
+  IN_PROGRESS: 'Work started',
+  PENDING_VERIFICATION: 'Work marked complete',
+  COMPLETED: 'Closed and verified',
+  ESCALATED: 'Escalated to supervisor',
   REJECTED: 'Rejected',
 };
 
-const TERMINAL_STATUSES: ComplaintStatus[] = ['COMPLETED', 'REJECTED'];
-
-export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
-  isOpen,
-  onClose,
-  complaint,
-  onOpenVerification,
-}) => {
-  // Real audit trail from complaint_logs. A brand-new OPEN ticket
-  // legitimately has zero rows here (the DB trigger only fires on a status
-  // CHANGE, not on creation), so the client-side reconstruction is kept as
-  // the fallback rather than showing an empty timeline.
+/** Read-only record view of one ticket with its activity history. */
+export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({ isOpen, onClose, complaint, onOpenVerification }) => {
+  // Real audit trail from complaint_logs. Records inserted directly into the
+  // database (demo data) may have none, so the reconstruction is the fallback.
   const { data: logs = [], isLoading: isLoadingLogs } = useQuery({
     queryKey: ['complaint-logs', complaint.complaint_id],
     queryFn: () => complaintsApi.getLogs(complaint.complaint_id),
     enabled: isOpen,
   });
 
-  const timelineEvents: TimelineEvent[] =
+  const events: TimelineEvent[] =
     logs.length > 0
       ? [
           {
-            title: 'Complaint Registered',
-            description: `Ticket raised by ${complaint.student_name} (${complaint.issue_name})`,
+            title: 'Ticket raised',
+            description: `Raised by ${complaint.student_name}`,
             timestamp: formatDateTime(complaint.created_at),
             status: 'completed',
           },
-          ...logs.map((log, idx) => ({
-            title: STATUS_LABELS[log.new_status] || log.new_status,
-            description: log.action_note
-              ? log.changed_by_name
-                ? `${log.action_note} — ${log.changed_by_name}`
-                : log.action_note
-              : `Status changed to ${log.new_status}`,
-            timestamp: formatDateTime(log.timestamp),
-            status: (idx === logs.length - 1 && !TERMINAL_STATUSES.includes(complaint.status)
-              ? 'current'
-              : 'completed') as TimelineEvent['status'],
-          })),
+          // The creation entry (no previous status) duplicates the line above.
+          ...logs
+            .filter((log) => log.previous_status !== null || log.new_status !== 'OPEN')
+            .map((log, idx, arr) => ({
+              title: STATUS_STEP[log.new_status] || STATUS_LABEL[log.new_status] || log.new_status,
+              description: [log.action_note, log.changed_by_name].filter(Boolean).join(' · ') || `Status changed to ${STATUS_LABEL[log.new_status]}`,
+              timestamp: formatDateTime(log.timestamp),
+              status: (idx === arr.length - 1 && !CLOSED_STATUSES.includes(complaint.status) ? 'current' : 'completed') as TimelineEvent['status'],
+            })),
         ]
       : reconstructTimeline(complaint);
 
-  const location = complaint.room_id || complaint.common_area_id || complaint.block_id;
+  const safePhoto = complaint.photo_evidence_url && /^https?:\/\//i.test(complaint.photo_evidence_url) ? complaint.photo_evidence_url : null;
 
   return (
-    <Modal
+    <Drawer
       isOpen={isOpen}
       onClose={onClose}
-      title="Complaint Record Details"
-      subtitle={`Ref ID: ${complaint.complaint_id}`}
-      maxWidth="lg"
+      eyebrow={
+        <>
+          <span className="font-mono text-xs font-medium text-slate-500">{ticketRef(complaint.complaint_id)}</span>
+          <StatusBadge status={complaint.status} />
+          <PriorityBadge priority={complaint.priority} />
+        </>
+      }
+      title={complaint.issue_name}
+      subtitle={complaint.category_name}
     >
-      <div className="space-y-6 font-sans">
-        {/* Verification Alert Banner if Pending Verification */}
+      <div className="space-y-6">
         {complaint.status === 'PENDING_VERIFICATION' && (
-          <div className="p-4 rounded-2xl bg-amber-950/40 border-2 border-amber-500/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 animate-pulse" />
-              <div>
-                <h4 className="text-xs font-bold text-amber-300">Action Required: Sign-off Work</h4>
-                <p className="text-[11px] text-amber-200/80">
-                  Technician has marked work completed. Please verify to close ticket.
-                </p>
-              </div>
-            </div>
-
-            {onOpenVerification && (
-              <button
-                onClick={onOpenVerification}
-                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs shadow-lg shadow-amber-500/20 flex items-center justify-center gap-1.5 shrink-0"
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span>Confirm & Rate</span>
-              </button>
-            )}
-          </div>
+          <Alert
+            tone="warning"
+            title="Your confirmation is needed"
+            action={
+              onOpenVerification && (
+                <Button size="sm" icon={ShieldCheck} onClick={onOpenVerification}>
+                  Confirm
+                </Button>
+              )
+            }
+          >
+            The technician has marked this work as done.
+          </Alert>
         )}
 
-        {/* Title & Badges */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <StatusBadge status={complaint.status} size="lg" />
-            <PriorityBadge priority={complaint.priority} size="lg" />
-          </div>
-          <h2 className="text-lg font-extrabold text-slate-100">{complaint.issue_name}</h2>
-          <p className="text-xs text-slate-400">Category: {complaint.category_name}</p>
-        </div>
+        <section>
+          <h3 className="eyebrow mb-3">Details</h3>
+          <DetailList
+            items={[
+              { label: 'Location', value: ticketLocation(complaint) },
+              { label: 'Type', value: SCOPE_LABEL[complaint.ticket_scope] },
+              { label: 'Trade', value: <SpecializationBadge specialization={complaint.required_specialization} /> },
+              { label: 'Preferred time', value: complaint.preferred_timeslot || 'Any time' },
+              { label: 'Raised by', value: complaint.student_name },
+              { label: 'Raised on', value: formatDateTime(complaint.created_at) },
+              ...(complaint.resolved_at ? [{ label: 'Work completed', value: formatDateTime(complaint.resolved_at) }] : []),
+              ...(complaint.closed_at ? [{ label: 'Closed on', value: formatDateTime(complaint.closed_at) }] : []),
+            ]}
+          />
+        </section>
 
-        {/* Key Info Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-2xl bg-slate-950 border border-slate-800 text-xs">
-          <div>
-            <span className="text-slate-400 flex items-center gap-1 mb-0.5">
-              <Building2 className="w-3.5 h-3.5 text-cyan-400" /> Location
-            </span>
-            <span className="font-bold text-slate-100">{location}</span>
-          </div>
-
-          <div>
-            <span className="text-slate-400 flex items-center gap-1 mb-0.5">
-              <Clock className="w-3.5 h-3.5 text-cyan-400" /> Preferred Timeslot
-            </span>
-            <span className="font-bold text-slate-100">{complaint.preferred_timeslot || 'N/A'}</span>
-          </div>
-
-          <div>
-            <span className="text-slate-400 flex items-center gap-1 mb-0.5">
-              <User className="w-3.5 h-3.5 text-cyan-400" /> Raised By
-            </span>
-            <span className="font-bold text-slate-100">{complaint.student_name}</span>
-          </div>
-
-          <div>
-            <span className="text-slate-400 flex items-center gap-1 mb-0.5">
-              <Clock className="w-3.5 h-3.5 text-cyan-400" /> Registered At
-            </span>
-            <span className="font-bold text-slate-100">{formatDateTime(complaint.created_at)}</span>
-          </div>
-        </div>
-
-        {/* Description */}
         {complaint.description && (
-          <div className="space-y-1">
-            <h4 className="text-xs font-bold text-slate-300">Description</h4>
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 leading-relaxed">
+          <section>
+            <h3 className="eyebrow mb-2">Description</h3>
+            <p className="whitespace-pre-line rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] leading-relaxed text-slate-700">
               {complaint.description}
-            </div>
-          </div>
+            </p>
+          </section>
         )}
 
-        {/* Photo Evidence - only http(s) links are ever rendered as links.
-            The API rejects anything else now, but records stored before that
-            validation existed may still hold e.g. a javascript: URL. */}
-        {complaint.photo_evidence_url && /^https?:\/\//i.test(complaint.photo_evidence_url) && (
-          <div className="space-y-1">
-            <h4 className="text-xs font-bold text-slate-300">Photo Evidence</h4>
-            <a
-              href={complaint.photo_evidence_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 underline font-semibold"
-            >
-              <span>View attached photo evidence</span>
-              <ExternalLink className="w-3.5 h-3.5" />
+        {/* Only http(s) links are ever rendered: older records may hold other schemes. */}
+        {safePhoto && (
+          <section>
+            <h3 className="eyebrow mb-2">Attachment</h3>
+            <a href={safePhoto} target="_blank" rel="noopener noreferrer" className="link inline-flex items-center gap-1.5 text-[13px]">
+              View photo
+              <ExternalLink className="h-3.5 w-3.5" />
             </a>
-          </div>
+          </section>
         )}
 
-        {/* Audit Trail Timeline */}
-        <div className="space-y-3 pt-2">
-          <h4 className="text-xs font-extrabold text-slate-300 uppercase tracking-wider">
-            Ticket Audit Trail
-          </h4>
-
-          {isLoadingLogs && (
-            <div className="h-16 bg-slate-900/60 rounded-xl animate-pulse" />
+        <section>
+          <h3 className="eyebrow mb-3">Activity</h3>
+          {isLoadingLogs ? (
+            <div className="space-y-3">
+              <Skeleton className="h-10" />
+              <Skeleton className="h-10" />
+            </div>
+          ) : (
+            <ActivityTimeline events={events} />
           )}
-
-          <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800">
-            {timelineEvents.map((event, idx) => (
-              <div key={idx} className="relative flex items-start justify-between gap-3">
-                <div
-                  className={`absolute -left-6 top-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                    event.status === 'completed'
-                      ? 'bg-cyan-500 border-cyan-400 text-slate-950'
-                      : event.status === 'current'
-                      ? 'bg-amber-500 border-amber-400 text-slate-950 animate-pulse'
-                      : 'bg-slate-900 border-slate-700'
-                  }`}
-                >
-                  {event.status === 'completed' && <CheckCircle2 className="w-3 h-3 stroke-[3]" />}
-                </div>
-
-                <div>
-                  <h5 className="text-xs font-bold text-slate-200">{event.title}</h5>
-                  <p className="text-[11px] text-slate-400 mt-0.5">{event.description}</p>
-                </div>
-
-                <span className="text-[10px] font-mono text-slate-500 shrink-0">
-                  {event.timestamp}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        </section>
       </div>
-    </Modal>
+    </Drawer>
   );
 };

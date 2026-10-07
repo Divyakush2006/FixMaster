@@ -3,6 +3,27 @@
 React 18 + TypeScript + Vite + TanStack Query + Tailwind, in `client/`.
 The full audit and its fixes are in [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
 
+## Design system
+
+An enterprise service-desk look: a navy sidebar, a light workspace, compact
+data tables, Inter type and one corporate blue (`brand-*` in
+`tailwind.config.js`). Light theme only.
+
+- **Primitives** live in `src/components/ui/`: `Button`/`ButtonLink`/`IconButton`,
+  form controls with labelled `Field` (+ `PasswordInput`), `Card`/`CardHeader`/
+  `DetailList`, `PageHeader` (breadcrumbs + actions), `Badge`, `Alert`, `Tabs`/
+  `Segmented`, `Table` parts, `Modal`, `Drawer` (record side panel), `StatCard`,
+  `Switch`, `Avatar`, `Toast`, `EmptyState`, `Skeleton`, `Pagination`.
+- **Confirmations** use `useConfirm()` (`ConfirmDialog.tsx`) - never
+  `window.confirm`/`prompt`.
+- **Dialogs and drawers** share `overlay.ts`: scroll lock, Escape closes the
+  topmost one, focus moves in, Tab stays inside, focus returns on close.
+- **Vocabulary** is centralised in `src/utils/labels.ts` (status, priority,
+  trade, role and room-type labels, `ticketRef()` -> `TKT-00A3F9`,
+  `ticketLocation()`). Screens show these labels, never raw enum codes.
+- **Navigation** per role is defined once in `components/layout/navigation.ts`;
+  the sidebar becomes a slide-in drawer below the `md` breakpoint.
+
 ## How it talks to the API
 
 - All requests go to the **same-origin path `/api`** (`src/api/client.ts`).
@@ -30,7 +51,7 @@ The full audit and its fixes are in [`docs/PRODUCTION_READINESS.md`](docs/PRODUC
 | `/admin` | public | **Administrator sign-in**, separate from `/login` and not linked from it. |
 | `/student`, `/student/new`, `/student/complaints` | STUDENT | Room tickets and 1-click actions use the student's **real allotment** (`GET /me/allotment`). With no allotment the student can still report common-area problems. |
 | `/staff` | STAFF | Floor-ordered queue, start work, mark done, on/off duty toggle. |
-| `/supervisor/*` | SUPERVISOR, ADMIN | KPIs, all complaints, escalations, hotspots, dispatch. |
+| `/supervisor/*` | SUPERVISOR, ADMIN | Operations overview, all tickets (dispatch side panel with activity history), escalations, recurring issues. |
 | `/admin/dashboard` | ADMIN | KPI dashboard (admin home). |
 | `/admin/users`, `/admin/allotments` | ADMIN | Create staff/supervisor accounts, deactivate, reset passwords; allot and move students between rooms. |
 | `/admin/infrastructure` | ADMIN | Blocks A-T, floors (Ground + 1-10, add more), rooms added per floor with generated numbers (`G01`, `428`). |

@@ -47,12 +47,6 @@ export function formatDateTime(dateString: string | null | undefined): string {
   });
 }
 
-export function truncateId(id: string | null | undefined, length = 8): string {
-  if (!id) return '';
-  if (id.length <= length) return id;
-  return `${id.substring(0, length)}...`;
-}
-
 /**
  * Floor/room numbering, matching the database rules (migration 004):
  * floor 0 is the Ground floor (code "G"); a room number is the floor code

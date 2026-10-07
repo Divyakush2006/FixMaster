@@ -1,39 +1,38 @@
 import React from 'react';
 import { LucideIcon, Inbox } from 'lucide-react';
+import { cn } from './cn';
+import { Button } from './Button';
 
 interface EmptyStateProps {
   icon?: LucideIcon;
   title: string;
-  description: string;
+  description: React.ReactNode;
   action?: {
     label: string;
     onClick: () => void;
   };
+  /** Render without its own border, for use inside a Card. */
+  bare?: boolean;
+  className?: string;
 }
 
-export const EmptyState: React.FC<EmptyStateProps> = ({
-  icon: Icon = Inbox,
-  title,
-  description,
-  action,
-}) => {
-  return (
-    <div className="flex flex-col items-center justify-center p-8 text-center bg-slate-900/40 border border-slate-800/80 rounded-2xl">
-      <div className="p-4 rounded-full bg-slate-800/60 text-slate-400 mb-3 border border-slate-700/50">
-        <Icon className="w-8 h-8" />
-      </div>
-      <h3 className="text-base font-semibold text-slate-200">{title}</h3>
-      <p className="text-xs text-slate-400 max-w-sm mt-1 mb-4 leading-relaxed">
-        {description}
-      </p>
-      {action && (
-        <button
-          onClick={action.onClick}
-          className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs shadow-lg shadow-cyan-600/20 transition-all"
-        >
-          {action.label}
-        </button>
-      )}
+export const EmptyState: React.FC<EmptyStateProps> = ({ icon: Icon = Inbox, title, description, action, bare, className }) => (
+  <div
+    className={cn(
+      'flex flex-col items-center justify-center px-6 py-12 text-center',
+      !bare && 'rounded-lg border border-dashed border-slate-300 bg-white',
+      className
+    )}
+  >
+    <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+      <Icon className="h-5 w-5" aria-hidden />
     </div>
-  );
-};
+    <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+    <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-slate-500">{description}</p>
+    {action && (
+      <Button variant="secondary" size="sm" className="mt-4" onClick={action.onClick}>
+        {action.label}
+      </Button>
+    )}
+  </div>
+);

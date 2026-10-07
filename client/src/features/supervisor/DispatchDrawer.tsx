@@ -1,17 +1,22 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { dispatchApi, metaApi } from '../../api/endpoints';
+import { Sparkles, UserCheck } from 'lucide-react';
+import { complaintsApi, dispatchApi, metaApi } from '../../api/endpoints';
 import { useToast } from '../../components/ui/Toast';
-import { StatusBadge, PriorityBadge } from '../../components/common/Badges';
-import { Complaint } from '../../types';
+import { Drawer } from '../../components/ui/Drawer';
+import { DetailList } from '../../components/ui/Card';
+import { Alert } from '../../components/ui/Alert';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { Avatar } from '../../components/ui/Avatar';
+import { Skeleton } from '../../components/ui/PageLoader';
+import { cn } from '../../components/ui/cn';
+import { StatusBadge, PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
+import { ActivityTimeline } from '../../components/common/ActivityTimeline';
+import { Complaint, TimelineEvent } from '../../types';
 import { formatDateTime } from '../../utils/formatters';
-import {
-  X,
-  UserCheck,
-  Zap,
-  Sparkles,
-  CheckCircle2,
-} from 'lucide-react';
+import { reconstructTimeline } from '../../utils/timeline';
+import { SCOPE_LABEL, SPECIALIZATION_LABEL, STATUS_LABEL, ticketLocation, ticketRef } from '../../utils/labels';
 
 interface DispatchDrawerProps {
   isOpen: boolean;
@@ -19,186 +24,215 @@ interface DispatchDrawerProps {
   complaint: Complaint;
 }
 
+/** A ticket's record plus dispatch controls, for supervisors and admins. */
 export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose, complaint }) => {
   const [selectedStaffId, setSelectedStaffId] = useState('');
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
   const isCleaning = complaint.required_specialization === 'CLEANING';
+  // The database only (re)assigns tickets in these states.
+  const canDispatch = complaint.status === 'OPEN' || complaint.status === 'ESCALATED';
 
   // Staff roster, pre-filtered to the trade this ticket needs. The backend
-  // also rejects a specialization mismatch server-side, so this filter is a
-  // UX convenience, not the only guard.
+  // also rejects a specialization mismatch, so this is a convenience only.
   const { data: staffList = [], isLoading: isLoadingStaff } = useQuery({
     queryKey: ['staff-roster', complaint.required_specialization],
     queryFn: () => metaApi.getStaff(complaint.required_specialization),
+    enabled: isOpen && canDispatch,
+  });
+
+  const { data: logs = [], isLoading: isLoadingLogs } = useQuery({
+    queryKey: ['complaint-logs', complaint.complaint_id],
+    queryFn: () => complaintsApi.getLogs(complaint.complaint_id),
     enabled: isOpen,
   });
 
-  // Manual Dispatch Mutation
+  const roster = useMemo(
+    () => [...staffList].sort((a, b) => Number(b.is_available) - Number(a.is_available) || a.active_task_count - b.active_task_count),
+    [staffList]
+  );
+
+  const afterDispatch = () => {
+    queryClient.invalidateQueries({ queryKey: ['complaints'] });
+    queryClient.invalidateQueries({ queryKey: ['analytics-kpi'] });
+    queryClient.invalidateQueries({ queryKey: ['complaint-logs', complaint.complaint_id] });
+  };
+
   const manualAssignMutation = useMutation({
     mutationFn: () => dispatchApi.assignTechnician(complaint.complaint_id, selectedStaffId),
     onSuccess: (data) => {
-      showToast('Technician Assigned!', 'success', data.message || 'Task successfully assigned.');
-      queryClient.invalidateQueries({ queryKey: ['complaints'] });
+      showToast('Technician assigned', 'success', data.message);
+      afterDispatch();
       onClose();
     },
-    onError: (err: any) => {
-      showToast(err.message || 'Failed to assign technician', 'error');
-    },
+    onError: (err: Error) => showToast('Assignment failed', 'error', err.message),
   });
 
-  // Auto Dispatch Cleaning Mutation. The backend reports `assigned` honestly:
-  // it can return 200 with assigned=false when no cleaning staff were free,
-  // which is not the same as failure and must not be shown as an error.
+  // The backend reports `assigned` honestly: 200 with assigned=false means no
+  // cleaner was free, which is not a failure.
   const autoDispatchMutation = useMutation({
     mutationFn: () => dispatchApi.autoDispatchCleaning(complaint.complaint_id),
     onSuccess: (data) => {
-      showToast(
-        data.assigned ? 'Auto-Dispatched!' : 'No Staff Available',
-        data.assigned ? 'success' : 'info',
-        data.message
-      );
-      queryClient.invalidateQueries({ queryKey: ['complaints'] });
+      showToast(data.assigned ? 'Auto-dispatched' : 'No housekeeping staff available', data.assigned ? 'success' : 'info', data.message);
+      afterDispatch();
       if (data.assigned) onClose();
     },
-    onError: (err: any) => {
-      showToast(err.message || 'Auto-dispatch failed', 'error');
-    },
+    onError: (err: Error) => showToast('Auto-dispatch failed', 'error', err.message),
   });
 
-  if (!isOpen) return null;
+  const events: TimelineEvent[] =
+    logs.length > 0
+      ? logs.map((log, idx) => ({
+          title: log.previous_status ? `${STATUS_LABEL[log.previous_status]} → ${STATUS_LABEL[log.new_status]}` : `Raised as ${STATUS_LABEL[log.new_status]}`,
+          description: [log.action_note, log.changed_by_name].filter(Boolean).join(' · ') || '—',
+          timestamp: formatDateTime(log.timestamp),
+          status: idx === logs.length - 1 ? 'current' : 'completed',
+        }))
+      : reconstructTimeline(complaint);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-      <div className="w-full max-w-xl bg-slate-900 border-l border-slate-800 h-full flex flex-col shadow-2xl overflow-y-auto p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-start justify-between pb-4 border-b border-slate-800">
-          <div>
-            <div className="flex items-center gap-2">
-              <StatusBadge status={complaint.status} />
-              <PriorityBadge priority={complaint.priority} />
-            </div>
-            <h2 className="text-lg font-extrabold text-slate-100 mt-2">{complaint.issue_name}</h2>
-            <p className="text-xs text-slate-400 font-mono">Ref: {complaint.complaint_id}</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Complaint Overview Card */}
-        <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <span className="text-slate-400 block mb-0.5">Location</span>
-              <span className="font-bold text-slate-100">
-                {complaint.room_id || complaint.common_area_id || complaint.block_id}
-              </span>
-            </div>
-            <div>
-              <span className="text-slate-400 block mb-0.5">Category</span>
-              <span className="font-bold text-slate-100">{complaint.category_name}</span>
-            </div>
-            <div>
-              <span className="text-slate-400 block mb-0.5">Student</span>
-              <span className="font-bold text-slate-100">{complaint.student_name}</span>
-            </div>
-            <div>
-              <span className="text-slate-400 block mb-0.5">Raised At</span>
-              <span className="font-bold text-slate-100">{formatDateTime(complaint.created_at)}</span>
-            </div>
-          </div>
-
-          {complaint.description && (
-            <div className="pt-2 border-t border-slate-900">
-              <span className="text-slate-400 block mb-1">Description:</span>
-              <p className="text-slate-200 italic">"{complaint.description}"</p>
-            </div>
-          )}
-        </div>
-
-        {/* Auto Dispatch Action for Cleaning Tickets */}
-        {isCleaning && (
-          <div className="p-4 rounded-2xl bg-cyan-950/40 border border-cyan-500/30 space-y-3">
-            <div className="flex items-center gap-2 text-cyan-400 font-bold text-xs">
-              <Zap className="w-4 h-4" />
-              <span>1-Click Auto Dispatch (Housekeeping Only)</span>
-            </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Auto-dispatch automatically selects the least-loaded available cleaner for this block.
-            </p>
-            <button
-              onClick={() => autoDispatchMutation.mutate()}
-              disabled={autoDispatchMutation.isPending}
-              className="w-full py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-lg shadow-cyan-600/20 flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
-            >
-              {autoDispatchMutation.isPending ? (
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  <span>Execute Auto-Dispatch</span>
-                </>
-              )}
-            </button>
-          </div>
+    <Drawer
+      isOpen={isOpen}
+      onClose={onClose}
+      eyebrow={
+        <>
+          <span className="font-mono text-xs font-medium text-slate-500">{ticketRef(complaint.complaint_id)}</span>
+          <StatusBadge status={complaint.status} />
+          <PriorityBadge priority={complaint.priority} />
+        </>
+      }
+      title={complaint.issue_name}
+      subtitle={complaint.category_name}
+      footer={
+        canDispatch ? (
+          <>
+            <Button variant="secondary" onClick={onClose}>
+              Close
+            </Button>
+            <Button icon={UserCheck} disabled={!selectedStaffId} loading={manualAssignMutation.isPending} onClick={() => manualAssignMutation.mutate()}>
+              {complaint.status === 'ESCALATED' ? 'Reassign technician' : 'Assign technician'}
+            </Button>
+          </>
+        ) : (
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+        )
+      }
+    >
+      <div className="space-y-7">
+        {complaint.status === 'ESCALATED' && (
+          <Alert tone="danger" title="Escalated by the student">
+            The student reported that the problem was not fixed. Assign a technician to re-inspect.
+          </Alert>
         )}
 
-        {/* Manual Dispatch Action */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 text-slate-200 font-bold text-sm">
-            <UserCheck className="w-4 h-4 text-cyan-400" />
-            <span>Manual Technician Assignment</span>
-          </div>
+        <section>
+          <h3 className="eyebrow mb-3">Details</h3>
+          <DetailList
+            items={[
+              { label: 'Location', value: <span className="font-medium">{ticketLocation(complaint)}</span> },
+              { label: 'Type', value: SCOPE_LABEL[complaint.ticket_scope] },
+              { label: 'Raised by', value: complaint.student_name },
+              { label: 'Raised on', value: formatDateTime(complaint.created_at) },
+              { label: 'Trade', value: <SpecializationBadge specialization={complaint.required_specialization} /> },
+              { label: 'Preferred time', value: complaint.preferred_timeslot || 'Any time' },
+            ]}
+          />
+          {complaint.description && (
+            <p className="mt-4 whitespace-pre-line rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] leading-relaxed text-slate-700">
+              {complaint.description}
+            </p>
+          )}
+        </section>
 
-          <div className="space-y-2">
-            <label className="block text-xs font-semibold text-slate-300">
-              Select Technician ({complaint.required_specialization}) *
-            </label>
-            <select
-              value={selectedStaffId}
-              onChange={(e) => setSelectedStaffId(e.target.value)}
-              disabled={isLoadingStaff}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 disabled:opacity-50"
-            >
-              <option value="">
-                {isLoadingStaff ? 'Loading technicians...' : 'Choose Technician...'}
-              </option>
-              {staffList.map((staff) => (
-                <option key={staff.user_id} value={staff.user_id} disabled={!staff.is_available}>
-                  {staff.full_name} — {staff.active_task_count} active task
-                  {staff.active_task_count === 1 ? '' : 's'}
-                  {!staff.is_available ? ' (unavailable)' : ''}
-                </option>
-              ))}
-            </select>
-            {!isLoadingStaff && staffList.length === 0 && (
-              <p className="text-[11px] text-amber-400">
-                No {complaint.required_specialization} technicians are registered.
-              </p>
-            )}
-          </div>
+        <section>
+          <h3 className="eyebrow mb-3">Dispatch</h3>
+          {!canDispatch ? (
+            <Alert tone="info">
+              This ticket is <strong>{STATUS_LABEL[complaint.status].toLowerCase()}</strong>. Tickets can only be assigned while they are open or escalated.
+            </Alert>
+          ) : (
+            <div className="space-y-4">
+              {isCleaning && (
+                <div className="flex flex-col gap-3 rounded-lg border border-brand-200 bg-brand-50/50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-[13px] font-semibold text-slate-900">Auto-dispatch</p>
+                    <p className="mt-0.5 text-xs text-slate-600">Assigns the least-loaded housekeeping staff member who is on duty.</p>
+                  </div>
+                  <Button variant="secondary" icon={Sparkles} loading={autoDispatchMutation.isPending} onClick={() => autoDispatchMutation.mutate()}>
+                    Auto-dispatch
+                  </Button>
+                </div>
+              )}
 
-          <button
-            onClick={() => manualAssignMutation.mutate()}
-            disabled={!selectedStaffId || manualAssignMutation.isPending}
-            className="w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-lg shadow-purple-600/25 flex items-center justify-center gap-2 disabled:opacity-40 transition-all"
-          >
-            {manualAssignMutation.isPending ? (
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <>
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Assign Selected Technician</span>
-              </>
-            )}
-          </button>
-        </div>
+              <div>
+                <p className="mb-2 text-[13px] font-medium text-slate-700">
+                  {isCleaning ? 'Or choose' : 'Choose'} a {SPECIALIZATION_LABEL[complaint.required_specialization].toLowerCase()} technician
+                </p>
+                {isLoadingStaff ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-14" />
+                    <Skeleton className="h-14" />
+                  </div>
+                ) : roster.length === 0 ? (
+                  <Alert tone="warning">No {SPECIALIZATION_LABEL[complaint.required_specialization].toLowerCase()} technicians are registered.</Alert>
+                ) : (
+                  <div role="radiogroup" aria-label="Technician" className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
+                    {roster.map((staff) => {
+                      const selected = selectedStaffId === staff.user_id;
+                      return (
+                        <button
+                          key={staff.user_id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          disabled={!staff.is_available}
+                          onClick={() => setSelectedStaffId(staff.user_id)}
+                          className={cn(
+                            'flex w-full items-center gap-3 px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55',
+                            selected ? 'bg-brand-50' : 'hover:bg-slate-50'
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border',
+                              selected ? 'border-brand-600 bg-brand-600' : 'border-slate-300 bg-white'
+                            )}
+                            aria-hidden
+                          >
+                            {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                          </span>
+                          <Avatar name={staff.full_name} size="sm" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[13px] font-medium text-slate-900">{staff.full_name}</span>
+                            <span className="block text-xs text-slate-500">
+                              {staff.active_task_count} active {staff.active_task_count === 1 ? 'task' : 'tasks'}
+                            </span>
+                          </span>
+                          {staff.is_available ? (
+                            <Badge tone="success" dot>
+                              On duty
+                            </Badge>
+                          ) : (
+                            <Badge tone="neutral">Off duty</Badge>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section>
+          <h3 className="eyebrow mb-3">Activity</h3>
+          {isLoadingLogs ? <Skeleton className="h-20" /> : <ActivityTimeline events={events} />}
+        </section>
       </div>
-    </div>
+    </Drawer>
   );
 };

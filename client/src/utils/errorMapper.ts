@@ -41,7 +41,7 @@ export function mapApiError(rawError: unknown): string {
   }
 
   if (message.includes('Invalid credentials')) {
-    return 'Invalid Register/Employee ID or password. Please check your credentials.';
+    return 'The ID or password is incorrect. Check both and try again.';
   }
 
   if (message.includes('JWT') || message.includes('expired') || message.includes('token')) {

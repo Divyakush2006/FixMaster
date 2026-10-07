@@ -1,238 +1,270 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { AlertTriangle, CheckCircle2, ClipboardCheck, Clock3, Inbox, Layers, Star, Wrench } from 'lucide-react';
 import { analyticsApi } from '../../api/endpoints';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { StatCard } from '../../components/ui/StatCard';
+import { Alert } from '../../components/ui/Alert';
+import { ButtonLink } from '../../components/ui/Button';
+import { Skeleton } from '../../components/ui/PageLoader';
+import { Switch } from '../../components/ui/Switch';
+import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
 import { coerceNumber } from '../../utils/formatters';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
-import {
-  LayoutDashboard,
-  Building2,
-  AlertTriangle,
-  Clock,
-  Wrench,
-  Star,
-  Layers,
-} from 'lucide-react';
+import { cn } from '../../components/ui/cn';
+
+// One colour per lifecycle stage, used by both charts and the legend.
+const SERIES = [
+  { key: 'Not started', color: '#94a3b8' },
+  { key: 'In progress', color: '#3b72f6' },
+  { key: 'Awaiting confirmation', color: '#f59e0b' },
+  { key: 'Resolved', color: '#10b981' },
+  { key: 'Escalated', color: '#e11d48' },
+] as const;
+
+const tooltipStyle = {
+  backgroundColor: '#fff',
+  border: '1px solid #e2e8f0',
+  borderRadius: 8,
+  boxShadow: '0 8px 24px -8px rgb(16 24 40 / 0.18)',
+  fontSize: 12,
+  padding: '8px 12px',
+};
 
 export const SupervisorDashboard: React.FC = () => {
-  const { data: kpis = [], isLoading } = useQuery({
-    queryKey: ['analytics-kpi'],
-    queryFn: analyticsApi.getKpis,
-  });
+  const [showEmptyBlocks, setShowEmptyBlocks] = useState(false);
+  const { data: kpis = [], isLoading, dataUpdatedAt } = useQuery({ queryKey: ['analytics-kpi'], queryFn: analyticsApi.getKpis });
 
-  // Calculate system-wide totals with STRICT string-to-number coercion
-  const totals = kpis.reduce(
-    (acc, b) => ({
-      total: acc.total + coerceNumber(b.total_complaints),
-      pending: acc.pending + coerceNumber(b.pending_complaints),
-      active: acc.active + coerceNumber(b.active_in_progress),
-      verification: acc.verification + coerceNumber(b.awaiting_student_verification),
-      resolved: acc.resolved + coerceNumber(b.resolved_count),
-      escalated: acc.escalated + coerceNumber(b.escalated_count),
-      commonArea: acc.commonArea + coerceNumber(b.common_area_issues),
-    }),
-    {
-      total: 0,
-      pending: 0,
-      active: 0,
-      verification: 0,
-      resolved: 0,
-      escalated: 0,
-      commonArea: 0,
-    }
+  const blocks = useMemo(
+    () =>
+      kpis.map((b) => ({
+        id: b.block_id,
+        name: b.block_name || b.block_id,
+        total: coerceNumber(b.total_complaints),
+        notStarted: coerceNumber(b.pending_complaints),
+        inProgress: coerceNumber(b.active_in_progress),
+        verification: coerceNumber(b.awaiting_student_verification),
+        resolved: coerceNumber(b.resolved_count),
+        escalated: coerceNumber(b.escalated_count),
+        commonArea: coerceNumber(b.common_area_issues),
+        rating: coerceNumber(b.average_student_rating),
+      })),
+    [kpis]
   );
 
-  // Chart data formatting
-  const chartData = kpis.map((b) => ({
-    block: b.block_name || b.block_id,
-    Total: coerceNumber(b.total_complaints),
-    Pending: coerceNumber(b.pending_complaints),
-    Active: coerceNumber(b.active_in_progress),
-    Resolved: coerceNumber(b.resolved_count),
-    Escalated: coerceNumber(b.escalated_count),
+  const totals = blocks.reduce(
+    (acc, b) => ({
+      total: acc.total + b.total,
+      notStarted: acc.notStarted + b.notStarted,
+      inProgress: acc.inProgress + b.inProgress,
+      verification: acc.verification + b.verification,
+      resolved: acc.resolved + b.resolved,
+      escalated: acc.escalated + b.escalated,
+    }),
+    { total: 0, notStarted: 0, inProgress: 0, verification: 0, resolved: 0, escalated: 0 }
+  );
+
+  const pct = (n: number) => (totals.total ? `${Math.round((n / totals.total) * 100)}% of all tickets` : 'No tickets yet');
+  const activeBlocks = blocks.filter((b) => b.total > 0);
+  const tableBlocks = (showEmptyBlocks ? blocks : activeBlocks).slice().sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+
+  const chartData = activeBlocks.map((b) => ({
+    block: b.name.replace(/\s*\(.*\)$/, ''),
+    'Not started': b.notStarted,
+    'In progress': b.inProgress,
+    'Awaiting confirmation': b.verification,
+    Resolved: b.resolved,
+    Escalated: b.escalated,
   }));
 
+  const mix = [
+    { name: 'Not started', value: totals.notStarted },
+    { name: 'In progress', value: totals.inProgress },
+    { name: 'Awaiting confirmation', value: totals.verification },
+    { name: 'Resolved', value: totals.resolved },
+    { name: 'Escalated', value: totals.escalated },
+  ];
+
   return (
-    <div className="space-y-8 font-sans">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="p-3 rounded-2xl bg-cyan-600/20 border border-cyan-500/30 text-cyan-400">
-          <LayoutDashboard className="w-6 h-6" />
-        </div>
-        <div>
-          <h1 className="text-xl font-extrabold text-slate-100">Supervisor KPI Dashboard</h1>
-          <p className="text-xs text-slate-400">Hostel maintenance analytics across all blocks</p>
-        </div>
-      </div>
+    <div>
+      <PageHeader
+        title="Operations overview"
+        description={
+          dataUpdatedAt
+            ? `Maintenance activity across all hostel blocks · updated ${new Date(dataUpdatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
+            : 'Maintenance activity across all hostel blocks.'
+        }
+        actions={
+          <ButtonLink to="/supervisor/all-complaints" variant="secondary" icon={Inbox}>
+            All tickets
+          </ButtonLink>
+        }
+      />
 
-      {/* ESCALATED ALERT BANNER (If escalated > 0) */}
-      {totals.escalated > 0 && (
-        <div className="p-4 rounded-2xl bg-rose-950/40 border-2 border-rose-500/50 shadow-xl flex items-center justify-between gap-4 animate-pulse">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-400">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-sm font-extrabold text-rose-300">
-                ATTENTION: {totals.escalated} Escalated Tickets Pending Action
-              </h3>
-              <p className="text-xs text-rose-200/80">
-                Students rejected resolution on these tickets. Immediate re-inspection required.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* System Overview Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard
-          title="Total Tickets"
-          value={totals.total}
-          icon={Layers}
-          variant="default"
-        />
-
-        <StatCard
-          title="Pending Assign"
-          value={totals.pending}
-          icon={Clock}
-          variant="warning"
-        />
-
-        <StatCard
-          title="Active Servicing"
-          value={totals.active}
-          icon={Wrench}
-          variant="info"
-        />
-
-        <StatCard
-          title="Escalated Tickets"
-          value={totals.escalated}
-          icon={AlertTriangle}
-          variant={totals.escalated > 0 ? 'danger' : 'default'}
-          badge={totals.escalated > 0 ? 'URGENT' : 'OK'}
-        />
-      </div>
-
-      {/* Recharts Block Comparison Chart */}
-      <div className="p-5 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-cyan-400" />
-              <span>Block Status Breakdown</span>
-            </h3>
-            <p className="text-xs text-slate-400">Distribution of complaints per hostel block</p>
-          </div>
-        </div>
-
-        {isLoading ? (
-          <div className="h-64 bg-slate-950 rounded-2xl animate-pulse" />
-        ) : chartData.length === 0 ? (
-          <div className="h-48 flex items-center justify-center text-xs text-slate-400 bg-slate-950 rounded-2xl">
-            No KPI block summary data available.
-          </div>
-        ) : (
-          <div className="h-72 w-full pt-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                <XAxis dataKey="block" stroke="#94a3b8" fontSize={11} />
-                <YAxis stroke="#94a3b8" fontSize={11} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#0f172a',
-                    borderColor: '#334155',
-                    borderRadius: '0.75rem',
-                    fontSize: '12px',
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                <Bar dataKey="Total" fill="#0284c7" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Pending" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Active" fill="#06b6d4" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Resolved" fill="#10b981" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Escalated" fill="#f43f5e" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+      <div className="space-y-6">
+        {totals.escalated > 0 && (
+          <Alert
+            tone="danger"
+            title={`${totals.escalated} escalated ${totals.escalated === 1 ? 'ticket needs' : 'tickets need'} attention`}
+            action={
+              <ButtonLink to="/supervisor/escalated" size="sm" variant="danger">
+                Review escalations
+              </ButtonLink>
+            }
+          >
+            Students reported that the work did not fix the problem. Re-inspect and reassign.
+          </Alert>
         )}
-      </div>
 
-      {/* Block KPI Details Grid */}
-      <div className="space-y-4">
-        <h3 className="text-base font-extrabold text-slate-100 flex items-center gap-2">
-          <Building2 className="w-4 h-4 text-cyan-400" />
-          <span>Hostel Block Performance Breakdown</span>
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {kpis.map((b) => {
-            const avgRating = coerceNumber(b.average_student_rating);
-            const esc = coerceNumber(b.escalated_count);
-
-            return (
-              <div
-                key={b.block_id}
-                className={`p-5 rounded-2xl bg-slate-900 border transition-colors shadow-lg space-y-3 ${
-                  esc > 0 ? 'border-rose-900/50 bg-rose-950/10' : 'border-slate-800'
-                }`}
-              >
-                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                  <div>
-                    <h4 className="text-base font-bold text-slate-100">{b.block_name}</h4>
-                    <span className="text-[10px] text-slate-400 font-mono">ID: {b.block_id}</span>
-                  </div>
-
-                  <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs font-bold text-amber-400">
-                    <Star className="w-3.5 h-3.5 fill-amber-400" />
-                    <span>{avgRating ? avgRating.toFixed(1) : 'N/A'}</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                  <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">
-                      Total
-                    </span>
-                    <span className="font-extrabold text-slate-100">
-                      {coerceNumber(b.total_complaints)}
-                    </span>
-                  </div>
-
-                  <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                    <span className="text-[10px] text-amber-400 uppercase font-semibold block">
-                      Pending
-                    </span>
-                    <span className="font-extrabold text-amber-300">
-                      {coerceNumber(b.pending_complaints)}
-                    </span>
-                  </div>
-
-                  <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                    <span className="text-[10px] text-rose-400 uppercase font-semibold block">
-                      Escalated
-                    </span>
-                    <span className="font-extrabold text-rose-300">
-                      {coerceNumber(b.escalated_count)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+          <StatCard title="Total tickets" value={totals.total} icon={Layers} tone="neutral" loading={isLoading} subtitle={`${activeBlocks.length} ${activeBlocks.length === 1 ? 'block' : 'blocks'} with activity`} />
+          <StatCard title="Not started" value={totals.notStarted} icon={Clock3} tone="neutral" loading={isLoading} subtitle={pct(totals.notStarted)} />
+          <StatCard title="In progress" value={totals.inProgress} icon={Wrench} tone="brand" loading={isLoading} subtitle={pct(totals.inProgress)} />
+          <StatCard title="Pending sign-off" value={totals.verification} icon={ClipboardCheck} tone="warning" loading={isLoading} subtitle={pct(totals.verification)} />
+          <StatCard title="Resolved" value={totals.resolved} icon={CheckCircle2} tone="success" loading={isLoading} subtitle={pct(totals.resolved)} />
+          <StatCard
+            title="Escalated"
+            value={totals.escalated}
+            icon={AlertTriangle}
+            tone="danger"
+            highlight={totals.escalated > 0}
+            loading={isLoading}
+            subtitle={pct(totals.escalated)}
+          />
         </div>
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <Card className="xl:col-span-2">
+            <CardHeader title="Tickets by block" description="Current status of every ticket, per hostel block." />
+            <CardBody>
+              {isLoading ? (
+                <Skeleton className="h-72" />
+              ) : chartData.length === 0 ? (
+                <div className="flex h-72 items-center justify-center text-[13px] text-slate-500">No tickets have been raised yet.</div>
+              ) : (
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }} barCategoryGap="28%">
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                      <XAxis dataKey="block" stroke="#64748b" fontSize={12} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} />
+                      <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
+                      <Tooltip contentStyle={tooltipStyle} cursor={{ fill: '#f1f5f9' }} />
+                      <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
+                      {SERIES.map((s, i) => (
+                        <Bar key={s.key} dataKey={s.key} stackId="status" fill={s.color} radius={i === SERIES.length - 1 ? [3, 3, 0, 0] : 0} maxBarSize={56} />
+                      ))}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="Status mix" description="All blocks combined." />
+            <CardBody>
+              {isLoading ? (
+                <Skeleton className="h-72" />
+              ) : totals.total === 0 ? (
+                <div className="flex h-72 items-center justify-center text-[13px] text-slate-500">No data yet.</div>
+              ) : (
+                <div className="flex h-72 flex-col">
+                  <div className="relative min-h-0 flex-1">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={mix} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="88%" paddingAngle={1.5} stroke="none">
+                          {mix.map((m, i) => (
+                            <Cell key={m.name} fill={SERIES[i].color} />
+                          ))}
+                        </Pie>
+                        <Tooltip contentStyle={tooltipStyle} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-2xl font-semibold text-slate-900 tabular">{totals.total}</span>
+                      <span className="text-xs text-slate-500">tickets</span>
+                    </div>
+                  </div>
+                  <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                    {mix.map((m, i) => (
+                      <li key={m.name} className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 text-slate-600">
+                          <span className="h-2 w-2 rounded-full" style={{ background: SERIES[i].color }} />
+                          {m.name}
+                        </span>
+                        <span className="font-medium text-slate-900 tabular">{m.value}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader
+            title="Block performance"
+            description="Workload, backlog and student satisfaction by block."
+            actions={<Switch checked={showEmptyBlocks} onChange={setShowEmptyBlocks} label="Show blocks with no tickets" showLabel />}
+          />
+          <TableWrap>
+            <Table>
+              <THead>
+                <tr>
+                  <Th>Block</Th>
+                  <Th className="text-right">Total</Th>
+                  <Th className="text-right">Not started</Th>
+                  <Th className="text-right">In progress</Th>
+                  <Th className="text-right">Awaiting confirmation</Th>
+                  <Th className="text-right">Resolved</Th>
+                  <Th className="text-right">Escalated</Th>
+                  <Th className="text-right">Common areas</Th>
+                  <Th className="text-right">Avg. rating</Th>
+                </tr>
+              </THead>
+              {isLoading ? (
+                <TableSkeleton columns={9} rows={4} />
+              ) : (
+                <TBody>
+                  {tableBlocks.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-10 text-center text-[13px] text-slate-500">
+                        No tickets have been raised in any block yet.
+                      </td>
+                    </tr>
+                  )}
+                  {tableBlocks.map((b) => (
+                    <Tr key={b.id}>
+                      <Td>
+                        <p className="font-medium text-slate-900">{b.name}</p>
+                        <p className="font-mono text-2xs text-slate-400">{b.id}</p>
+                      </Td>
+                      <Td className="text-right font-medium text-slate-900 tabular">{b.total}</Td>
+                      <Td className="text-right tabular">{b.notStarted}</Td>
+                      <Td className="text-right tabular">{b.inProgress}</Td>
+                      <Td className="text-right tabular">{b.verification}</Td>
+                      <Td className="text-right tabular">{b.resolved}</Td>
+                      <Td className={cn('text-right tabular', b.escalated > 0 && 'font-semibold text-rose-600')}>{b.escalated}</Td>
+                      <Td className="text-right tabular">{b.commonArea}</Td>
+                      <Td className="text-right">
+                        {b.rating > 0 ? (
+                          <span className="inline-flex items-center gap-1 font-medium text-slate-900 tabular">
+                            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-hidden />
+                            {b.rating.toFixed(1)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </Td>
+                    </Tr>
+                  ))}
+                </TBody>
+              )}
+            </Table>
+          </TableWrap>
+        </Card>
       </div>
     </div>
   );

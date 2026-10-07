@@ -1,60 +1,51 @@
 import React from 'react';
 import { LucideIcon } from 'lucide-react';
+import { cn } from './cn';
+
+type StatTone = 'brand' | 'info' | 'success' | 'warning' | 'danger' | 'neutral';
+
+const ICON_TONE: Record<StatTone, string> = {
+  brand: 'bg-brand-50 text-brand-600',
+  info: 'bg-sky-50 text-sky-600',
+  success: 'bg-emerald-50 text-emerald-600',
+  warning: 'bg-amber-50 text-amber-600',
+  danger: 'bg-rose-50 text-rose-600',
+  neutral: 'bg-slate-100 text-slate-600',
+};
 
 interface StatCardProps {
   title: string;
-  value: string | number;
+  value: React.ReactNode;
   icon?: LucideIcon;
-  subtitle?: string;
-  badge?: string;
-  variant?: 'default' | 'danger' | 'warning' | 'success' | 'info';
+  /** Supporting line under the value, e.g. "12% of all tickets". */
+  subtitle?: React.ReactNode;
+  tone?: StatTone;
+  /** Draws attention (coloured top edge) - for figures that need action. */
+  highlight?: boolean;
+  loading?: boolean;
 }
 
-export const StatCard: React.FC<StatCardProps> = ({
-  title,
-  value,
-  icon: Icon,
-  subtitle,
-  badge,
-  variant = 'default',
-}) => {
-  const variantStyles = {
-    default: 'bg-slate-900/80 border-slate-800 text-slate-100',
-    danger: 'bg-rose-950/20 border-rose-900/50 text-rose-200',
-    warning: 'bg-amber-950/20 border-amber-900/50 text-amber-200',
-    success: 'bg-emerald-950/20 border-emerald-900/50 text-emerald-200',
-    info: 'bg-cyan-950/20 border-cyan-900/50 text-cyan-200',
-  };
-
-  const iconColors = {
-    default: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
-    danger: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
-    warning: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
-    success: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-    info: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
-  };
-
-  return (
-    <div className={`p-4 sm:p-5 rounded-2xl border shadow-lg flex flex-col justify-between ${variantStyles[variant]}`}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">{title}</span>
-        {Icon && (
-          <div className={`p-2 rounded-xl border ${iconColors[variant]}`}>
-            <Icon className="w-4 h-4" />
-          </div>
-        )}
-      </div>
-
-      <div className="mt-3 flex items-baseline justify-between">
-        <span className="text-2xl sm:text-3xl font-extrabold tracking-tight">{value}</span>
-        {badge && (
-          <span className="px-2 py-0.5 rounded text-xs font-bold bg-slate-800 border border-slate-700">
-            {badge}
-          </span>
-        )}
-      </div>
-
-      {subtitle && <p className="text-xs text-slate-400 mt-1">{subtitle}</p>}
+/** KPI tile: label, large figure, optional context line. */
+export const StatCard: React.FC<StatCardProps> = ({ title, value, icon: Icon, subtitle, tone = 'brand', highlight, loading }) => (
+  <div
+    className={cn(
+      'relative overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-card',
+      highlight && 'border-rose-200 before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-rose-500'
+    )}
+  >
+    <div className="flex items-start justify-between gap-3">
+      <p className="text-[13px] font-medium text-slate-500">{title}</p>
+      {Icon && (
+        <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-md', ICON_TONE[tone])}>
+          <Icon className="h-4 w-4" aria-hidden />
+        </span>
+      )}
     </div>
-  );
-};
+    {loading ? (
+      <div className="mt-2 h-7 w-16 animate-pulse rounded bg-slate-100" />
+    ) : (
+      <p className="mt-1 text-[26px] font-semibold leading-8 tracking-tight text-slate-900 tabular">{value}</p>
+    )}
+    {subtitle && <p className="mt-1 text-xs text-slate-500">{subtitle}</p>}
+  </div>
+);

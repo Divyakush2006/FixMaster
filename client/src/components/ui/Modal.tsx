@@ -1,14 +1,23 @@
-import React, { useEffect } from 'react';
+import React, { useId } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { cn } from './cn';
+import { useOverlay } from './overlay';
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
-  title: string;
-  subtitle?: string;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
   children: React.ReactNode;
+  /** Sticky action bar under the body. */
+  footer?: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
+  /** Close on a click outside the panel. Off by default so a stray click never discards a half-filled form. */
+  dismissOnBackdrop?: boolean;
 }
+
+const WIDTH = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-2xl' };
 
 export const Modal: React.FC<ModalProps> = ({
   isOpen,
@@ -16,51 +25,53 @@ export const Modal: React.FC<ModalProps> = ({
   title,
   subtitle,
   children,
+  footer,
   maxWidth = 'md',
+  dismissOnBackdrop = false,
 }) => {
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      window.addEventListener('keydown', handleKeyDown);
-    }
-    return () => {
-      document.body.style.overflow = 'auto';
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isOpen, onClose]);
-
+  const panelRef = useOverlay(isOpen, onClose);
+  const titleId = useId();
   if (!isOpen) return null;
 
-  const maxWidthClasses = {
-    sm: 'max-w-sm',
-    md: 'max-w-md',
-    lg: 'max-w-lg',
-    xl: 'max-w-xl',
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+  return createPortal(
+    <div
+      data-overlay
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-0 backdrop-blur-[2px] animate-fade-in sm:items-center sm:p-4"
+      onMouseDown={(e) => {
+        if (dismissOnBackdrop && e.target === e.currentTarget) onClose();
+      }}
+    >
       <div
-        className={`w-full ${maxWidthClasses[maxWidth]} bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]`}
-        onClick={(e) => e.stopPropagation()}
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className={cn(
+          'flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-xl bg-white shadow-overlay outline-none focus-visible:ring-0 animate-scale-in sm:rounded-xl',
+          WIDTH[maxWidth]
+        )}
       >
-        <div className="flex items-start justify-between p-5 border-b border-slate-800 bg-slate-900/50">
-          <div>
-            <h3 className="text-lg font-bold text-slate-100">{title}</h3>
-            {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+          <div className="min-w-0">
+            <h2 id={titleId} className="text-base font-semibold text-slate-900">
+              {title}
+            </h2>
+            {subtitle && <p className="mt-0.5 text-[13px] text-slate-500">{subtitle}</p>}
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label="Close"
+            className="-mr-1.5 -mt-1 rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
           >
-            <X className="w-5 h-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="p-5 overflow-y-auto flex-1">{children}</div>
+        <div className="flex-1 overflow-y-auto px-5 py-5">{children}</div>
+        {footer && <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

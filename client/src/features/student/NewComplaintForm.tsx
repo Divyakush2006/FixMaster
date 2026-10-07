@@ -1,23 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Building2, DoorOpen } from 'lucide-react';
 import { metaApi, complaintsApi } from '../../api/endpoints';
 import { useMyAllotment } from '../../hooks/useMyAllotment';
 import { floorLabel } from '../../utils/formatters';
 import { useToast } from '../../components/ui/Toast';
-import { SpecializationBadge } from '../../components/common/Badges';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card, CardBody, CardFooter, CardHeader } from '../../components/ui/Card';
+import { Field, Input, Select, Textarea } from '../../components/ui/Form';
+import { Alert } from '../../components/ui/Alert';
+import { Button } from '../../components/ui/Button';
+import { cn } from '../../components/ui/cn';
+import { PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
 import { TicketScope, Priority, CommonAreaItem } from '../../types';
-import {
-  PlusCircle,
-  Building2,
-  DoorOpen,
-  Layers,
-  Clock,
-  Image,
-  AlertCircle,
-  CheckCircle2,
-  Sparkles,
-} from 'lucide-react';
+import { blockLabel, PRIORITY_LABEL, ticketRef } from '../../utils/labels';
+
+const TIMESLOTS = ['08:00 AM - 10:00 AM', '10:00 AM - 12:00 PM', '02:00 PM - 04:00 PM', '04:00 PM - 06:00 PM', '06:00 PM - 08:00 PM'];
+const PRIORITIES: Priority[] = ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'];
+
+const Section: React.FC<{ step: number; title: string; description?: string; children: React.ReactNode }> = ({ step, title, description, children }) => (
+  <div className="grid grid-cols-1 gap-4 py-6 first:pt-1 last:pb-1 lg:grid-cols-[200px_1fr] lg:gap-8">
+    <div>
+      <p className="eyebrow">Step {step}</p>
+      <h2 className="mt-1 text-sm font-semibold text-slate-900">{title}</h2>
+      {description && <p className="mt-1 text-xs leading-relaxed text-slate-500">{description}</p>}
+    </div>
+    <div className="space-y-4">{children}</div>
+  </div>
+);
 
 export const NewComplaintForm: React.FC = () => {
   // Room tickets can only be raised for the student's own allotted room (the
@@ -26,8 +37,8 @@ export const NewComplaintForm: React.FC = () => {
   const { allotment, isLoading: isLoadingAllotment } = useMyAllotment();
 
   const [ticketScope, setTicketScope] = useState<TicketScope>('ROOM');
-  const [blockId, setBlockId] = useState<string>('');
-  const [commonAreaId, setCommonAreaId] = useState<string>('');
+  const [blockId, setBlockId] = useState('');
+  const [commonAreaId, setCommonAreaId] = useState('');
 
   // Once the allotment is known: default the block to the student's own, and
   // fall back to COMMON_AREA when there is no room to raise a ticket for.
@@ -44,22 +55,17 @@ export const NewComplaintForm: React.FC = () => {
 
   const [categoryId, setCategoryId] = useState<number | ''>('');
   const [subcategoryId, setSubcategoryId] = useState<number | ''>('');
-  const [description, setDescription] = useState<string>('');
+  const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Priority>('MEDIUM');
-  const [preferredTimeslot, setPreferredTimeslot] = useState<string>('04:00 PM - 06:00 PM');
-  const [photoEvidenceUrl, setPhotoEvidenceUrl] = useState<string>('');
-
+  const [preferredTimeslot, setPreferredTimeslot] = useState('04:00 PM - 06:00 PM');
+  const [photoEvidenceUrl, setPhotoEvidenceUrl] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
-  // Meta Queries
-  const { data: blocks = [] } = useQuery({
-    queryKey: ['meta-blocks'],
-    queryFn: metaApi.getBlocks,
-  });
+  const { data: blocks = [] } = useQuery({ queryKey: ['meta-blocks'], queryFn: metaApi.getBlocks });
 
   const { data: commonAreas = [], isLoading: isLoadingCommonAreas } = useQuery({
     queryKey: ['meta-common-areas', blockId],
@@ -72,54 +78,34 @@ export const NewComplaintForm: React.FC = () => {
     queryFn: async () => [...(await metaApi.getCategories())].sort((a, b) => a.category_id - b.category_id),
   });
 
-  // Available subcategories for selected category
   const selectedCategory = categories.find((c) => c.category_id === categoryId);
   const subcategories = selectedCategory?.subcategories || [];
   const selectedSubcategory = subcategories.find((s) => s.subcategory_id === subcategoryId);
+  const selectedArea = commonAreas.find((a) => a.area_id === commonAreaId);
 
-  // Update default priority when subcategory selected
+  // The issue sets a default priority; the student can still change it.
   useEffect(() => {
-    if (selectedSubcategory) {
-      setPriority(selectedSubcategory.priority_level);
-    }
+    if (selectedSubcategory) setPriority(selectedSubcategory.priority_level);
   }, [selectedSubcategory]);
 
-  // Mutation
   const mutation = useMutation({
     mutationFn: complaintsApi.create,
-    onSuccess: () => {
-      showToast('Complaint registered successfully!', 'success');
+    onSuccess: (res) => {
+      showToast('Ticket raised', 'success', `${ticketRef(res.complaint.complaint_id)} · we will keep you updated here.`);
       queryClient.invalidateQueries({ queryKey: ['complaints'] });
       navigate('/student/complaints');
     },
-    onError: (err: any) => {
-      setFormError(err.message || 'Failed to submit complaint');
-    },
+    onError: (err: Error) => setFormError(err.message || 'The ticket could not be submitted.'),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
-    if (ticketScope === 'ROOM' && !allotment) {
-      setFormError('No room is allotted to your account, so room tickets are unavailable.');
-      return;
-    }
-
-    if (!effectiveBlockId) {
-      setFormError('Please select a Hostel Block.');
-      return;
-    }
-
-    if (ticketScope === 'COMMON_AREA' && !commonAreaId) {
-      setFormError('Please select a Common Area Facility.');
-      return;
-    }
-
-    if (!subcategoryId) {
-      setFormError('Please select a specific Issue Subcategory.');
-      return;
-    }
+    if (ticketScope === 'ROOM' && !allotment) return setFormError('No room is allotted to your account, so room tickets are unavailable.');
+    if (!effectiveBlockId) return setFormError('Select a hostel block.');
+    if (ticketScope === 'COMMON_AREA' && !commonAreaId) return setFormError('Select the common area facility.');
+    if (!subcategoryId) return setFormError('Select the issue you are reporting.');
 
     mutation.mutate({
       ticket_scope: ticketScope,
@@ -134,300 +120,263 @@ export const NewComplaintForm: React.FC = () => {
     });
   };
 
-  const timeslotPresets = [
-    '08:00 AM - 10:00 AM',
-    '10:00 AM - 12:00 PM',
-    '02:00 PM - 04:00 PM',
-    '04:00 PM - 06:00 PM',
-    '06:00 PM - 08:00 PM',
-  ];
+  const scopeOption = (value: TicketScope, Icon: React.ElementType, title: string, text: string, disabled?: boolean) => {
+    const active = ticketScope === value;
+    return (
+      <button
+        type="button"
+        role="radio"
+        aria-checked={active}
+        disabled={disabled}
+        onClick={() => setTicketScope(value)}
+        className={cn(
+          'flex items-start gap-3 rounded-lg border p-3.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+          active ? 'border-brand-500 bg-brand-50/50 ring-1 ring-brand-500' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+        )}
+      >
+        <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', active ? 'text-brand-600' : 'text-slate-400')} />
+        <span>
+          <span className="block text-[13px] font-semibold text-slate-900">{title}</span>
+          <span className="mt-0.5 block text-xs text-slate-500">{text}</span>
+        </span>
+      </button>
+    );
+  };
+
+  const locationSummary =
+    ticketScope === 'ROOM'
+      ? allotment
+        ? `Room ${allotment.room_id}`
+        : '—'
+      : selectedArea
+        ? `${selectedArea.description}, ${blockLabel(blockId)}`
+        : blockId
+          ? blockLabel(blockId)
+          : '—';
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 font-sans">
-      <div className="flex items-center gap-3">
-        <div className="p-3 rounded-2xl bg-cyan-600/20 border border-cyan-500/30 text-cyan-400">
-          <PlusCircle className="w-6 h-6" />
-        </div>
-        <div>
-          <h1 className="text-xl font-extrabold text-slate-100">File New Maintenance Complaint</h1>
-          <p className="text-xs text-slate-400">Detailed ticket submission form</p>
-        </div>
-      </div>
+    <div>
+      <PageHeader
+        breadcrumbs={[{ label: 'Service desk', to: '/student' }, { label: 'Raise a ticket' }]}
+        title="Raise a ticket"
+        description="Report a maintenance problem in your room or a shared area of the hostel."
+      />
 
-      {formError && (
-        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{formError}</span>
-        </div>
-      )}
+      <form onSubmit={handleSubmit} noValidate className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[1fr_320px]">
+        <Card>
+          <CardBody className="divide-y divide-slate-100">
+            <Section step={1} title="Location" description="Where is the problem?">
+              <div role="radiogroup" aria-label="Location type" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {scopeOption(
+                  'ROOM',
+                  DoorOpen,
+                  'My room',
+                  allotment ? `Room ${allotment.room_id}, ${floorLabel(allotment.floor_number).toLowerCase()}` : 'No room allotted yet',
+                  !allotment
+                )}
+                {scopeOption('COMMON_AREA', Building2, 'Common area', 'Corridors, washrooms, water coolers, lifts')}
+              </div>
+              {!isLoadingAllotment && !allotment && (
+                <p className="text-xs text-amber-700">
+                  No room is allotted to your account yet, so only common-area problems can be reported. Contact the hostel office to have
+                  your room allotted.
+                </p>
+              )}
 
-      <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-6 shadow-2xl">
-        {/* 1. Ticket Scope Toggle */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-2">1. Ticket Scope *</label>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => setTicketScope('ROOM')}
-              disabled={!allotment}
-              title={!allotment ? 'No room is allotted to your account yet' : undefined}
-              className={`p-3.5 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                ticketScope === 'ROOM'
-                  ? 'bg-cyan-600/20 border-cyan-500 text-cyan-400 shadow-lg shadow-cyan-500/10'
-                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-              }`}
-            >
-              <DoorOpen className="w-4 h-4" />
-              <span>MY ROOM</span>
-            </button>
+              {ticketScope === 'COMMON_AREA' && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field label="Hostel block" required>
+                    {(a) => (
+                      <Select
+                        {...a}
+                        value={blockId}
+                        onChange={(e) => {
+                          setBlockId(e.target.value);
+                          setCommonAreaId('');
+                        }}
+                      >
+                        <option value="">Select a block</option>
+                        {blocks.map((b) => (
+                          <option key={b.block_id} value={b.block_id}>
+                            {b.block_name}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+                  </Field>
+                  <Field label="Facility" required>
+                    {(a) => (
+                      <Select {...a} value={commonAreaId} onChange={(e) => setCommonAreaId(e.target.value)} disabled={!blockId || isLoadingCommonAreas}>
+                        <option value="">
+                          {!blockId
+                            ? 'Select a block first'
+                            : isLoadingCommonAreas
+                              ? 'Loading facilities…'
+                              : commonAreas.length === 0
+                                ? 'No facilities registered'
+                                : 'Select a facility'}
+                        </option>
+                        {commonAreas.map((ca: CommonAreaItem) => (
+                          <option key={ca.area_id} value={ca.area_id}>
+                            {ca.description} ({floorLabel(ca.floor_number)})
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+                  </Field>
+                </div>
+              )}
+            </Section>
 
-            <button
-              type="button"
-              onClick={() => setTicketScope('COMMON_AREA')}
-              className={`p-3.5 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 transition-all ${
-                ticketScope === 'COMMON_AREA'
-                  ? 'bg-cyan-600/20 border-cyan-500 text-cyan-400 shadow-lg shadow-cyan-500/10'
-                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-              }`}
-            >
-              <Building2 className="w-4 h-4" />
-              <span>COMMON AREA</span>
-            </button>
-          </div>
-          {!isLoadingAllotment && !allotment && (
-            <p className="text-[11px] text-amber-400 mt-2">
-              No room is allotted to your account yet, so only common-area problems can be reported.
-              Contact the hostel office to have your room allotted.
-            </p>
-          )}
-        </div>
+            <Section step={2} title="Issue" description="Choosing the exact issue routes the ticket to the right trade.">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Category" required>
+                  {(a) => (
+                    <Select
+                      {...a}
+                      value={categoryId}
+                      onChange={(e) => {
+                        setCategoryId(e.target.value ? Number(e.target.value) : '');
+                        setSubcategoryId('');
+                      }}
+                    >
+                      <option value="">Select a category</option>
+                      {categories.map((c) => (
+                        <option key={c.category_id} value={c.category_id}>
+                          {c.category_name}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
+                <Field label="Issue" required>
+                  {(a) => (
+                    <Select
+                      {...a}
+                      value={subcategoryId}
+                      onChange={(e) => setSubcategoryId(e.target.value ? Number(e.target.value) : '')}
+                      disabled={!categoryId}
+                    >
+                      <option value="">{categoryId ? 'Select the issue' : 'Select a category first'}</option>
+                      {subcategories.map((s) => (
+                        <option key={s.subcategory_id} value={s.subcategory_id}>
+                          {s.issue_name}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
+              </div>
+              <Field label="Priority" hint="Set from the issue. Use Emergency only for hazards such as sparking, flooding or a stuck lift.">
+                {(a) => (
+                  <Select {...a} value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="sm:max-w-xs">
+                    {PRIORITIES.map((p) => (
+                      <option key={p} value={p}>
+                        {PRIORITY_LABEL[p]}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+            </Section>
 
-        {/* 2. Location */}
-        {ticketScope === 'ROOM' && allotment ? (
-          <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs">
-            <span className="text-slate-400 flex items-center gap-1.5">
-              <DoorOpen className="w-3.5 h-3.5 text-cyan-400" />
-              Your allotted room
-            </span>
-            <span className="font-bold text-slate-100">
-              {allotment.block_id} • Room {allotment.room_number} ({floorLabel(allotment.floor_number)})
-            </span>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Hostel Block *</span>
-              </label>
-              <select
-                value={blockId}
-                onChange={(e) => {
-                  setBlockId(e.target.value);
-                  setCommonAreaId('');
-                }}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
-                required
-              >
-                <option value="">Choose Block...</option>
-                {blocks.map((b) => (
-                  <option key={b.block_id} value={b.block_id}>
-                    {b.block_name} ({b.block_id})
-                  </option>
+            <Section step={3} title="Details" description="Optional, but helps the technician come prepared.">
+              <Field label="Description" aside={`${description.length}/500`}>
+                {(a) => (
+                  <Textarea
+                    {...a}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value.slice(0, 500))}
+                    placeholder="What is wrong, and since when? e.g. The tube light above the study table flickers and turns off."
+                    rows={4}
+                  />
+                )}
+              </Field>
+              <Field label="Preferred time" hint="When someone can access the location.">
+                {(a) => (
+                  <div className="space-y-2">
+                    <Input {...a} value={preferredTimeslot} onChange={(e) => setPreferredTimeslot(e.target.value)} placeholder="e.g. 04:00 PM - 06:00 PM" />
+                    <div className="flex flex-wrap gap-1.5">
+                      {TIMESLOTS.map((slot) => (
+                        <button
+                          key={slot}
+                          type="button"
+                          onClick={() => setPreferredTimeslot(slot)}
+                          className={cn(
+                            'rounded-full border px-2.5 py-1 text-xs transition-colors',
+                            preferredTimeslot === slot
+                              ? 'border-brand-500 bg-brand-50 text-brand-700'
+                              : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                          )}
+                        >
+                          {slot}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </Field>
+              <Field label="Photo link" aside="Optional" hint="A link to a photo of the problem (https://…).">
+                {(a) => <Input {...a} type="url" value={photoEvidenceUrl} onChange={(e) => setPhotoEvidenceUrl(e.target.value)} placeholder="https://" />}
+              </Field>
+            </Section>
+          </CardBody>
+          <CardFooter>
+            <Button variant="secondary" onClick={() => navigate('/student')}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={mutation.isPending}>
+              Submit ticket
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <div className="space-y-4 xl:sticky xl:top-20">
+          {formError && <Alert tone="danger">{formError}</Alert>}
+          <Card>
+            <CardHeader title="Summary" />
+            <CardBody>
+              <dl className="space-y-3 text-[13px]">
+                <div className="flex justify-between gap-4">
+                  <dt className="text-slate-500">Location</dt>
+                  <dd className="text-right font-medium text-slate-900">{locationSummary}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-slate-500">Issue</dt>
+                  <dd className="text-right font-medium text-slate-900">{selectedSubcategory?.issue_name ?? '—'}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <dt className="text-slate-500">Trade</dt>
+                  <dd>{selectedSubcategory ? <SpecializationBadge specialization={selectedSubcategory.required_specialization} /> : '—'}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <dt className="text-slate-500">Priority</dt>
+                  <dd>
+                    <PriorityBadge priority={priority} />
+                  </dd>
+                </div>
+              </dl>
+            </CardBody>
+          </Card>
+          <Card>
+            <CardHeader title="What happens next" />
+            <CardBody>
+              <ol className="space-y-3 text-[13px] text-slate-600">
+                {[
+                  'A supervisor assigns a technician from the right trade.',
+                  'The technician visits and carries out the work.',
+                  'You confirm the fix, and the ticket is closed.',
+                ].map((text, i) => (
+                  <li key={text} className="flex gap-3">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-2xs font-semibold text-slate-600">
+                      {i + 1}
+                    </span>
+                    <span>{text}</span>
+                  </li>
                 ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Common Area Facility *</span>
-              </label>
-              <select
-                value={commonAreaId}
-                onChange={(e) => setCommonAreaId(e.target.value)}
-                disabled={!blockId || isLoadingCommonAreas}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 disabled:opacity-50"
-                required
-              >
-                <option value="">
-                  {!blockId
-                    ? 'Select block first...'
-                    : isLoadingCommonAreas
-                    ? 'Loading facilities...'
-                    : commonAreas.length === 0
-                    ? 'No facilities registered for this block'
-                    : 'Choose Facility...'}
-                </option>
-                {commonAreas.map((ca: CommonAreaItem) => (
-                  <option key={ca.area_id} value={ca.area_id}>
-                    {ca.description} ({floorLabel(ca.floor_number)})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
-
-        {/* 3. Category & Subcategory Cascade */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Category *</span>
-            </label>
-            <select
-              value={categoryId}
-              onChange={(e) => {
-                setCategoryId(e.target.value ? Number(e.target.value) : '');
-                setSubcategoryId('');
-              }}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
-              required
-            >
-              <option value="">Choose Category...</option>
-              {categories.map((c) => (
-                <option key={c.category_id} value={c.category_id}>
-                  {c.category_name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Specific Issue *</span>
-            </label>
-            <select
-              value={subcategoryId}
-              onChange={(e) => setSubcategoryId(e.target.value ? Number(e.target.value) : '')}
-              disabled={!categoryId}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 disabled:opacity-50"
-              required
-            >
-              <option value="">
-                {!categoryId ? 'Select category first...' : 'Choose Issue...'}
-              </option>
-              {subcategories.map((s) => (
-                <option key={s.subcategory_id} value={s.subcategory_id}>
-                  {s.issue_name} ({s.priority_level})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Required Specialization Surface */}
-        {selectedSubcategory && (
-          <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs">
-            <span className="text-slate-400">Assigned Service Trade:</span>
-            <SpecializationBadge specialization={selectedSubcategory.required_specialization} />
-          </div>
-        )}
-
-        {/* 4. Description with Character Counter */}
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="block text-xs font-semibold text-slate-300">
-              Description (Optional)
-            </label>
-            <span className="text-[11px] text-slate-400 font-mono">
-              {description.length} / 500
-            </span>
-          </div>
-          <textarea
-            value={description}
-            onChange={(e) => {
-              if (e.target.value.length <= 500) setDescription(e.target.value);
-            }}
-            placeholder="Explain the problem in detail (e.g. tube light flickering in room L-843)..."
-            rows={3}
-            className="w-full p-3 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 placeholder-slate-500 text-xs focus:outline-none focus:border-cyan-500"
-          />
-        </div>
-
-        {/* 5. Priority & Timeslot */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Priority *</label>
-            <select
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as Priority)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
-            >
-              <option value="LOW">LOW</option>
-              <option value="MEDIUM">MEDIUM</option>
-              <option value="HIGH">HIGH</option>
-              <option value="EMERGENCY">EMERGENCY (Immediate Hazard)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Preferred Timeslot</span>
-            </label>
-            <input
-              type="text"
-              value={preferredTimeslot}
-              onChange={(e) => setPreferredTimeslot(e.target.value)}
-              placeholder="e.g. 04:00 PM - 06:00 PM"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
-            />
-            <div className="flex gap-1.5 flex-wrap mt-2">
-              {timeslotPresets.map((slot) => (
-                <button
-                  key={slot}
-                  type="button"
-                  onClick={() => setPreferredTimeslot(slot)}
-                  className="px-2 py-0.5 rounded text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
-                >
-                  {slot}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* 6. Photo Evidence URL */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-            <Image className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Photo Evidence Image URL (Optional)</span>
-          </label>
-          <input
-            type="url"
-            value={photoEvidenceUrl}
-            onChange={(e) => setPhotoEvidenceUrl(e.target.value)}
-            placeholder="https://images.unsplash.com/photo-..."
-            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 placeholder-slate-500 text-xs focus:outline-none focus:border-cyan-500"
-          />
-        </div>
-
-        {/* Submit Action */}
-        <div className="pt-2 flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={() => navigate('/student')}
-            className="px-5 py-2.5 rounded-xl border border-slate-800 text-slate-400 hover:text-white text-xs font-semibold"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={mutation.isPending}
-            className="px-6 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-lg shadow-cyan-600/25 flex items-center gap-2 disabled:opacity-50 transition-all"
-          >
-            {mutation.isPending ? (
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <>
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Register Complaint</span>
-              </>
-            )}
-          </button>
+              </ol>
+            </CardBody>
+          </Card>
         </div>
       </form>
     </div>
