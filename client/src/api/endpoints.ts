@@ -1,4 +1,4 @@
-import { apiFetch } from './client';
+import { apiFetch, apiFetchPage } from './client';
 import {
   AuthResponse,
   RegisterPayload,
@@ -25,6 +25,8 @@ import {
   BlockFloor,
   AdminRoom,
   RoomType,
+  AuditEntry,
+  UserSummary,
 } from '../types';
 
 // Three separate sign-in portals; each endpoint only accepts its own accounts.
@@ -34,6 +36,10 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  // Revokes this session's token on the server. keepalive lets the request
+  // finish even when the page is navigating away.
+  logout: () => apiFetch<void>('/auth/logout', { method: 'POST', keepalive: true }),
 
   // Public self-registration exists for students only.
   registerStudent: (data: RegisterPayload) =>
@@ -55,6 +61,10 @@ export const complaintsApi = {
       method: 'GET',
       params: filters,
     }),
+
+  /** Server-side filtered, searched and paged list (supervisor/admin register). */
+  page: (filters: { status?: string; block_id?: string; q?: string; limit: number; offset: number }) =>
+    apiFetchPage<Complaint>('/complaints', { method: 'GET', params: filters }),
 
   getById: (id: string) => apiFetch<Complaint>(`/complaints/${id}`, { method: 'GET' }),
 
@@ -148,12 +158,19 @@ export const meApi = {
 
 // ADMIN only.
 export const adminApi = {
-  listUsers: (role?: Role) => apiFetch<User[]>('/admin/users', { method: 'GET', params: { role } }),
+  usersPage: (filters: { role?: Role; status?: 'active' | 'deactivated' | 'locked'; q?: string; limit: number; offset: number }) =>
+    apiFetchPage<User>('/admin/users', { method: 'GET', params: filters }),
+
+  userSummary: () => apiFetch<UserSummary>('/admin/users/summary', { method: 'GET' }),
+
+  /** Type-ahead lookup of active students (allotment picker). */
+  searchStudents: (q: string) =>
+    apiFetch<User[]>('/admin/users', { method: 'GET', params: { role: 'STUDENT', status: 'active', q, limit: 20 } }),
 
   createUser: (data: CreateUserPayload) =>
     apiFetch<{ message: string; user: User }>('/admin/users', { method: 'POST', body: JSON.stringify(data) }),
 
-  updateUser: (userId: string, changes: { is_active?: boolean; is_available?: boolean }) =>
+  updateUser: (userId: string, changes: { is_active?: boolean; is_available?: boolean; unlock?: boolean }) =>
     apiFetch<User & { released_tickets: number }>(`/admin/users/${userId}`, {
       method: 'PATCH',
       body: JSON.stringify(changes),
@@ -165,8 +182,11 @@ export const adminApi = {
       body: JSON.stringify({ new_password }),
     }),
 
-  listAllotments: (blockId?: string) =>
-    apiFetch<AdminAllotment[]>('/admin/allotments', { method: 'GET', params: { block_id: blockId } }),
+  listAudit: (filters: { action?: string; actor?: string; target_id?: string; limit: number; offset: number }) =>
+    apiFetchPage<AuditEntry>('/admin/audit', { method: 'GET', params: filters }),
+
+  allotmentsPage: (filters: { block_id?: string; student_id?: string; q?: string; limit: number; offset: number }) =>
+    apiFetchPage<AdminAllotment>('/admin/allotments', { method: 'GET', params: filters }),
 
   allotRoom: (student_id: string, room_id: string, academic_year: string) =>
     apiFetch<{ message: string }>('/admin/allotments', {

@@ -8,11 +8,14 @@ const v = require('../middleware/validators');
 router.use(authenticate, authorize('ADMIN'));
 
 router.get('/users', v.adminListUsersValidators, admin.listUsers);
+router.get('/users/summary', admin.userSummary);
 router.post('/users', v.adminCreateUserValidators, admin.createUser);
 router.patch('/users/:user_id', v.adminUpdateUserValidators, admin.updateUser);
 router.post('/users/:user_id/reset-password', v.adminResetPasswordValidators, admin.resetPassword);
 
-router.get('/allotments', admin.listAllotments);
+router.get('/audit', v.adminAuditValidators, admin.listAudit);
+
+router.get('/allotments', v.adminListAllotmentsValidators, admin.listAllotments);
 router.post('/allotments', v.adminAllotValidators, admin.allotRoom);
 router.delete('/allotments/:student_id', v.adminEndAllotmentValidators, admin.endAllotment);
 

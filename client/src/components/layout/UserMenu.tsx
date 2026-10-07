@@ -48,7 +48,7 @@ export const UserMenu: React.FC = () => {
           <span className="block max-w-[160px] truncate text-[13px] font-medium text-slate-900">{user.full_name}</span>
           <span className="block text-2xs text-slate-500">{ROLE_LABEL[user.role]}</span>
         </span>
-        <ChevronDown className="hidden h-4 w-4 text-slate-400 sm:block" aria-hidden />
+        <ChevronDown className="hidden h-4 w-4 text-slate-500 sm:block" aria-hidden />
       </button>
 
       {open && (
@@ -65,7 +65,7 @@ export const UserMenu: React.FC = () => {
               onClick={() => setOpen(false)}
               className="flex items-center gap-2.5 px-4 py-2 text-[13px] text-slate-700 hover:bg-slate-50"
             >
-              <UserCircle2 className="h-4 w-4 text-slate-400" aria-hidden />
+              <UserCircle2 className="h-4 w-4 text-slate-500" aria-hidden />
               My account
             </Link>
             <button
@@ -74,7 +74,7 @@ export const UserMenu: React.FC = () => {
               onClick={handleLogout}
               className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50"
             >
-              <LogOut className="h-4 w-4 text-slate-400" aria-hidden />
+              <LogOut className="h-4 w-4 text-slate-500" aria-hidden />
               Sign out
             </button>
           </div>

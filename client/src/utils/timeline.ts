@@ -69,3 +69,13 @@ export function reconstructTimeline(complaint: Complaint): TimelineEvent[] {
 
   return events;
 }
+
+/**
+ * One line describing an audit-trail entry: the human note (if any) and who
+ * acted. The database's automatic "Transition: A -> B" note is dropped - the
+ * entry's title already says that.
+ */
+export function logDescription(log: { action_note: string | null; changed_by_name: string | null }): string {
+  const note = log.action_note && !/^Transition:/i.test(log.action_note) ? log.action_note : null;
+  return [note, log.changed_by_name].filter(Boolean).join(' · ') || 'Recorded by the system';
+}

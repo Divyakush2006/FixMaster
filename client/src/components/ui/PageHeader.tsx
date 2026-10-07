@@ -24,7 +24,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ title, description, brea
         <ol className="flex flex-wrap items-center gap-1 text-xs text-slate-500">
           {breadcrumbs.map((c, i) => (
             <li key={`${c.label}-${i}`} className="flex items-center gap-1">
-              {i > 0 && <ChevronRight className="h-3 w-3 text-slate-400" aria-hidden />}
+              {i > 0 && <ChevronRight className="h-3 w-3 text-slate-500" aria-hidden />}
               {c.to ? (
                 <Link to={c.to} className="hover:text-slate-800 hover:underline underline-offset-2">
                   {c.label}

@@ -1,4 +1,4 @@
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 const db = require('../config/db');
 const { AppError } = require('../middleware/errorHandler');
 
@@ -7,7 +7,7 @@ const BCRYPT_COST = 12;
 // Columns that are safe to return to any client. password_hash never leaves
 // the database layer.
 const PUBLIC_USER_COLUMNS =
-    'user_id, reg_or_emp_id, full_name, email, phone_number, role, specialization, is_available, is_active, created_at';
+    'user_id, reg_or_emp_id, full_name, email, phone_number, role, specialization, is_available, is_active, created_at, last_login_at, locked_until';
 
 const hashPassword = (password) => bcrypt.hash(password, BCRYPT_COST);
 

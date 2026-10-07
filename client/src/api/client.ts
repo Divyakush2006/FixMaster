@@ -22,7 +22,24 @@ interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined | null>;
 }
 
+/** A page of a list endpoint; `total` comes from the X-Total-Count header. */
+export interface Page<T> {
+  items: T[];
+  total: number;
+}
+
 export async function apiFetch<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+  return (await request<T>(endpoint, options)).body;
+}
+
+/** For list endpoints that report their full size in X-Total-Count. */
+export async function apiFetchPage<T>(endpoint: string, options: RequestOptions = {}): Promise<Page<T>> {
+  const { body, response } = await request<T[]>(endpoint, options);
+  const header = Number(response.headers.get('X-Total-Count'));
+  return { items: body, total: Number.isFinite(header) && response.headers.has('X-Total-Count') ? header : body.length };
+}
+
+async function request<T>(endpoint: string, options: RequestOptions): Promise<{ body: T; response: Response }> {
   const { params, headers: customHeaders, ...customOptions } = options;
 
   let url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
@@ -54,7 +71,9 @@ export async function apiFetch<T>(endpoint: string, options: RequestOptions = {}
 
   const contentType = response.headers.get('content-type') || '';
   let body: any = null;
-  if (contentType.includes('application/json')) {
+  if (response.status === 204) {
+    body = null;
+  } else if (contentType.includes('application/json')) {
     body = await response.json().catch(() => null);
   } else {
     const text = await response.text().catch(() => '');
@@ -82,5 +101,5 @@ export async function apiFetch<T>(endpoint: string, options: RequestOptions = {}
     throw new ApiError(mapApiError(body), response.status, body);
   }
 
-  return body as T;
+  return { body: body as T, response };
 }

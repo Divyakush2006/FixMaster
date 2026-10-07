@@ -48,7 +48,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ panelTitle, panelText, p
         </ul>
       </div>
 
-      <p className="relative text-xs text-white/40">© {new Date().getFullYear()} VIT Vellore · Hostel Estates Office</p>
+      <p className="relative text-xs text-white/60">© {new Date().getFullYear()} VIT Vellore · Hostel Estates Office</p>
     </aside>
 
     <main className="flex flex-1 flex-col">
@@ -58,7 +58,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ panelTitle, panelText, p
       <div className="flex flex-1 items-center justify-center px-6 py-10 sm:px-10">
         <div className={cn('w-full', width === 'sm' ? 'max-w-[400px]' : 'max-w-[520px]')}>{children}</div>
       </div>
-      <p className="px-6 pb-6 text-center text-xs text-slate-400 lg:hidden">© {new Date().getFullYear()} VIT Vellore · Hostel Estates Office</p>
+      <p className="px-6 pb-6 text-center text-xs text-slate-500 lg:hidden">© {new Date().getFullYear()} VIT Vellore · Hostel Estates Office</p>
     </main>
   </div>
 );
@@ -75,7 +75,7 @@ export const AuthHeading: React.FC<{ title: string; subtitle: React.ReactNode }>
 export const DemoAccounts: React.FC<{ accounts: { id: string; who: string }[]; onPick: (id: string) => void }> = ({ accounts, onPick }) => (
   <div className="mt-6 rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-3">
     <p className="text-xs font-medium text-slate-600">
-      Demo accounts <span className="font-normal text-slate-400">· development only · password Password@123</span>
+      Demo accounts <span className="font-normal text-slate-500">· development only · password Password@123</span>
     </p>
     <div className="mt-2 flex flex-wrap gap-1.5">
       {accounts.map((d) => (

@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { PageLoader } from '../ui/PageLoader';
+import { IdleSignOut } from './IdleSignOut';
 
 export const AppShell: React.FC = () => {
   const location = useLocation();
@@ -23,6 +24,7 @@ export const AppShell: React.FC = () => {
       >
         Skip to content
       </a>
+      <IdleSignOut />
       <Sidebar mobileOpen={navOpen} onCloseMobile={() => setNavOpen(false)} />
       <div className="flex min-h-screen flex-col md:pl-60">
         <Topbar onOpenNav={() => setNavOpen(true)} />
@@ -34,7 +36,7 @@ export const AppShell: React.FC = () => {
             </Suspense>
           </ErrorBoundary>
         </main>
-        <footer className="border-t border-slate-200 px-4 py-4 text-xs text-slate-400 sm:px-6 lg:px-8">
+        <footer className="border-t border-slate-200 px-4 py-4 text-xs text-slate-500 sm:px-6 lg:px-8">
           <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-2">
             <span>© {new Date().getFullYear()} VIT Vellore · Hostel Estates Office</span>
             <span>FixMaster Facilities Management</span>

@@ -144,6 +144,10 @@ export const SupervisorDashboard: React.FC = () => {
                 <div className="flex h-72 items-center justify-center text-[13px] text-slate-500">No tickets have been raised yet.</div>
               ) : (
                 <div className="h-72">
+                  <p className="sr-only">
+                    Tickets by block: {chartData.map((d) => `${d.block}: ${d['Not started']} not started, ${d['In progress']} in progress, ${d['Awaiting confirmation']} awaiting confirmation, ${d.Resolved} resolved, ${d.Escalated} escalated`).join('; ')}.
+                  </p>
+                  <div className="h-full" aria-hidden="true">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }} barCategoryGap="28%">
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
@@ -156,6 +160,7 @@ export const SupervisorDashboard: React.FC = () => {
                       ))}
                     </BarChart>
                   </ResponsiveContainer>
+                  </div>
                 </div>
               )}
             </CardBody>
@@ -170,10 +175,10 @@ export const SupervisorDashboard: React.FC = () => {
                 <div className="flex h-72 items-center justify-center text-[13px] text-slate-500">No data yet.</div>
               ) : (
                 <div className="flex h-72 flex-col">
-                  <div className="relative min-h-0 flex-1">
+                  <div className="relative min-h-0 flex-1" aria-hidden="true">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={mix} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="88%" paddingAngle={1.5} stroke="none">
+                        <Pie data={mix} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="88%" paddingAngle={1.5} stroke="none" rootTabIndex={-1}>
                           {mix.map((m, i) => (
                             <Cell key={m.name} fill={SERIES[i].color} />
                           ))}
@@ -239,7 +244,7 @@ export const SupervisorDashboard: React.FC = () => {
                     <Tr key={b.id}>
                       <Td>
                         <p className="font-medium text-slate-900">{b.name}</p>
-                        <p className="font-mono text-2xs text-slate-400">{b.id}</p>
+                        <p className="font-mono text-2xs text-slate-500">{b.id}</p>
                       </Td>
                       <Td className="text-right font-medium text-slate-900 tabular">{b.total}</Td>
                       <Td className="text-right tabular">{b.notStarted}</Td>
@@ -255,7 +260,7 @@ export const SupervisorDashboard: React.FC = () => {
                             {b.rating.toFixed(1)}
                           </span>
                         ) : (
-                          <span className="text-slate-400">—</span>
+                          <span className="text-slate-500">—</span>
                         )}
                       </Td>
                     </Tr>

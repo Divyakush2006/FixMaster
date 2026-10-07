@@ -7,6 +7,7 @@ import { Alert } from '../../components/ui/Alert';
 import { Button } from '../../components/ui/Button';
 import { Field, Input, PasswordInput } from '../../components/ui/Form';
 import { AuthHeading, AuthLayout } from './AuthLayout';
+import { PASSWORD_HINT, passwordProblem } from '../../utils/password';
 
 // This screen only ever registers STUDENT accounts (POST /auth/student/register).
 // Staff, supervisor and admin accounts are created by an administrator.
@@ -35,11 +36,8 @@ export const RegisterScreen: React.FC = () => {
     if (!phone.trim() || !/^\d{10}$/.test(phone.trim())) {
       errs.phone = 'Enter a 10-digit mobile number.';
     }
-    if (!password || password.length < 8) {
-      errs.password = 'Use at least 8 characters.';
-    } else if (new TextEncoder().encode(password).length > 72) {
-      errs.password = 'Use at most 72 bytes.';
-    }
+    const pwProblem = passwordProblem(password, regOrEmpId);
+    if (pwProblem) errs.password = pwProblem;
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -134,7 +132,7 @@ export const RegisterScreen: React.FC = () => {
           </Field>
         </div>
 
-        <Field label="Password" required error={errors.password} hint="At least 8 characters.">
+        <Field label="Password" required error={errors.password} hint={PASSWORD_HINT}>
           {(a) => <PasswordInput {...a} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />}
         </Field>
 

@@ -8,7 +8,7 @@ import { Button } from '../../components/ui/Button';
 import { Skeleton } from '../../components/ui/PageLoader';
 import { StatusBadge, PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
 import { ActivityTimeline } from '../../components/common/ActivityTimeline';
-import { reconstructTimeline } from '../../utils/timeline';
+import { logDescription, reconstructTimeline } from '../../utils/timeline';
 import { complaintsApi } from '../../api/endpoints';
 import { Complaint, ComplaintStatus, TimelineEvent } from '../../types';
 import { formatDateTime } from '../../utils/formatters';
@@ -55,7 +55,7 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({ isOp
             .filter((log) => log.previous_status !== null || log.new_status !== 'OPEN')
             .map((log, idx, arr) => ({
               title: STATUS_STEP[log.new_status] || STATUS_LABEL[log.new_status] || log.new_status,
-              description: [log.action_note, log.changed_by_name].filter(Boolean).join(' · ') || `Status changed to ${STATUS_LABEL[log.new_status]}`,
+              description: logDescription(log),
               timestamp: formatDateTime(log.timestamp),
               status: (idx === arr.length - 1 && !CLOSED_STATUSES.includes(complaint.status) ? 'current' : 'completed') as TimelineEvent['status'],
             })),
@@ -103,6 +103,9 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({ isOp
               { label: 'Type', value: SCOPE_LABEL[complaint.ticket_scope] },
               { label: 'Trade', value: <SpecializationBadge specialization={complaint.required_specialization} /> },
               { label: 'Preferred time', value: complaint.preferred_timeslot || 'Any time' },
+              ...(complaint.assigned_staff_name && complaint.status !== 'OPEN' && complaint.status !== 'ESCALATED'
+                ? [{ label: 'Technician', value: complaint.assigned_staff_name }]
+                : []),
               { label: 'Raised by', value: complaint.student_name },
               { label: 'Raised on', value: formatDateTime(complaint.created_at) },
               ...(complaint.resolved_at ? [{ label: 'Work completed', value: formatDateTime(complaint.resolved_at) }] : []),

@@ -73,7 +73,7 @@ export const PasswordInput = React.forwardRef<HTMLInputElement, Omit<React.Input
         <button
           type="button"
           onClick={() => setVisible((v) => !v)}
-          className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md text-slate-400 hover:text-slate-700"
+          className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md text-slate-500 hover:text-slate-700"
           aria-label={visible ? 'Hide password' : 'Show password'}
           title={visible ? 'Hide password' : 'Show password'}
         >

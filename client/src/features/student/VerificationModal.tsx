@@ -70,7 +70,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({ isOpen, on
             : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
         )}
       >
-        <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', active ? (value ? 'text-emerald-600' : 'text-rose-600') : 'text-slate-400')} />
+        <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', active ? (value ? 'text-emerald-600' : 'text-rose-600') : 'text-slate-500')} />
         <span>
           <span className="block text-[13px] font-semibold text-slate-900">{title}</span>
           <span className="mt-0.5 block text-xs text-slate-500">{text}</span>

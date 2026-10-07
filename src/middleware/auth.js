@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const db = require('../config/db');
 const { asyncHandler } = require('./errorHandler');
@@ -29,14 +30,21 @@ function verifyToken(authHeader) {
  * Authorization always uses the CURRENT role from the database.
  */
 async function loadActiveUser(decoded) {
-    if (!decoded || typeof decoded.userId !== 'string') return null;
+    // Every token we issue has a unique id (jti); one without it is not ours
+    // or predates server-side sign-out, and is refused.
+    if (!decoded || typeof decoded.userId !== 'string' || typeof decoded.jti !== 'string') return null;
     const { rows } = await db.query(
-        'SELECT user_id, role, reg_or_emp_id, is_active, credentials_changed_at FROM users WHERE user_id = $1',
-        [decoded.userId]
+        `SELECT user_id, role, reg_or_emp_id, is_active, credentials_changed_at,
+                EXISTS (SELECT 1 FROM revoked_tokens WHERE jti = $2) AS revoked
+         FROM users WHERE user_id = $1`,
+        [decoded.userId, decoded.jti]
     );
     const user = rows[0];
-    if (!user || !user.is_active) return null;
-    if (user.credentials_changed_at && decoded.iat < Math.floor(user.credentials_changed_at.getTime() / 1000)) {
+    if (!user || !user.is_active || user.revoked) return null;
+    // JWT iat is in whole seconds: a token issued in the same second as the
+    // change counts as issued before it. (signToken stamps tokens created
+    // right after a change one second later, so those stay valid.)
+    if (user.credentials_changed_at && decoded.iat <= Math.floor(user.credentials_changed_at.getTime() / 1000)) {
         return null;
     }
     const portal = portalForRole(user.role);
@@ -63,6 +71,7 @@ const authenticate = asyncHandler(async (req, res, next) => {
         return res.status(401).json({ error: 'Your session is no longer valid. Please sign in again.' });
     }
     req.user = user;
+    req.auth = { jti: decoded.jti, exp: decoded.exp };
     next();
 });
 
@@ -75,8 +84,16 @@ const authorize = (...roles) => {
     };
 };
 
-/** Signs a session token for the portal the user's role belongs to. */
+/**
+ * Signs a session token for the portal the user's role belongs to.
+ * Pass the user's credentials_changed_at when known: a token issued within
+ * the same second as a password change is stamped one second later so the
+ * revocation rule (iat <= change second) never kills a brand-new session.
+ */
 function signToken(user) {
+    const now = Math.floor(Date.now() / 1000);
+    const changed = user.credentials_changed_at ? Math.floor(new Date(user.credentials_changed_at).getTime() / 1000) : 0;
+    const iat = Math.max(now, changed + 1);
     const portal = portalForRole(user.role);
     // Administrator sessions are shorter-lived.
     const expiresIn =
@@ -84,9 +101,9 @@ function signToken(user) {
             ? process.env.JWT_ADMIN_EXPIRES_IN || '8h'
             : process.env.JWT_EXPIRES_IN || '24h';
     return jwt.sign(
-        { userId: user.user_id, role: user.role, regOrEmpId: user.reg_or_emp_id, portal },
+        { userId: user.user_id, role: user.role, regOrEmpId: user.reg_or_emp_id, portal, iat },
         process.env.JWT_SECRET,
-        { algorithm: JWT_ALGORITHM, expiresIn, audience: audienceFor(portal) }
+        { algorithm: JWT_ALGORITHM, expiresIn, audience: audienceFor(portal), jwtid: crypto.randomUUID() }
     );
 }
 

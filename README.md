@@ -439,6 +439,10 @@ cd client && npm ci && npm run dev
 Sign in at http://localhost:3000/login (Student and Staff tabs) or, for
 administrators, at http://localhost:3000/admin.
 
+Security and operations features (account lockout, audit log, reassignment,
+idle sign-out, server-side sign-out) and the verification behind them are
+described in [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
+
 `npm run db:reset -- --yes` wipes and rebuilds a development database. Never run
 `database/init_all.sql` against a database you want to keep: it drops every table.
 

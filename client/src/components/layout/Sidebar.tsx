@@ -46,7 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
       <nav aria-label="Main" className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
         {sections.map((section) => (
           <div key={section.heading}>
-            <p className="mb-1.5 px-3 text-2xs font-semibold uppercase tracking-[0.1em] text-white/40">{section.heading}</p>
+            <p className="mb-1.5 px-3 text-2xs font-semibold uppercase tracking-[0.1em] text-white/60">{section.heading}</p>
             <ul className="space-y-0.5">
               {section.items.map((item) => {
                 const count = item.badge === 'escalations' ? escalated.length : 0;
@@ -86,7 +86,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
 
       <div className="shrink-0 border-t border-white/10 px-5 py-4">
         <p className="text-xs font-medium text-white/70">VIT Vellore</p>
-        <p className="text-2xs text-white/40">Hostel Estates Office</p>
+        <p className="text-2xs text-white/60">Hostel Estates Office</p>
       </div>
     </div>
   );

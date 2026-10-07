@@ -27,7 +27,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ icon: Icon = Inbox, titl
     <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-500">
       <Icon className="h-5 w-5" aria-hidden />
     </div>
-    <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+    <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
     <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-slate-500">{description}</p>
     {action && (
       <Button variant="secondary" size="sm" className="mt-4" onClick={action.onClick}>

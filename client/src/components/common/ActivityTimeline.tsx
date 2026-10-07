@@ -26,7 +26,7 @@ export const ActivityTimeline: React.FC<{ events: TimelineEvent[] }> = ({ events
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
               <p className={cn('text-[13px] font-medium', event.status === 'pending' ? 'text-slate-500' : 'text-slate-900')}>{event.title}</p>
-              <time className="text-xs text-slate-400 tabular">{event.timestamp}</time>
+              <time className="text-xs text-slate-500 tabular">{event.timestamp}</time>
             </div>
             <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{event.description}</p>
           </div>

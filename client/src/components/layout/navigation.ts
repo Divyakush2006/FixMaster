@@ -10,6 +10,7 @@ import {
   Building2,
   BedDouble,
   UserCircle2,
+  ScrollText,
   LucideIcon,
 } from 'lucide-react';
 import { Role } from '../../types';
@@ -79,6 +80,7 @@ export function navigationFor(role: Role): NavSection[] {
             { label: 'Users & access', to: '/admin/users', icon: Users },
             { label: 'Blocks & rooms', to: '/admin/infrastructure', icon: Building2 },
             { label: 'Room allotments', to: '/admin/allotments', icon: BedDouble },
+            { label: 'Audit log', to: '/admin/audit', icon: ScrollText },
           ],
         },
         account,

@@ -20,6 +20,18 @@ function handleValidation(req, res, next) {
     next();
 }
 
+// Passwords that pass the length/character rules but are guessed first.
+const COMMON_PASSWORDS = new Set([
+    'password1', 'password12', 'password123', 'passw0rd', 'p@ssw0rd', 'p@ssword1', 'qwerty123', 'qwerty12',
+    'abc12345', 'abcd1234', 'abcdef12', 'admin123', 'admin1234', 'welcome1', 'welcome123', 'letmein1',
+    'iloveyou1', '1q2w3e4r', '1qaz2wsx', 'zaq12wsx', 'test1234', 'vit12345', 'hostel123', 'student123',
+]);
+
+/**
+ * Password policy for every place a password is set (registration, admin
+ * create/reset, self-service change): 8-72 bytes, at least one letter and one
+ * digit, not a well-known password and not the account's own ID.
+ */
 const newPassword = (field) =>
     body(field)
         .isString()
@@ -29,7 +41,19 @@ const newPassword = (field) =>
         .withMessage(`${field} must be at least 8 characters.`)
         .bail()
         .custom((value) => Buffer.byteLength(value, 'utf8') <= BCRYPT_MAX_BYTES)
-        .withMessage(`${field} must be at most ${BCRYPT_MAX_BYTES} bytes.`);
+        .withMessage(`${field} must be at most ${BCRYPT_MAX_BYTES} bytes.`)
+        .bail()
+        .custom((value) => /\p{L}/u.test(value) && /\d/.test(value))
+        .withMessage(`${field} must contain at least one letter and one number.`)
+        .bail()
+        .custom((value) => !COMMON_PASSWORDS.has(value.toLowerCase()))
+        .withMessage(`${field} is too common. Choose a less predictable password.`)
+        .bail()
+        .custom((value, { req }) => {
+            const id = typeof req.body.reg_or_emp_id === 'string' ? req.body.reg_or_emp_id.trim().toUpperCase() : '';
+            return !id || !value.toUpperCase().includes(id);
+        })
+        .withMessage(`${field} must not contain the account ID.`);
 
 // Login IDs are case-insensitive and stored upper-case (migration 002 adds a
 // case-insensitive unique index), so '21bce0843' and '21BCE0843' are one user.
@@ -72,7 +96,7 @@ const userProfileRules = [
 const registerValidators = [...userProfileRules, handleValidation];
 
 const loginValidators = [
-    body('reg_or_emp_id').trim().notEmpty().withMessage('reg_or_emp_id is required.'),
+    body('reg_or_emp_id').isString().withMessage('reg_or_emp_id is required.').bail().trim().notEmpty().withMessage('reg_or_emp_id is required.').bail().isLength({ max: 30 }),
     body('password').exists({ checkFalsy: true }).withMessage('password is required.').bail().isString(),
     handleValidation,
 ];
@@ -113,6 +137,7 @@ const createComplaintValidators = [
 const listComplaintsValidators = [
     query('status').optional().isIn(STATUSES).withMessage(`status must be one of: ${STATUSES.join(', ')}.`),
     query('block_id').optional().trim().notEmpty(),
+    query('q').optional().isString().trim().isLength({ max: 100 }).withMessage('q must be at most 100 characters.'),
     query('limit').optional().isInt({ min: 1, max: 500 }).withMessage('limit must be between 1 and 500.').toInt(),
     query('offset').optional().isInt({ min: 0 }).withMessage('offset must be 0 or more.').toInt(),
     handleValidation,
@@ -180,8 +205,34 @@ const adminCreateUserValidators = [
     handleValidation,
 ];
 
+const pageQuery = (max) => [
+    query('limit').optional().isInt({ min: 1, max }).withMessage(`limit must be between 1 and ${max}.`).toInt(),
+    query('offset').optional().isInt({ min: 0 }).withMessage('offset must be 0 or more.').toInt(),
+];
+
 const adminListUsersValidators = [
     query('role').optional().isIn(ROLES).withMessage(`role must be one of: ${ROLES.join(', ')}.`),
+    query('status').optional().isIn(['active', 'deactivated', 'locked']).withMessage('status must be active, deactivated or locked.'),
+    query('q').optional().isString().isLength({ max: 100 }).withMessage('q must be at most 100 characters.'),
+    ...pageQuery(200),
+    handleValidation,
+];
+
+const adminListAllotmentsValidators = [
+    query('block_id').optional().isString().isLength({ max: 10 }),
+    query('student_id').optional().isString().isLength({ max: 36 }),
+    query('q').optional().isString().isLength({ max: 100 }).withMessage('q must be at most 100 characters.'),
+    ...pageQuery(200),
+    handleValidation,
+];
+
+const AUDIT_ACTION = /^[a-z_]+(\.[a-z_]+)*$/;
+const adminAuditValidators = [
+    query('action').optional().matches(AUDIT_ACTION).withMessage('action is invalid.'),
+    query('actor').optional().isString().isLength({ max: 36 }),
+    query('target_id').optional().isString().isLength({ max: 60 }),
+    query('limit').optional().isInt({ min: 1, max: 200 }).withMessage('limit must be between 1 and 200.').toInt(),
+    query('offset').optional().isInt({ min: 0 }).withMessage('offset must be 0 or more.').toInt(),
     handleValidation,
 ];
 
@@ -189,8 +240,9 @@ const adminUpdateUserValidators = [
     userIdParam,
     body('is_active').optional().isBoolean({ strict: true }).withMessage('is_active must be true or false.'),
     body('is_available').optional().isBoolean({ strict: true }).withMessage('is_available must be true or false.'),
-    body().custom((value) => value && (value.is_active !== undefined || value.is_available !== undefined))
-        .withMessage('Provide is_active and/or is_available.'),
+    body('unlock').optional().isBoolean({ strict: true }).withMessage('unlock must be true or false.'),
+    body().custom((value) => value && (value.is_active !== undefined || value.is_available !== undefined || value.unlock === true))
+        .withMessage('Provide is_active, is_available and/or unlock: true.'),
     handleValidation,
 ];
 
@@ -287,6 +339,8 @@ module.exports = {
     availabilityValidators,
     adminCreateUserValidators,
     adminListUsersValidators,
+    adminListAllotmentsValidators,
+    adminAuditValidators,
     adminUpdateUserValidators,
     adminResetPasswordValidators,
     adminAllotValidators,

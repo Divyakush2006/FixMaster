@@ -14,7 +14,7 @@ const VARIANT: Record<ButtonVariant, string> = {
   ghost: 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:bg-slate-200',
   danger: 'bg-rose-600 text-white shadow-xs hover:bg-rose-700 active:bg-rose-800 disabled:bg-rose-600',
   'danger-outline': 'bg-white text-rose-700 border border-rose-200 shadow-xs hover:bg-rose-50 active:bg-rose-100',
-  success: 'bg-emerald-600 text-white shadow-xs hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-emerald-600',
+  success: 'bg-emerald-700 text-white shadow-xs hover:bg-emerald-800 active:bg-emerald-900 disabled:bg-emerald-700',
 };
 
 const SIZE: Record<ButtonSize, string> = {

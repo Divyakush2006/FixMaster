@@ -27,6 +27,7 @@ export const AdminLoginScreen: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isExpired = searchParams.get('expired') === '1';
+  const isIdle = searchParams.get('idle') === '1';
 
   if (!authLoading && isAuthenticated && user?.role === 'ADMIN') {
     return <Navigate to={getHomeRouteForRole('ADMIN')} replace />;
@@ -70,6 +71,11 @@ export const AdminLoginScreen: React.FC = () => {
       <AuthHeading title="Administrator sign-in" subtitle="For authorised hostel administrators only." />
 
       <div className="space-y-3">
+        {isIdle && !errorMsg && (
+          <Alert tone="info" title="Signed out after 30 minutes of inactivity">
+            Administrator sessions end automatically when left unattended.
+          </Alert>
+        )}
         {isExpired && !errorMsg && (
           <Alert tone="warning" title="Your administrator session has ended">
             Please sign in again to continue.
