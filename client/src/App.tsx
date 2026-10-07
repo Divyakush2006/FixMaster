@@ -1,44 +1,43 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './api/queryClient';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './components/ui/Toast';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AppShell } from './components/layout/AppShell';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { PageLoader } from './components/ui/PageLoader';
 
-// Auth Features
-import { LoginScreen } from './features/auth/LoginScreen';
-import { RegisterScreen } from './features/auth/RegisterScreen';
+// Every page is its own chunk: a student never downloads the supervisor
+// dashboard's charting library, and the first paint only needs the login page.
+const named = <T extends Record<string, React.ComponentType<any>>>(loader: () => Promise<T>, name: keyof T) =>
+  lazy(() => loader().then((m) => ({ default: m[name] as React.ComponentType<any> })));
 
-// Student Features
-import { StudentHome } from './features/student/StudentHome';
-import { NewComplaintForm } from './features/student/NewComplaintForm';
-import { MyComplaints } from './features/student/MyComplaints';
-
-// Staff Features
-import { StaffQueue } from './features/staff/StaffQueue';
-
-// Supervisor Features
-import { SupervisorDashboard } from './features/supervisor/SupervisorDashboard';
-import { AllComplaintsTable } from './features/supervisor/AllComplaintsTable';
-import { HotspotsTable } from './features/supervisor/HotspotsTable';
-import { EscalatedQueue } from './features/supervisor/EscalatedQueue';
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-      staleTime: 1000 * 30, // 30 seconds
-    },
-  },
-});
+const LoginScreen = named(() => import('./features/auth/LoginScreen'), 'LoginScreen');
+const RegisterScreen = named(() => import('./features/auth/RegisterScreen'), 'RegisterScreen');
+const StudentHome = named(() => import('./features/student/StudentHome'), 'StudentHome');
+const NewComplaintForm = named(() => import('./features/student/NewComplaintForm'), 'NewComplaintForm');
+const MyComplaints = named(() => import('./features/student/MyComplaints'), 'MyComplaints');
+const StaffQueue = named(() => import('./features/staff/StaffQueue'), 'StaffQueue');
+const SupervisorDashboard = named(() => import('./features/supervisor/SupervisorDashboard'), 'SupervisorDashboard');
+const AllComplaintsTable = named(() => import('./features/supervisor/AllComplaintsTable'), 'AllComplaintsTable');
+const HotspotsTable = named(() => import('./features/supervisor/HotspotsTable'), 'HotspotsTable');
+const EscalatedQueue = named(() => import('./features/supervisor/EscalatedQueue'), 'EscalatedQueue');
+const AccountPage = named(() => import('./features/account/AccountPage'), 'AccountPage');
+const UsersPage = named(() => import('./features/admin/UsersPage'), 'UsersPage');
+const AllotmentsPage = named(() => import('./features/admin/AllotmentsPage'), 'AllotmentsPage');
 
 const RoleRedirect: React.FC = () => {
-  const { user, getHomeRouteForRole, isAuthenticated } = useAuth();
+  const { user, getHomeRouteForRole, isAuthenticated, isLoading } = useAuth();
+  if (isLoading) return <PageLoader />;
   if (!isAuthenticated || !user) return <Navigate to="/login" replace />;
   return <Navigate to={getHomeRouteForRole(user.role)} replace />;
 };
+
+const guard = (roles: Parameters<typeof ProtectedRoute>[0]['allowedRoles'], page: React.ReactNode) => (
+  <ProtectedRoute allowedRoles={roles}>{page}</ProtectedRoute>
+);
 
 export const App: React.FC = () => {
   return (
@@ -46,90 +45,43 @@ export const App: React.FC = () => {
       <ToastProvider>
         <AuthProvider>
           <BrowserRouter>
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/login" element={<LoginScreen />} />
-              <Route path="/register" element={<RegisterScreen />} />
+            <ErrorBoundary>
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  {/* Public Routes */}
+                  <Route path="/login" element={<LoginScreen />} />
+                  <Route path="/register" element={<RegisterScreen />} />
 
-              {/* Protected App Shell */}
-              <Route element={<AppShell />}>
-                {/* Default Index Route */}
-                <Route path="/" element={<RoleRedirect />} />
+                  {/* Protected App Shell */}
+                  <Route element={<AppShell />}>
+                    <Route path="/" element={<RoleRedirect />} />
 
-                {/* Student Portal */}
-                <Route
-                  path="/student"
-                  element={
-                    <ProtectedRoute allowedRoles={['STUDENT']}>
-                      <StudentHome />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/student/new"
-                  element={
-                    <ProtectedRoute allowedRoles={['STUDENT']}>
-                      <NewComplaintForm />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/student/complaints"
-                  element={
-                    <ProtectedRoute allowedRoles={['STUDENT']}>
-                      <MyComplaints />
-                    </ProtectedRoute>
-                  }
-                />
+                    {/* Every signed-in role */}
+                    <Route path="/account" element={guard(undefined, <AccountPage />)} />
 
-                {/* Staff Portal */}
-                <Route
-                  path="/staff"
-                  element={
-                    <ProtectedRoute allowedRoles={['STAFF']}>
-                      <StaffQueue />
-                    </ProtectedRoute>
-                  }
-                />
+                    {/* Student Portal */}
+                    <Route path="/student" element={guard(['STUDENT'], <StudentHome />)} />
+                    <Route path="/student/new" element={guard(['STUDENT'], <NewComplaintForm />)} />
+                    <Route path="/student/complaints" element={guard(['STUDENT'], <MyComplaints />)} />
 
-                {/* Supervisor / Admin Portal */}
-                <Route
-                  path="/supervisor"
-                  element={
-                    <ProtectedRoute allowedRoles={['SUPERVISOR', 'ADMIN']}>
-                      <SupervisorDashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/supervisor/all-complaints"
-                  element={
-                    <ProtectedRoute allowedRoles={['SUPERVISOR', 'ADMIN']}>
-                      <AllComplaintsTable />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/supervisor/hotspots"
-                  element={
-                    <ProtectedRoute allowedRoles={['SUPERVISOR', 'ADMIN']}>
-                      <HotspotsTable />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/supervisor/escalated"
-                  element={
-                    <ProtectedRoute allowedRoles={['SUPERVISOR', 'ADMIN']}>
-                      <EscalatedQueue />
-                    </ProtectedRoute>
-                  }
-                />
-              </Route>
+                    {/* Staff Portal */}
+                    <Route path="/staff" element={guard(['STAFF'], <StaffQueue />)} />
 
-              {/* Fallback Catch-all Route */}
-              <Route path="*" element={<RoleRedirect />} />
-            </Routes>
+                    {/* Supervisor / Admin Portal */}
+                    <Route path="/supervisor" element={guard(['SUPERVISOR', 'ADMIN'], <SupervisorDashboard />)} />
+                    <Route path="/supervisor/all-complaints" element={guard(['SUPERVISOR', 'ADMIN'], <AllComplaintsTable />)} />
+                    <Route path="/supervisor/hotspots" element={guard(['SUPERVISOR', 'ADMIN'], <HotspotsTable />)} />
+                    <Route path="/supervisor/escalated" element={guard(['SUPERVISOR', 'ADMIN'], <EscalatedQueue />)} />
+
+                    {/* Administration */}
+                    <Route path="/admin/users" element={guard(['ADMIN'], <UsersPage />)} />
+                    <Route path="/admin/allotments" element={guard(['ADMIN'], <AllotmentsPage />)} />
+                  </Route>
+
+                  <Route path="*" element={<RoleRedirect />} />
+                </Routes>
+              </Suspense>
+            </ErrorBoundary>
           </BrowserRouter>
         </AuthProvider>
       </ToastProvider>

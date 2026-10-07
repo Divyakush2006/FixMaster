@@ -41,6 +41,8 @@ export const RegisterScreen: React.FC = () => {
 
     if (!password || password.length < 8) {
       errs.password = 'Password must be at least 8 characters long.';
+    } else if (new TextEncoder().encode(password).length > 72) {
+      errs.password = 'Password must be at most 72 bytes.';
     }
 
     setErrors(errs);
@@ -61,8 +63,6 @@ export const RegisterScreen: React.FC = () => {
         email: email.trim(),
         phone_number: phone.trim(),
         password,
-        role: 'STUDENT',
-        specialization: null,
       });
 
       showToast('Account registered successfully! Logging you in...', 'success');

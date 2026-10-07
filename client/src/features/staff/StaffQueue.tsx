@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { dispatchApi } from '../../api/endpoints';
+import { dispatchApi, meApi } from '../../api/endpoints';
 import { useToast } from '../../components/ui/Toast';
 import { PriorityBadge } from '../../components/common/Badges';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -16,6 +16,7 @@ import {
   Wrench,
   Navigation,
   Loader2,
+  Power,
 } from 'lucide-react';
 
 export const StaffQueue: React.FC = () => {
@@ -26,6 +27,22 @@ export const StaffQueue: React.FC = () => {
   const { data: queue = [], isLoading, refetch } = useQuery({
     queryKey: ['staff-queue'],
     queryFn: dispatchApi.getQueue,
+  });
+
+  // On/off duty. Auto-dispatch only sends new work to staff who are on duty.
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: meApi.getMe });
+  const isOnDuty = me?.is_available !== false;
+  const dutyMutation = useMutation({
+    mutationFn: (next: boolean) => meApi.setAvailability(next),
+    onSuccess: (res) => {
+      queryClient.setQueryData(['me'], (old: typeof me) => (old ? { ...old, is_available: res.is_available } : old));
+      showToast(
+        res.is_available ? 'You are on duty' : 'You are off duty',
+        'info',
+        res.is_available ? 'New tickets can be auto-dispatched to you.' : 'You will not receive auto-dispatched tickets.'
+      );
+    },
+    onError: (err: any) => showToast(err.message || 'Could not update duty status', 'error'),
   });
 
   const startWorkMutation = useMutation({
@@ -73,13 +90,28 @@ export const StaffQueue: React.FC = () => {
           </div>
         </div>
 
-        <button
-          onClick={() => refetch()}
-          className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-        >
-          <Navigation className="w-3.5 h-3.5" />
-          <span>Refresh Queue</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => dutyMutation.mutate(!isOnDuty)}
+            disabled={!me || dutyMutation.isPending}
+            aria-pressed={isOnDuty}
+            className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 min-h-[40px] ${
+              isOnDuty
+                ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300'
+                : 'bg-slate-900 border-slate-700 text-slate-400'
+            }`}
+          >
+            <Power className="w-3.5 h-3.5" />
+            <span>{isOnDuty ? 'On duty' : 'Off duty'}</span>
+          </button>
+          <button
+            onClick={() => refetch()}
+            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors min-h-[40px]"
+          >
+            <Navigation className="w-3.5 h-3.5" />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
       {/* Stats Bar */}

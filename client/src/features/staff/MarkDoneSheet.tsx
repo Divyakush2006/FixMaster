@@ -17,7 +17,7 @@ export const MarkDoneSheet: React.FC<MarkDoneSheetProps> = ({ isOpen, onClose, t
   const { showToast } = useToast();
 
   const mutation = useMutation({
-    mutationFn: () => dispatchApi.markTaskCompleted(task.assignment_id, task.complaint_id),
+    mutationFn: () => dispatchApi.markTaskCompleted(task.assignment_id),
     onSuccess: (data) => {
       showToast(
         'Task Marked Done!',

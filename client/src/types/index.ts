@@ -33,9 +33,36 @@ export interface User {
   reg_or_emp_id: string;
   full_name: string;
   email?: string;
+  phone_number?: string;
   role: Role;
   specialization?: Specialization | null;
+  is_available?: boolean;
+  is_active?: boolean;
   created_at?: string;
+}
+
+export interface CreateUserPayload {
+  reg_or_emp_id: string;
+  full_name: string;
+  email: string;
+  phone_number: string;
+  password: string;
+  role: Role;
+  specialization?: Specialization | null;
+}
+
+export interface AdminAllotment {
+  allotment_id: number;
+  student_id: string;
+  reg_or_emp_id: string;
+  full_name: string;
+  room_id: string;
+  block_id: string;
+  room_number: string;
+  floor_number: number;
+  bed_capacity: number;
+  academic_year: string;
+  assigned_date: string;
 }
 
 export interface AuthResponse {
@@ -49,8 +76,6 @@ export interface RegisterPayload {
   email: string;
   phone_number: string;
   password: string;
-  role: Role;
-  specialization?: Specialization | null;
 }
 
 export interface CreateComplaintPayload {
@@ -165,6 +190,8 @@ export interface Room {
   block_id: string;
   room_number: string;
   floor_number: number;
+  room_type?: string;
+  bed_capacity?: number;
   is_active: boolean;
 }
 
@@ -180,7 +207,7 @@ export interface Category {
   category_name: string;
   category_code: string;
   is_quick_action: boolean;
-  subcategories: (Subcategory | null)[];
+  subcategories: Subcategory[];
 }
 
 export interface StaffRosterItem {
