@@ -22,7 +22,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
   }
 
   if (!isAuthenticated || !user) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    // Each area sends you to its own sign-in: /admin/* to the administrator
+    // sign-in, everything else to the student/staff page.
+    const signIn = location.pathname.startsWith('/admin') ? '/admin' : '/login';
+    return <Navigate to={signIn} state={{ from: location }} replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {

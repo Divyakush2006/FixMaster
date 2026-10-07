@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { metaApi, complaintsApi } from '../../api/endpoints';
 import { useMyAllotment } from '../../hooks/useMyAllotment';
+import { floorLabel } from '../../utils/formatters';
 import { useToast } from '../../components/ui/Toast';
 import { SpecializationBadge } from '../../components/common/Badges';
 import { TicketScope, Priority, CommonAreaItem } from '../../types';
@@ -209,7 +210,7 @@ export const NewComplaintForm: React.FC = () => {
               Your allotted room
             </span>
             <span className="font-bold text-slate-100">
-              {allotment.block_id} • Room {allotment.room_number} (Floor {allotment.floor_number})
+              {allotment.block_id} • Room {allotment.room_number} ({floorLabel(allotment.floor_number)})
             </span>
           </div>
         ) : (
@@ -260,7 +261,7 @@ export const NewComplaintForm: React.FC = () => {
                 </option>
                 {commonAreas.map((ca: CommonAreaItem) => (
                   <option key={ca.area_id} value={ca.area_id}>
-                    {ca.description} (Floor {ca.floor_number})
+                    {ca.description} ({floorLabel(ca.floor_number)})
                   </option>
                 ))}
               </select>

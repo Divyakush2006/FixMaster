@@ -16,6 +16,7 @@ const named = <T extends Record<string, React.ComponentType<any>>>(loader: () =>
 
 const LoginScreen = named(() => import('./features/auth/LoginScreen'), 'LoginScreen');
 const RegisterScreen = named(() => import('./features/auth/RegisterScreen'), 'RegisterScreen');
+const AdminLoginScreen = named(() => import('./features/auth/AdminLoginScreen'), 'AdminLoginScreen');
 const StudentHome = named(() => import('./features/student/StudentHome'), 'StudentHome');
 const NewComplaintForm = named(() => import('./features/student/NewComplaintForm'), 'NewComplaintForm');
 const MyComplaints = named(() => import('./features/student/MyComplaints'), 'MyComplaints');
@@ -27,6 +28,7 @@ const EscalatedQueue = named(() => import('./features/supervisor/EscalatedQueue'
 const AccountPage = named(() => import('./features/account/AccountPage'), 'AccountPage');
 const UsersPage = named(() => import('./features/admin/UsersPage'), 'UsersPage');
 const AllotmentsPage = named(() => import('./features/admin/AllotmentsPage'), 'AllotmentsPage');
+const InfrastructurePage = named(() => import('./features/admin/InfrastructurePage'), 'InfrastructurePage');
 
 const RoleRedirect: React.FC = () => {
   const { user, getHomeRouteForRole, isAuthenticated, isLoading } = useAuth();
@@ -48,9 +50,11 @@ export const App: React.FC = () => {
             <ErrorBoundary>
               <Suspense fallback={<PageLoader />}>
                 <Routes>
-                  {/* Public Routes */}
+                  {/* Sign-in: /login has the Student and Staff sign-ins, /admin is the
+                      separate administrator sign-in. */}
                   <Route path="/login" element={<LoginScreen />} />
                   <Route path="/register" element={<RegisterScreen />} />
+                  <Route path="/admin" element={<AdminLoginScreen />} />
 
                   {/* Protected App Shell */}
                   <Route element={<AppShell />}>
@@ -73,9 +77,11 @@ export const App: React.FC = () => {
                     <Route path="/supervisor/hotspots" element={guard(['SUPERVISOR', 'ADMIN'], <HotspotsTable />)} />
                     <Route path="/supervisor/escalated" element={guard(['SUPERVISOR', 'ADMIN'], <EscalatedQueue />)} />
 
-                    {/* Administration */}
+                    {/* Administration (signed in through /admin) */}
+                    <Route path="/admin/dashboard" element={guard(['ADMIN'], <SupervisorDashboard />)} />
                     <Route path="/admin/users" element={guard(['ADMIN'], <UsersPage />)} />
                     <Route path="/admin/allotments" element={guard(['ADMIN'], <AllotmentsPage />)} />
+                    <Route path="/admin/infrastructure" element={guard(['ADMIN'], <InfrastructurePage />)} />
                   </Route>
 
                   <Route path="*" element={<RoleRedirect />} />

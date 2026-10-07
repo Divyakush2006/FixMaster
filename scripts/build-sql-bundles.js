@@ -3,9 +3,9 @@
  * Regenerates the human-readable SQL bundles from the migrations, so there
  * is exactly one source of truth for the schema:
  *
- *   database/schema.sql              <- drops + migrations/001
+ *   database/schema.sql              <- drops + migrations/001 + 004 (tables, floors, room rules)
  *   database/triggers_procedures.sql <- migrations/003
- *   database/init_all.sql            <- drops + 001 + 002 + 003 + seed (dev reset)
+ *   database/init_all.sql            <- drops + every migration in order + seed (dev reset)
  *
  *   npm run db:bundle           rewrite the files
  *   npm run db:bundle -- --check  exit 1 if any file is stale (used in CI)
@@ -43,28 +43,30 @@ DROP TABLE IF EXISTS student_room_allotments CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS common_areas CASCADE;
 DROP TABLE IF EXISTS rooms CASCADE;
+DROP TABLE IF EXISTS block_floors CASCADE;
 DROP TABLE IF EXISTS hostel_blocks CASCADE;
 `;
 
 function build() {
-    const m001 = read(path.join(MIG_DIR, '001_schema.sql'));
-    const m002 = read(path.join(MIG_DIR, '002_reconcile_existing_databases.sql'));
-    const m003 = read(path.join(MIG_DIR, '003_programmable_objects.sql'));
+    const migrations = fs
+        .readdirSync(MIG_DIR)
+        .filter((f) => /^\d{3}_.+\.sql$/.test(f))
+        .sort();
+    const mig = (prefix) => {
+        const file = migrations.find((f) => f.startsWith(`${prefix}_`));
+        if (!file) throw new Error(`migration ${prefix}_*.sql not found`);
+        return read(path.join(MIG_DIR, file));
+    };
     const seed = read(path.join(DB_DIR, 'seed_data.sql'));
 
     return {
-        'schema.sql': `${GENERATED('migrations/001_schema.sql')}\n${DEV_ONLY_DROPS}\n${m001}`,
-        'triggers_procedures.sql': `${GENERATED('migrations/003_programmable_objects.sql')}\n${m003}`,
+        'schema.sql': [GENERATED('migrations/001 + 004'), DEV_ONLY_DROPS, mig('001'), mig('004')].join('\n'),
+        'triggers_procedures.sql': `${GENERATED('migrations/003_programmable_objects.sql')}\n${mig('003')}`,
         'init_all.sql': [
-            GENERATED('migrations/001-003 + seed_data.sql'),
+            GENERATED(`every migration in order + seed_data.sql`),
             DEV_ONLY_DROPS,
-            '-- >>>>> PART 1: SCHEMA & TABLES (DDL) <<<<<',
-            m001,
-            '-- >>>>> PART 1b: RECONCILIATION (no-op on a fresh database) <<<<<',
-            m002,
-            '-- >>>>> PART 2: TRIGGERS, PROCEDURES & VIEWS <<<<<',
-            m003,
-            '-- >>>>> PART 3: REALISTIC SEED DATA (VIT L-BLOCK) <<<<<',
+            ...migrations.map((f) => `-- >>>>> MIGRATION ${f} <<<<<\n${read(path.join(MIG_DIR, f))}`),
+            '-- >>>>> SEED DATA (VIT L-BLOCK DEMO) <<<<<',
             seed,
         ].join('\n'),
     };

@@ -24,6 +24,7 @@ process.env.JWT_SECRET = 'test-only-secret-0123456789abcdef0123456789abcdef';
 // Rate limits are effectively off for the suite (it logs in many times from
 // one IP); the limiter itself is exercised by its library's own tests.
 process.env.RATE_LIMIT_AUTH_MAX = '1000000';
+process.env.RATE_LIMIT_ADMIN_AUTH_MAX = '1000000';
 process.env.RATE_LIMIT_REGISTER_MAX = '1000000';
 process.env.RATE_LIMIT_MAX = '1000000';
 
@@ -63,6 +64,7 @@ async function resetDatabase() {
 async function startApp() {
     const app = require('../src/app');
     const db = require('../src/config/db');
+    const { portalForRole } = require('../src/config/portals');
     const server = await new Promise((resolve) => {
         const s = app.listen(0, '127.0.0.1', () => resolve(s));
     });
@@ -85,7 +87,10 @@ async function startApp() {
     async function login(id, password = SEED_PASSWORD, { fresh = false } = {}) {
         const key = `${id}\u0000${password}`;
         if (!fresh && tokenCache.has(key)) return tokenCache.get(key);
-        const r = await api('/auth/login', { method: 'POST', body: { reg_or_emp_id: id, password } });
+        // Sign in through the portal this account belongs to.
+        const found = await db.query('SELECT role FROM users WHERE UPPER(reg_or_emp_id) = UPPER($1)', [id]);
+        const portal = found.rows[0] ? portalForRole(found.rows[0].role) : 'student';
+        const r = await api(`/auth/${portal}/login`, { method: 'POST', body: { reg_or_emp_id: id, password } });
         if (r.status !== 200) throw new Error(`login ${id} failed: ${r.status} ${JSON.stringify(r.data)}`);
         tokenCache.set(key, r.data.token);
         return r.data.token;

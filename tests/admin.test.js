@@ -16,7 +16,7 @@ describe('administration: accounts & room allotments', () => {
         (await t.sql('SELECT user_id FROM users WHERE reg_or_emp_id = $1', [regId])).rows[0].user_id;
 
     async function registerStudent(n) {
-        const r = await t.api('/auth/register', {
+        const r = await t.api('/auth/student/register', {
             method: 'POST',
             body: { reg_or_emp_id: `ASTU${n}`, full_name: `Admin Test ${n}`, email: `astu${n}@example.com`, phone_number: '9000000000', password: 'Test@12345' },
         });
@@ -118,6 +118,6 @@ describe('administration: accounts & room allotments', () => {
         const r = await t.api(`/admin/users/${await userId('ASTU3')}/reset-password`, { method: 'POST', token: admin, body: { new_password: 'Reset@12345' } });
         assert.equal(r.status, 200);
         assert.equal((await t.api('/me', { token })).status, 401);
-        assert.equal((await t.api('/auth/login', { method: 'POST', body: { reg_or_emp_id: 'ASTU3', password: 'Reset@12345' } })).status, 200);
+        assert.equal((await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: 'ASTU3', password: 'Reset@12345' } })).status, 200);
     });
 });

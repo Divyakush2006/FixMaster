@@ -6,7 +6,7 @@ import { PriorityBadge } from '../../components/common/Badges';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { MarkDoneSheet } from './MarkDoneSheet';
 import { StaffTask } from '../../types';
-import { formatRelativeTime } from '../../utils/formatters';
+import { formatRelativeTime, floorLabel } from '../../utils/formatters';
 import {
   ListTodo,
   Phone,
@@ -158,7 +158,7 @@ export const StaffQueue: React.FC = () => {
               <div className="sticky top-16 z-30 py-2 px-3 rounded-xl bg-slate-950/90 border border-slate-800 backdrop-blur-md flex items-center justify-between shadow-md">
                 <div className="flex items-center gap-2 text-cyan-400 font-black text-sm">
                   <Navigation className="w-4 h-4" />
-                  <span>Floor {group.floor}</span>
+                  <span>{floorLabel(group.floor)}</span>
                 </div>
                 <span className="text-xs text-slate-400 font-semibold">
                   {group.tasks.length} {group.tasks.length === 1 ? 'task' : 'tasks'}

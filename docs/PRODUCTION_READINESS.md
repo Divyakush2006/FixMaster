@@ -69,6 +69,53 @@ self-registration, seed hashes, ...) are documented in
 - **Admin & self-service screens:** user accounts, room allotments, password change, staff on/off duty (auto-dispatch depends on it, and previously nothing could change it).
 - **Frontend:** route-level code splitting, error boundaries, expired tokens dropped on load.
 
+## Sign-in: three separate portals
+
+| Portal | Where | Accepts | API |
+|---|---|---|---|
+| Student | `/login`, Student tab | `STUDENT` | `POST /api/auth/student/login` (+ `/student/register`) |
+| Staff | `/login`, Staff tab | `STAFF` (technicians) and `SUPERVISOR` | `POST /api/auth/staff/login` |
+| Admin | `/admin` | `ADMIN` | `POST /api/auth/admin/login` |
+
+- Each endpoint only signs in its own accounts. Using the wrong tab between
+  Student and Staff gets a "use the other tab" message, but only after the
+  password has been verified. Admin accounts don't exist as far as `/login` is
+  concerned, and student/staff accounts don't exist at `/admin`: both get the
+  same "Invalid credentials" as a wrong password.
+- A session token is bound to its portal (`portal` claim + JWT audience) and is
+  only accepted while the account's role still belongs to that portal.
+- Separate failed-login limits per portal; admin is stricter (10 / 15 min) and
+  admin sessions last 8 h instead of 24 h.
+- Only students can self-register. Staff, supervisor and admin accounts are
+  created by an administrator. The old shared `/api/auth/login` and
+  `/api/auth/register` endpoints are removed.
+- Decision recorded: supervisors sign in on the Staff tab (they are hostel
+  employees like technicians); the admin portal is for estates administrators only.
+
+## Hostel infrastructure: blocks, floors, rooms
+
+- Blocks **A to T** exist out of the box (migration 004), each with **Ground +
+  floors 1-10**. The original demo blocks (L-Block's demo rooms, PRP, MH) are
+  unchanged.
+- Floors are rows in `block_floors`. An admin can add a floor (Admin -> Blocks & Rooms,
+  "Add floor above") or remove an empty one; `hostel_blocks.total_floors`
+  follows automatically. New blocks get their floors automatically.
+- **Room numbering** is generated from the floor and enforced by the database:
+  - room number = floor code + two-digit room `01`-`99`; floor code = `G` for
+    the ground floor, otherwise the floor number;
+  - `G01` = ground floor room 1, `428` = floor 4 room 28;
+  - room id = `<block>-<room number>`, e.g. `A-428`, `C-G01`;
+  - a number that doesn't match its floor (e.g. `428` on floor 3), a one-digit
+    room (`G1`), room `00`, or a room on a floor that doesn't exist is rejected.
+- **Floors 10 and above** can't fit the 3-character format with a one-character
+  floor code, so their rooms are 4 characters: floor 10 room 7 = `1007`. If the
+  hostel uses a different convention for the top floor, the rule lives in one
+  CHECK constraint (`chk_room_number_format`) and one helper on each side.
+- Admins add rooms per floor, singly or as a range (e.g. floor 4, rooms 1-20 ->
+  `401`-`420`). Re-submitting a range skips the rooms that already exist. An
+  occupied room can't be closed or have its capacity reduced below its
+  occupancy; closed rooms are hidden from students.
+
 ## Not done — accepted risks and decisions for the team
 
 These were deliberately left out. Each is either a product decision, out of scope for code changes, or something that needs infrastructure this repo doesn't control.

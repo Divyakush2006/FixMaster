@@ -52,3 +52,21 @@ export function truncateId(id: string | null | undefined, length = 8): string {
   if (id.length <= length) return id;
   return `${id.substring(0, length)}...`;
 }
+
+/**
+ * Floor/room numbering, matching the database rules (migration 004):
+ * floor 0 is the Ground floor (code "G"); a room number is the floor code
+ * followed by a two-digit room 01-99, e.g. G01, 428, 1007.
+ */
+export function floorCode(floorNumber: number): string {
+  return floorNumber === 0 ? 'G' : String(floorNumber);
+}
+
+export function floorLabel(floorNumber: number | null | undefined): string {
+  if (floorNumber === null || floorNumber === undefined) return 'N/A';
+  return floorNumber === 0 ? 'Ground floor' : `Floor ${floorNumber}`;
+}
+
+export function roomNumberFor(floorNumber: number, seq: number): string {
+  return `${floorCode(floorNumber)}${String(seq).padStart(2, '0')}`;
+}

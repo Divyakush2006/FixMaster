@@ -5,6 +5,7 @@ import { useToast } from '../../components/ui/Toast';
 import { SearchInput } from '../../components/ui/SearchInput';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { BedDouble, DoorOpen, LogOut, AlertCircle } from 'lucide-react';
+import { floorLabel } from '../../utils/formatters';
 
 const inputClass =
   'w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 disabled:opacity-50';
@@ -126,7 +127,7 @@ export const AllotmentsPage: React.FC = () => {
               const capacity = r.bed_capacity;
               return (
                 <option key={r.room_id} value={r.room_id}>
-                  {r.room_id} (Floor {r.floor_number}){capacity ? ` - ${used}/${capacity} beds` : ''}
+                  {r.room_id} ({floorLabel(r.floor_number)}){capacity ? ` - ${used}/${capacity} beds` : ''}
                 </option>
               );
             })}
@@ -166,7 +167,7 @@ export const AllotmentsPage: React.FC = () => {
                     <div className="font-mono text-slate-500">{a.reg_or_emp_id}</div>
                   </td>
                   <td className="p-3 text-slate-200 font-semibold">{a.room_id}</td>
-                  <td className="p-3 text-slate-300">{a.floor_number}</td>
+                  <td className="p-3 text-slate-300">{floorLabel(a.floor_number)}</td>
                   <td className="p-3 text-slate-300">{a.academic_year}</td>
                   <td className="p-3 text-right">
                     <button

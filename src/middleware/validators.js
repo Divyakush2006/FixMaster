@@ -211,6 +211,63 @@ const adminEndAllotmentValidators = [
     handleValidation,
 ];
 
+// ---- /api/admin infrastructure (blocks, floors, rooms) -------------------------
+
+const ROOM_TYPES = ['AC', 'NON_AC', 'DELUXE_AC'];
+const blockIdParam = param('block_id').trim().notEmpty().isLength({ max: 10 }).withMessage('block id is invalid.');
+
+const createBlockValidators = [
+    body('block_code')
+        .trim()
+        .toUpperCase()
+        .matches(/^[A-Z0-9]{1,3}$/)
+        .withMessage('block_code must be 1-3 letters or digits, e.g. "A" or "PRP".'),
+    body('block_name').trim().notEmpty().withMessage('block_name is required.').bail().isLength({ max: 50 }),
+    body('top_floor').optional().isInt({ min: 1, max: 99 }).withMessage('top_floor must be between 1 and 99.').toInt(),
+    handleValidation,
+];
+
+const updateBlockValidators = [
+    blockIdParam,
+    body('block_name').trim().notEmpty().withMessage('block_name is required.').bail().isLength({ max: 50 }),
+    handleValidation,
+];
+
+const blockOnlyValidators = [blockIdParam, handleValidation];
+
+const addFloorValidators = [
+    blockIdParam,
+    body('floor_number').optional({ nullable: true }).isInt({ min: 0, max: 99 }).withMessage('floor_number must be 0 (ground) to 99.').toInt(),
+    handleValidation,
+];
+
+const removeFloorValidators = [
+    blockIdParam,
+    param('floor_number').isInt({ min: 0, max: 99 }).withMessage('floor_number must be 0 (ground) to 99.'),
+    handleValidation,
+];
+
+const createRoomsValidators = [
+    blockIdParam,
+    body('floor_number').isInt({ min: 0, max: 99 }).withMessage('floor_number must be 0 (ground) to 99.').toInt(),
+    body('from').isInt({ min: 1, max: 99 }).withMessage('from must be a room number 1-99 on that floor.').toInt(),
+    body('to').optional({ nullable: true }).isInt({ min: 1, max: 99 }).withMessage('to must be a room number 1-99 on that floor.').toInt(),
+    body('room_type').isIn(ROOM_TYPES).withMessage(`room_type must be one of: ${ROOM_TYPES.join(', ')}.`),
+    body('bed_capacity').isInt({ min: 1, max: 6 }).withMessage('bed_capacity must be 1-6.').toInt(),
+    handleValidation,
+];
+
+const updateRoomValidators = [
+    param('room_id').trim().notEmpty().isLength({ max: 20 }).withMessage('room id is invalid.'),
+    body('is_active').optional().isBoolean({ strict: true }).withMessage('is_active must be true or false.'),
+    body('room_type').optional().isIn(ROOM_TYPES).withMessage(`room_type must be one of: ${ROOM_TYPES.join(', ')}.`),
+    body('bed_capacity').optional().isInt({ min: 1, max: 6 }).withMessage('bed_capacity must be 1-6.').toInt(),
+    body()
+        .custom((v) => v && (v.is_active !== undefined || v.room_type !== undefined || v.bed_capacity !== undefined))
+        .withMessage('Provide is_active, room_type and/or bed_capacity.'),
+    handleValidation,
+];
+
 module.exports = {
     ROLES,
     SPECIALIZATIONS,
@@ -234,4 +291,11 @@ module.exports = {
     adminResetPasswordValidators,
     adminAllotValidators,
     adminEndAllotmentValidators,
+    createBlockValidators,
+    updateBlockValidators,
+    blockOnlyValidators,
+    addFloorValidators,
+    removeFloorValidators,
+    createRoomsValidators,
+    updateRoomValidators,
 };

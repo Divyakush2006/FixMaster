@@ -64,6 +64,23 @@ describe('apiFetch auth handling', () => {
     expect(window.location.href).toBe('/student');
   });
 
+  it('an expired admin session returns to the admin sign-in, not the public one', async () => {
+    saveSession('tok', { ...user, role: 'ADMIN' });
+    window.location.pathname = '/admin/users';
+    vi.stubGlobal('fetch', mockFetch(401, { error: 'Invalid or expired token.' }));
+    await rejection(apiFetch('/admin/users'));
+    expect(window.location.href).toBe('/admin?expired=1');
+  });
+
+  it('a failed sign-in attempt never ends the session already open', async () => {
+    saveSession('tok', user);
+    window.location.pathname = '/admin';
+    vi.stubGlobal('fetch', mockFetch(401, { error: 'Invalid credentials.' }));
+    const err = await rejection(apiFetch('/auth/admin/login', { method: 'POST' }));
+    expect(err.status).toBe(401);
+    expect(getToken()).toBe('tok');
+  });
+
   it('turns a network failure into a readable ApiError with status 0', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
     const err = await rejection(apiFetch('/health'));

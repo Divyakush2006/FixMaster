@@ -65,14 +65,18 @@ export async function apiFetch<T>(endpoint: string, options: RequestOptions = {}
     // Only 401 means "sign in again" (no/invalid/expired/revoked token, or a
     // deactivated account). 403 means signed in but not allowed to do this
     // one thing - an ordinary error, never a reason to sign out.
-    // A 401 from the login form itself is just "wrong password": don't
-    // redirect away from the form the user is typing into.
-    if (response.status === 401 && token) {
+    // A failed sign-in attempt (any /auth/* endpoint) must never end the
+    // session the user already has open.
+    const isSignInRequest = endpoint.startsWith('/auth/');
+    if (response.status === 401 && token && !isSignInRequest) {
       clearSession();
-      if (window.location.pathname !== '/login') {
+      const path = window.location.pathname;
+      const isAdminArea = path === '/admin' || path.startsWith('/admin/');
+      const signInPage = isAdminArea ? '/admin' : '/login';
+      if (path !== signInPage) {
         // Full navigation (not a router push) so every in-memory cache from
         // this session is discarded too.
-        window.location.href = '/login?expired=1';
+        window.location.href = `${signInPage}?expired=1`;
       }
     }
     throw new ApiError(mapApiError(body), response.status, body);

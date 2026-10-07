@@ -1,11 +1,19 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { RoleBadge } from '../common/Badges';
 import { LogOut, Wrench } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  // Each user is returned to the sign-in page they came in through.
+  const handleLogout = () => {
+    const signIn = user?.role === 'ADMIN' ? '/admin' : user?.role === 'STUDENT' ? '/login' : '/login?portal=staff';
+    logout();
+    navigate(signIn, { replace: true });
+  };
 
   return (
     <header className="h-16 bg-slate-950/90 border-b border-slate-800 backdrop-blur-md sticky top-0 z-40 px-4 sm:px-6 flex items-center justify-between">
@@ -39,7 +47,7 @@ export const Navbar: React.FC = () => {
           </Link>
 
           <button
-            onClick={logout}
+            onClick={handleLogout}
             title="Log out"
             className="p-2 rounded-xl border border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors ml-1"
           >
