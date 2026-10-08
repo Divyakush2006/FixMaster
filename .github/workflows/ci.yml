@@ -37,8 +37,8 @@ jobs:
     env:
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fix_master_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -56,8 +56,8 @@ jobs:
       run:
         working-directory: client
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -78,17 +78,22 @@ jobs:
       CORS_ORIGIN: http://localhost:8080
       POSTGRES_PASSWORD: ci_only_password
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: The API refuses to start in production with a weak secret
         run: |
           docker build -t fix-master-api .
           if docker run --rm -e NODE_ENV=production -e JWT_SECRET=short -e CORS_ORIGIN=x -e DATABASE_URL=postgresql://x@localhost/x fix-master-api node -e "require('./src/app')"; then
             echo "API started with a weak JWT_SECRET"; exit 1
           fi
-      - name: Start the stack
+      - name: Generate a throwaway JWT secret for this run
+        # Job-wide (via GITHUB_ENV): every later compose command, including the
+        # cleanup step, interpolates the compose file and needs it.
         run: |
-          export JWT_SECRET=$(openssl rand -hex 48)
-          docker compose up -d --build --wait
+          secret=$(openssl rand -hex 48)
+          echo "::add-mask::$secret"
+          echo "JWT_SECRET=$secret" >> "$GITHUB_ENV"
+      - name: Start the stack
+        run: docker compose up -d --build --wait
       - name: Smoke test through nginx
         run: |
           curl -fsS http://localhost:8080/api/health | grep -q '"status":"ok"'
