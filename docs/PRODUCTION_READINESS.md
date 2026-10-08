@@ -165,10 +165,10 @@ These were deliberately left out. Each is either a product decision, out of scop
 4. **No notifications.** Nobody is told when a ticket is assigned or awaits verification; users must open the app. Needs an email/SMS/push provider.
 5. **Forgotten passwords** can only be reset by an admin; there is no self-service email reset.
 6. **Photo evidence is a URL field**, not an upload. Real uploads need object storage.
-7. **SLA tracking is not implemented** even though the README describes it: `default_sla_hours` is stored but nothing measures or reports breaches.
-8. **No deployed environment.** README §7.2–7.3 describe Render/Vercel/managed-DB deployments that don't exist. The containers here are deployable; choosing and provisioning a host is a team task.
+7. **SLA tracking is not implemented**: `default_sla_hours` is stored but nothing measures or reports breaches. The academic report now states this as planned work.
+8. **No deployed environment.** The containers here are deployable; choosing and provisioning a host is a team task. (The rubric mapping, now in `docs/ACADEMIC_REPORT.md` §7.2–7.3, says so instead of describing deployments that don't exist.)
 9. **Browser end-to-end suites are not in CI yet.** They were run for this audit (Playwright against the dev server and the production containers) but live outside the repo; adding them to CI needs a browser in the pipeline.
-10. **README still claims Prisma ORM** (§3.6, tech stack). The code uses `pg` with parameterized SQL. This is a rubric document, so I didn't rewrite those claims; the team should decide how to reconcile them.
+10. **Resolved: documentation matches the code.** The README is now a product README; the rubric mapping moved to `docs/ACADEMIC_REPORT.md` with the Prisma, Next.js and cloud-deployment claims corrected to what is actually built.
 11. **Backups:** `backup_restore.sh/.ps1` work but nothing schedules them. Use the managed database's automated backups, or schedule the script.
 12. **Web dev-only dependency advisories** remain inside Tailwind 3's build tooling (`braces` via its file watcher, `postcss-selector-parser`; fixed only in Tailwind 4). They run only at build time on our own source files, are not in any image and are not shipped to browsers. The web job audits production dependencies; the API job audits everything.
 13. **Session token in `localStorage`** (see 1) is now mitigated further by server-side revocation on sign-out and idle sign-out, but the cookie-based design remains the recommended next step.
