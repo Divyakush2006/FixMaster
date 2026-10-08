@@ -2,6 +2,7 @@ import React from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2 } from 'lucide-react';
 import { dispatchApi } from '../../api/endpoints';
+import { apiErrorCode } from '../../api/client';
 import { useToast } from '../../components/ui/Toast';
 import { Modal } from '../../components/ui/Modal';
 import { Alert } from '../../components/ui/Alert';
@@ -27,7 +28,14 @@ export const MarkDoneSheet: React.FC<MarkDoneSheetProps> = ({ isOpen, onClose, t
       queryClient.invalidateQueries({ queryKey: ['staff-queue'] });
       onClose();
     },
-    onError: (err: Error) => showToast('Could not complete the task', 'error', err.message),
+    onError: (err: Error) => {
+      showToast('Could not complete the task', 'error', err.message);
+      // TASK_REASSIGNED: a supervisor moved the job to someone else.
+      if (apiErrorCode(err) === 'TASK_REASSIGNED') {
+        queryClient.invalidateQueries({ queryKey: ['staff-queue'] });
+        onClose();
+      }
+    },
   });
 
   return (

@@ -12,6 +12,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Pagination } from '../../components/ui/Pagination';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
 import { AuditEntry } from '../../types';
+import { ticketRef } from '../../utils/labels';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
 
 const PAGE_SIZE = 50;
@@ -38,9 +39,19 @@ const ACTION_LABEL: Record<string, string> = {
   'room.close': 'Room closed',
   'room.reopen': 'Room reopened',
   'room.update': 'Room updated',
+  'ticket.reject': 'Ticket rejected',
+  'ticket.merge': 'Duplicate ticket merged',
 };
 
-const AREA_TONE: Record<string, Tone> = { auth: 'violet', user: 'brand', allotment: 'info', block: 'orange', floor: 'orange', room: 'orange' };
+const AREA_TONE: Record<string, Tone> = {
+  auth: 'violet',
+  user: 'brand',
+  allotment: 'info',
+  block: 'orange',
+  floor: 'orange',
+  room: 'orange',
+  ticket: 'warning',
+};
 
 const FILTERS = [
   { value: '', label: 'All activity' },
@@ -50,6 +61,7 @@ const FILTERS = [
   { value: 'block', label: 'Blocks' },
   { value: 'floor', label: 'Floors' },
   { value: 'room', label: 'Rooms' },
+  { value: 'ticket', label: 'Tickets closed by supervisors' },
 ];
 
 /** One readable line summarising the details recorded with an entry. */
@@ -87,6 +99,10 @@ export function describeAudit(e: AuditEntry): string {
       return Object.entries(d)
         .map(([k, v]) => `${k.replace('_', ' ')}: ${(v as any)?.from} → ${(v as any)?.to}`)
         .join(' · ');
+    case 'ticket.reject':
+      return String(d.reason ?? '');
+    case 'ticket.merge':
+      return `Merged into ${ticketRef(d.merged_into)}${d.reporters_moved ? ` · ${d.reporters_moved} reporter(s) moved` : ''}`;
     default:
       return typeof d.reg_or_emp_id === 'string' ? d.reg_or_emp_id : '';
   }
@@ -108,6 +124,7 @@ export const AuditLogPage: React.FC = () => {
   const target = (e: AuditEntry) => {
     if (e.target_type === 'user') return e.target_name ?? e.target_id;
     if (e.target_type === 'block') return e.target_id?.replace('_BLOCK', '-Block');
+    if (e.target_type === 'complaint') return ticketRef(e.target_id);
     return e.target_id;
   };
 

@@ -13,17 +13,17 @@ import { ButtonLink } from '../../components/ui/Button';
 import { VerificationModal } from './VerificationModal';
 import { ComplaintDetailModal } from './ComplaintDetail';
 import { TicketsTable } from './TicketsTable';
-import { Complaint, ComplaintStatus } from '../../types';
+import { Complaint } from '../../types';
 import { ticketLocation, ticketRef } from '../../utils/labels';
 
 type Filter = 'ALL' | 'ACTION' | 'ACTIVE' | 'COMPLETED' | 'ESCALATED';
 
-const FILTERS: { value: Filter; label: string; match: (s: ComplaintStatus) => boolean }[] = [
+const FILTERS: { value: Filter; label: string; match: (c: Complaint) => boolean }[] = [
   { value: 'ALL', label: 'All', match: () => true },
-  { value: 'ACTION', label: 'Needs confirmation', match: (s) => s === 'PENDING_VERIFICATION' },
-  { value: 'ACTIVE', label: 'In progress', match: (s) => ['OPEN', 'ASSIGNED', 'IN_PROGRESS'].includes(s) },
-  { value: 'ESCALATED', label: 'Escalated', match: (s) => s === 'ESCALATED' },
-  { value: 'COMPLETED', label: 'Closed', match: (s) => s === 'COMPLETED' || s === 'REJECTED' },
+  { value: 'ACTION', label: 'Needs confirmation', match: (c) => !!c.can_verify },
+  { value: 'ACTIVE', label: 'In progress', match: (c) => ['OPEN', 'ASSIGNED', 'IN_PROGRESS'].includes(c.status) },
+  { value: 'ESCALATED', label: 'Escalated', match: (c) => c.status === 'ESCALATED' },
+  { value: 'COMPLETED', label: 'Closed', match: (c) => ['COMPLETED', 'REJECTED', 'CANCELLED'].includes(c.status) },
 ];
 
 const PAGE_SIZE = 10;
@@ -53,7 +53,7 @@ export const MyComplaints: React.FC = () => {
   }, [selectedComplaintIdFromUrl, complaints]);
 
   const counts = useMemo(
-    () => Object.fromEntries(FILTERS.map((f) => [f.value, complaints.filter((c) => f.match(c.status)).length])) as Record<Filter, number>,
+    () => Object.fromEntries(FILTERS.map((f) => [f.value, complaints.filter((c) => f.match(c)).length])) as Record<Filter, number>,
     [complaints]
   );
 
@@ -61,7 +61,7 @@ export const MyComplaints: React.FC = () => {
     const rule = FILTERS.find((f) => f.value === filter)!;
     const q = searchQuery.trim().toLowerCase();
     return complaints.filter((c) => {
-      if (!rule.match(c.status)) return false;
+      if (!rule.match(c)) return false;
       if (!q) return true;
       return [c.issue_name, c.category_name, c.description || '', ticketLocation(c), ticketRef(c.complaint_id), c.complaint_id].some((v) =>
         v.toLowerCase().includes(q)
@@ -79,7 +79,7 @@ export const MyComplaints: React.FC = () => {
       <PageHeader
         breadcrumbs={[{ label: 'Service desk', to: '/student' }, { label: 'My tickets' }]}
         title="My tickets"
-        description="Every maintenance request you have raised, with its current status."
+        description="Requests you have raised and your room's shared requests, with their current status."
         actions={
           <ButtonLink to="/student/new" icon={Plus}>
             Raise a ticket

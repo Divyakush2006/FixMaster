@@ -9,14 +9,25 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 export class ApiError extends Error {
   status: number;
   data: unknown;
+  /** Stable machine-readable reason from the API (e.g. OPEN_JOBS, STAFF_OFF_DUTY), when it sends one. */
+  code?: string;
+  details?: Record<string, unknown>;
 
   constructor(message: string, status: number, data?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.data = data;
+    if (data && typeof data === 'object') {
+      const { code, details } = data as { code?: unknown; details?: unknown };
+      if (typeof code === 'string') this.code = code;
+      if (details && typeof details === 'object') this.details = details as Record<string, unknown>;
+    }
   }
 }
+
+/** The API's machine-readable error code, if `err` is an ApiError that carries one. */
+export const apiErrorCode = (err: unknown): string | undefined => (err instanceof ApiError ? err.code : undefined);
 
 interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined | null>;

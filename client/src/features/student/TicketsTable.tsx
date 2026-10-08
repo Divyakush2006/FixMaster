@@ -1,11 +1,11 @@
 import React from 'react';
-import { ChevronRight, ShieldCheck } from 'lucide-react';
+import { ChevronRight, ShieldCheck, Users } from 'lucide-react';
 import { Complaint } from '../../types';
 import { StatusBadge, PriorityBadge } from '../../components/common/Badges';
 import { Button } from '../../components/ui/Button';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
-import { ticketLocation, ticketRef } from '../../utils/labels';
+import { sharedTicketNote, ticketLocation, ticketRef } from '../../utils/labels';
 
 interface TicketsTableProps {
   complaints: Complaint[];
@@ -15,9 +15,21 @@ interface TicketsTableProps {
   skeletonRows?: number;
 }
 
+const SharedNote: React.FC<{ complaint: Complaint }> = ({ complaint }) => {
+  const note = sharedTicketNote(complaint);
+  if (!note) return null;
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+      <Users className="h-3 w-3" aria-hidden />
+      {note}
+    </span>
+  );
+};
+
 /**
- * A student's tickets: a table on desktop, stacked rows on small screens.
- * Tickets waiting for the student's sign-off get a "Confirm" action.
+ * A student's tickets - their own and their room's: a table on desktop,
+ * stacked rows on small screens. Tickets the student may sign off get a
+ * "Confirm" action.
  */
 export const TicketsTable: React.FC<TicketsTableProps> = ({ complaints, loading, onView, onVerify, skeletonRows = 5 }) => (
   <>
@@ -46,6 +58,7 @@ export const TicketsTable: React.FC<TicketsTableProps> = ({ complaints, loading,
                   <p className="mt-0.5 text-xs text-slate-500">
                     <span className="font-mono">{ticketRef(c.complaint_id)}</span> · {c.category_name}
                   </p>
+                  <SharedNote complaint={c} />
                 </Td>
                 <Td className="whitespace-nowrap font-medium text-slate-800">{ticketLocation(c)}</Td>
                 <Td>
@@ -59,7 +72,7 @@ export const TicketsTable: React.FC<TicketsTableProps> = ({ complaints, loading,
                 </Td>
                 <Td className="text-right">
                   <div className="flex items-center justify-end gap-2">
-                    {c.status === 'PENDING_VERIFICATION' && (
+                    {c.can_verify && (
                       <Button
                         size="sm"
                         icon={ShieldCheck}
@@ -103,8 +116,9 @@ export const TicketsTable: React.FC<TicketsTableProps> = ({ complaints, loading,
                 <p className="text-xs text-slate-500">
                   <span className="font-mono">{ticketRef(c.complaint_id)}</span> · {ticketLocation(c)} · {formatRelativeTime(c.created_at)}
                 </p>
+                <SharedNote complaint={c} />
               </button>
-              {c.status === 'PENDING_VERIFICATION' && (
+              {c.can_verify && (
                 <div className="px-4 pb-3.5">
                   <Button size="sm" icon={ShieldCheck} block onClick={() => onVerify(c)}>
                     Confirm the work

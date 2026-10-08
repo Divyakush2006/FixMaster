@@ -1,4 +1,4 @@
-import { ComplaintStatus, Priority, Role, RoomType, Specialization, TicketScope } from '../types';
+import { Complaint, ComplaintStatus, Priority, Role, RoomType, Specialization, TicketScope } from '../types';
 
 /**
  * Display vocabulary. The API speaks in enum codes (PENDING_VERIFICATION,
@@ -13,6 +13,7 @@ export const STATUS_LABEL: Record<ComplaintStatus, string> = {
   COMPLETED: 'Closed',
   ESCALATED: 'Escalated',
   REJECTED: 'Rejected',
+  CANCELLED: 'Withdrawn',
 };
 
 export const PRIORITY_LABEL: Record<Priority, string> = {
@@ -50,8 +51,19 @@ export const SCOPE_LABEL: Record<TicketScope, string> = {
   COMMON_AREA: 'Common area',
 };
 
+/**
+ * How a shared ticket relates to the signed-in student: tickets belong to the
+ * room (or common area), so a roommate's request shows up for everyone in it.
+ * Returns null for an ordinary ticket only the student reported.
+ */
+export function sharedTicketNote(c: Pick<Complaint, 'is_reporter' | 'reporter_count' | 'ticket_scope'>): string | null {
+  if (c.is_reporter === false) return c.ticket_scope === 'ROOM' ? 'Raised by a roommate' : null;
+  const others = Math.max((c.reporter_count ?? 1) - 1, 0);
+  return others > 0 ? `You + ${others} other${others === 1 ? '' : 's'}` : null;
+}
+
 /** Statuses after which nothing more happens to a ticket. */
-export const CLOSED_STATUSES: ComplaintStatus[] = ['COMPLETED', 'REJECTED'];
+export const CLOSED_STATUSES: ComplaintStatus[] = ['COMPLETED', 'REJECTED', 'CANCELLED'];
 
 export const isOpenStatus = (status: ComplaintStatus) => !CLOSED_STATUSES.includes(status);
 

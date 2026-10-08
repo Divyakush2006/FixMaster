@@ -158,7 +158,10 @@ export const AllComplaintsTable: React.FC = () => {
                       >
                         <Td className="max-w-[300px]">
                           <p className="truncate font-medium text-slate-900">{c.issue_name}</p>
-                          <p className="mt-0.5 font-mono text-xs text-slate-500">{ticketRef(c.complaint_id)}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            <span className="font-mono">{ticketRef(c.complaint_id)}</span>
+                            {(c.reporter_count ?? 1) > 1 && <span> · {c.reporter_count} reporters</span>}
+                          </p>
                         </Td>
                         <Td className="whitespace-nowrap font-medium text-slate-800">{ticketLocation(c)}</Td>
                         <Td className="whitespace-nowrap">{c.student_name}</Td>

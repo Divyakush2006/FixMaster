@@ -13,6 +13,7 @@ const STATUS_TONE: Record<ComplaintStatus, Tone> = {
   COMPLETED: 'success',
   ESCALATED: 'danger',
   REJECTED: 'neutral',
+  CANCELLED: 'neutral',
 };
 
 interface StatusBadgeProps {

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { coerceNumber } from './formatters';
 import { mapApiError } from './errorMapper';
-import { logDescription, reconstructTimeline } from './timeline';
+import { isNoteEntry, logDescription, noteTitle, reconstructTimeline } from './timeline';
+import { sharedTicketNote } from './labels';
 import { Complaint } from '../types';
 
 describe('coerceNumber', () => {
@@ -46,5 +47,26 @@ describe('logDescription', () => {
     expect(logDescription({ action_note: 'Transition: OPEN -> ASSIGNED', changed_by_name: 'R. Sundaram' })).toBe('R. Sundaram');
     expect(logDescription({ action_note: 'Reassigned from A to B', changed_by_name: 'R. Sundaram' })).toBe('Reassigned from A to B · R. Sundaram');
     expect(logDescription({ action_note: null, changed_by_name: null })).toBe('Recorded by the system');
+  });
+});
+
+describe('room-shared tickets', () => {
+  it('describes how a ticket relates to the signed-in student', () => {
+    expect(sharedTicketNote({ is_reporter: false, reporter_count: 1, ticket_scope: 'ROOM' })).toBe('Raised by a roommate');
+    expect(sharedTicketNote({ is_reporter: true, reporter_count: 3, ticket_scope: 'ROOM' })).toBe('You + 2 others');
+    expect(sharedTicketNote({ is_reporter: true, reporter_count: 2, ticket_scope: 'COMMON_AREA' })).toBe('You + 1 other');
+    expect(sharedTicketNote({ is_reporter: true, reporter_count: 1, ticket_scope: 'ROOM' })).toBeNull();
+  });
+
+  it('titles history notes that did not change the status', () => {
+    expect(isNoteEntry({ previous_status: 'ASSIGNED', new_status: 'ASSIGNED' })).toBe(true);
+    expect(isNoteEntry({ previous_status: 'OPEN', new_status: 'ASSIGNED' })).toBe(false);
+    expect(isNoteEntry({ previous_status: null, new_status: 'OPEN' })).toBe(false);
+    expect(noteTitle('Also reported')).toBe('Also reported');
+    expect(noteTitle('Also reported: "The mop smells"')).toBe('Also reported');
+    expect(noteTitle('Reassigned from Suresh Kumar to Vignesh P')).toBe('Reassigned');
+    expect(noteTitle('Priority raised to High: 5 people have reported this issue')).toBe('Priority raised');
+    expect(noteTitle('TKT-00ABCD merged into this ticket')).toBe('Duplicate merged');
+    expect(noteTitle(null)).toBe('Update');
   });
 });

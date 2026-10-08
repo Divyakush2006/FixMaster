@@ -7,7 +7,19 @@ export type ComplaintStatus =
   | 'PENDING_VERIFICATION'
   | 'COMPLETED'
   | 'ESCALATED'
-  | 'REJECTED';
+  | 'REJECTED'
+  | 'CANCELLED';
+
+/** Why a ticket was closed. */
+export type ClosureReason = 'CONFIRMED' | 'AUTO_CONFIRMED' | 'WITHDRAWN' | 'INVALID' | 'DUPLICATE';
+
+/** Someone who reported a ticket (names are shown to supervisors and roommates only). */
+export interface Reporter {
+  name: string;
+  is_original: boolean;
+  reported_at: string;
+  is_you: boolean;
+}
 
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'EMERGENCY';
 
@@ -152,6 +164,27 @@ export interface Complaint {
   /** Technician currently (or most recently) holding the ticket. */
   assigned_staff_id?: string | null;
   assigned_staff_name?: string | null;
+  closure_reason?: ClosureReason | null;
+  closure_note?: string | null;
+  merged_into_id?: string | null;
+  merged_into_ref?: string;
+  /** How many people reported this issue (the room / area is the unit, not the person). */
+  reporter_count?: number;
+  /** The signed-in user reported it. */
+  is_reporter?: boolean;
+  /** The signed-in user currently lives in the ticket's room. */
+  is_room_resident?: boolean;
+  can_verify?: boolean;
+  can_withdraw?: boolean;
+  /** Detail view only, and only where names may be shown. */
+  reporters?: Reporter[];
+}
+
+export interface CreateComplaintResult {
+  /** true: the issue was already open here and the caller was added to that ticket. */
+  joined: boolean;
+  message: string;
+  complaint: Complaint;
 }
 
 export interface ComplaintLogEntry {

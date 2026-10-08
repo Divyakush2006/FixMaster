@@ -2,7 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertOctagon, CheckCircle2, ClipboardList, Layers, Phone, PlayCircle, RefreshCw, User, Wrench } from 'lucide-react';
 import { dispatchApi, meApi } from '../../api/endpoints';
+import { apiErrorCode } from '../../api/client';
 import { useToast } from '../../components/ui/Toast';
+import { Modal } from '../../components/ui/Modal';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { StatCard } from '../../components/ui/StatCard';
@@ -20,6 +22,8 @@ import { ticketRef } from '../../utils/labels';
 
 export const StaffQueue: React.FC = () => {
   const [selectedTask, setSelectedTask] = useState<StaffTask | null>(null);
+  // Set when going off duty would leave open jobs: the technician chooses.
+  const [offDutyJobs, setOffDutyJobs] = useState<number | null>(null);
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
@@ -32,16 +36,31 @@ export const StaffQueue: React.FC = () => {
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: meApi.getMe });
   const isOnDuty = me?.is_available !== false;
   const dutyMutation = useMutation({
-    mutationFn: (next: boolean) => meApi.setAvailability(next),
+    mutationFn: ({ next, releaseOpenJobs }: { next: boolean; releaseOpenJobs?: boolean }) => meApi.setAvailability(next, releaseOpenJobs),
     onSuccess: (res) => {
+      setOffDutyJobs(null);
       queryClient.setQueryData(['me'], (old: typeof me) => (old ? { ...old, is_available: res.is_available } : old));
+      queryClient.invalidateQueries({ queryKey: ['staff-queue'] });
       showToast(
         res.is_available ? 'You are on duty' : 'You are off duty',
         'info',
-        res.is_available ? 'New tickets can be dispatched to you automatically.' : 'You will not receive automatically dispatched tickets.'
+        res.is_available
+          ? 'New tickets can be dispatched to you automatically.'
+          : res.released_jobs > 0
+            ? `${res.released_jobs} open ${res.released_jobs === 1 ? 'job was' : 'jobs were'} handed back to your supervisor.`
+            : res.open_jobs > 0
+              ? `You kept ${res.open_jobs} open ${res.open_jobs === 1 ? 'job' : 'jobs'}. You will not receive new automatically dispatched tickets.`
+              : 'You will not receive automatically dispatched tickets.'
       );
     },
-    onError: (err: Error) => showToast('Could not update duty status', 'error', err.message),
+    onError: (err: Error) => {
+      if (apiErrorCode(err) === 'OPEN_JOBS') {
+        const details = (err as Error & { details?: { open_jobs?: number } }).details;
+        setOffDutyJobs(details?.open_jobs ?? queue.length);
+        return;
+      }
+      showToast('Could not update duty status', 'error', err.message);
+    },
   });
 
   const startWorkMutation = useMutation({
@@ -50,7 +69,11 @@ export const StaffQueue: React.FC = () => {
       showToast('Work started', 'success', 'The student can now see the ticket is in progress.');
       queryClient.invalidateQueries({ queryKey: ['staff-queue'] });
     },
-    onError: (err: Error) => showToast('Could not start the task', 'error', err.message),
+    onError: (err: Error) => {
+      showToast('Could not start the task', 'error', err.message);
+      // TASK_REASSIGNED: a supervisor moved the job; drop it from the queue.
+      if (apiErrorCode(err) === 'TASK_REASSIGNED') queryClient.invalidateQueries({ queryKey: ['staff-queue'] });
+    },
   });
 
   // Group by floor while keeping the server's walking order.
@@ -80,7 +103,7 @@ export const StaffQueue: React.FC = () => {
         actions={
           <>
             <div className="flex h-9 items-center rounded-md border border-slate-300 bg-white px-3 shadow-xs">
-              <Switch checked={isOnDuty} onChange={(next) => dutyMutation.mutate(next)} label={isOnDuty ? 'On duty' : 'Off duty'} showLabel disabled={!me || dutyMutation.isPending} />
+              <Switch checked={isOnDuty} onChange={(next) => dutyMutation.mutate({ next })} label={isOnDuty ? 'On duty' : 'Off duty'} showLabel disabled={!me || dutyMutation.isPending} />
             </div>
             <Button variant="secondary" icon={RefreshCw} onClick={() => refetch()} loading={isFetching && !isLoading}>
               Refresh
@@ -192,6 +215,32 @@ export const StaffQueue: React.FC = () => {
       )}
 
       {selectedTask && <MarkDoneSheet isOpen onClose={() => setSelectedTask(null)} task={selectedTask} />}
+
+      <Modal
+        isOpen={offDutyJobs !== null}
+        onClose={() => setOffDutyJobs(null)}
+        title="You still have open jobs"
+        subtitle={`${offDutyJobs ?? 0} ${offDutyJobs === 1 ? 'job is' : 'jobs are'} in your queue.`}
+        maxWidth="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setOffDutyJobs(null)}>
+              Stay on duty
+            </Button>
+            <Button variant="secondary" loading={dutyMutation.isPending && dutyMutation.variables?.releaseOpenJobs === false} onClick={() => dutyMutation.mutate({ next: false, releaseOpenJobs: false })}>
+              Keep them
+            </Button>
+            <Button loading={dutyMutation.isPending && dutyMutation.variables?.releaseOpenJobs === true} onClick={() => dutyMutation.mutate({ next: false, releaseOpenJobs: true })}>
+              Hand back
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm leading-relaxed text-slate-600">
+          <strong className="font-medium text-slate-800">Keep them</strong> if you will finish them on your next shift; your supervisor will see that you are off duty
+          with open jobs. <strong className="font-medium text-slate-800">Hand back</strong> returns them to your supervisor so someone on duty can be assigned now.
+        </p>
+      </Modal>
     </div>
   );
 };

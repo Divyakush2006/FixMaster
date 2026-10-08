@@ -2,7 +2,7 @@ import React from 'react';
 import { AlertTriangle, CheckCircle2, Info, XCircle } from 'lucide-react';
 import { cn } from './cn';
 
-type AlertTone = 'info' | 'success' | 'warning' | 'danger';
+export type AlertTone = 'info' | 'success' | 'warning' | 'danger';
 
 const STYLES: Record<AlertTone, { box: string; icon: string; Icon: React.ElementType }> = {
   info: { box: 'border-sky-200 bg-sky-50 text-sky-900', icon: 'text-sky-600', Icon: Info },

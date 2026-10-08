@@ -3,6 +3,7 @@ import {
   AuthResponse,
   RegisterPayload,
   CreateComplaintPayload,
+  CreateComplaintResult,
   Complaint,
   ComplaintLogEntry,
   StaffTask,
@@ -50,8 +51,12 @@ export const authApi = {
 };
 
 export const complaintsApi = {
+  /**
+   * One live ticket per room (or common area) and issue: if it is already
+   * open, the caller is added to it and `joined` is true.
+   */
   create: (data: CreateComplaintPayload) =>
-    apiFetch<{ message: string; complaint: Complaint }>('/complaints', {
+    apiFetch<CreateComplaintResult>('/complaints', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -69,6 +74,26 @@ export const complaintsApi = {
   getById: (id: string) => apiFetch<Complaint>(`/complaints/${id}`, { method: 'GET' }),
 
   getLogs: (id: string) => apiFetch<ComplaintLogEntry[]>(`/complaints/${id}/logs`, { method: 'GET' }),
+
+  /** Other live tickets at the same room / common area (merge candidates). Supervisor, admin. */
+  related: (id: string) => apiFetch<Complaint[]>(`/complaints/${id}/related`, { method: 'GET' }),
+
+  /** Student: withdraw a report while nobody has been assigned. */
+  withdraw: (id: string) =>
+    apiFetch<{ cancelled: boolean; remaining_reporters: number; message: string }>(`/complaints/${id}/withdraw`, {
+      method: 'POST',
+    }),
+
+  /** Supervisor, admin: close a ticket that is not valid work. */
+  reject: (id: string, reason: string) =>
+    apiFetch<{ message: string }>(`/complaints/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+
+  /** Supervisor, admin: fold a duplicate into another live ticket at the same location. */
+  merge: (id: string, targetId: string) =>
+    apiFetch<{ message: string; merged_into_id: string; reporters_moved: number }>(`/complaints/${id}/merge`, {
+      method: 'POST',
+      body: JSON.stringify({ target_id: targetId }),
+    }),
 };
 
 export const dispatchApi = {
@@ -83,12 +108,23 @@ export const dispatchApi = {
   markTaskCompleted: (assignmentId: string) =>
     apiFetch<{ message: string }>(`/dispatch/tasks/${assignmentId}`, { method: 'PATCH' }),
 
-  assignTechnician: (complaintId: string, staffUserId: string) =>
+  /**
+   * `expectedAssigneeId`: who the screen shows holding the ticket (null =
+   * nobody). The API refuses (STALE_ASSIGNMENT) if that changed meanwhile.
+   * `allowOffDuty`: confirm assigning an off-duty technician.
+   */
+  assignTechnician: (
+    complaintId: string,
+    staffUserId: string,
+    options: { expectedAssigneeId?: string | null; allowOffDuty?: boolean } = {}
+  ) =>
     apiFetch<{ message: string }>('/dispatch/assign', {
       method: 'POST',
       body: JSON.stringify({
         complaint_id: complaintId,
         staff_user_id: staffUserId,
+        ...(options.expectedAssigneeId !== undefined ? { expected_assignee_id: options.expectedAssigneeId } : {}),
+        ...(options.allowOffDuty ? { allow_off_duty: true } : {}),
       }),
     }),
 
@@ -149,10 +185,14 @@ export const meApi = {
       body: JSON.stringify({ current_password, new_password }),
     }),
 
-  setAvailability: (is_available: boolean) =>
-    apiFetch<{ is_available: boolean }>('/me/availability', {
+  /**
+   * Going off duty with open jobs fails with code OPEN_JOBS unless
+   * `releaseOpenJobs` says whether to keep them (false) or hand them back (true).
+   */
+  setAvailability: (is_available: boolean, releaseOpenJobs?: boolean) =>
+    apiFetch<{ is_available: boolean; open_jobs: number; released_jobs: number }>('/me/availability', {
       method: 'PATCH',
-      body: JSON.stringify({ is_available }),
+      body: JSON.stringify({ is_available, ...(releaseOpenJobs !== undefined ? { release_open_jobs: releaseOpenJobs } : {}) }),
     }),
 };
 

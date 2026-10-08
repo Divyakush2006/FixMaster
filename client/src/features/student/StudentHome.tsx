@@ -19,7 +19,7 @@ import { VerificationModal } from './VerificationModal';
 import { ComplaintDetailModal } from './ComplaintDetail';
 import { TicketsTable } from './TicketsTable';
 import { Complaint, Subcategory } from '../../types';
-import { floorLabel } from '../../utils/formatters';
+import { floorLabel, formatRelativeTime } from '../../utils/formatters';
 import { blockLabel, greeting, isOpenStatus, PRIORITY_LABEL, ROOM_TYPE_LABEL, SPECIALIZATION_LABEL, ticketLocation, ticketRef } from '../../utils/labels';
 
 export const StudentHome: React.FC = () => {
@@ -47,9 +47,17 @@ export const StudentHome: React.FC = () => {
 
   const quickActionMutation = useMutation({
     mutationFn: complaintsApi.create,
-    onSuccess: (res) => {
-      showToast('Request submitted', 'success', `${res.complaint.issue_name} · ${ticketRef(res.complaint.complaint_id)}`);
-      queryClient.setQueryData(['complaints'], (old: Complaint[] = []) => [res.complaint, ...old]);
+    onSuccess: (res, request) => {
+      const issue = quickServices.find((s) => s.subcategory_id === request.subcategory_id)?.issue_name ?? 'Request';
+      if (res.joined) {
+        showToast(
+          'Already requested for your room',
+          'info',
+          `${issue} was requested ${formatRelativeTime(res.complaint.created_at)} (${ticketRef(res.complaint.complaint_id)}). You have been added to it.`
+        );
+      } else {
+        showToast('Request submitted', 'success', `${issue} · ${ticketRef(res.complaint.complaint_id)}`);
+      }
       queryClient.invalidateQueries({ queryKey: ['complaints'] });
     },
     onError: (err: Error) => showToast('Request not submitted', 'error', err.message),
@@ -71,7 +79,7 @@ export const StudentHome: React.FC = () => {
   };
 
   const quickServices = categories.filter((c) => c.is_quick_action).flatMap((c) => c.subcategories);
-  const pendingVerification = complaints.filter((c) => c.status === 'PENDING_VERIFICATION');
+  const pendingVerification = complaints.filter((c) => c.can_verify);
   const activeTickets = complaints.filter((c) => isOpenStatus(c.status));
   const closedCount = complaints.filter((c) => c.status === 'COMPLETED').length;
   const firstName = user?.full_name.split(' ')[0] ?? '';

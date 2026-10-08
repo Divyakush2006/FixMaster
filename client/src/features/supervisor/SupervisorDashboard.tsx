@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { AlertTriangle, CheckCircle2, ClipboardCheck, Clock3, Inbox, Layers, Star, Wrench } from 'lucide-react';
-import { analyticsApi } from '../../api/endpoints';
+import { analyticsApi, metaApi } from '../../api/endpoints';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { StatCard } from '../../components/ui/StatCard';
@@ -35,6 +35,10 @@ const tooltipStyle = {
 export const SupervisorDashboard: React.FC = () => {
   const [showEmptyBlocks, setShowEmptyBlocks] = useState(false);
   const { data: kpis = [], isLoading, dataUpdatedAt } = useQuery({ queryKey: ['analytics-kpi'], queryFn: analyticsApi.getKpis });
+  // Technicians who went off duty but kept jobs: that work is not moving.
+  const { data: staff = [] } = useQuery({ queryKey: ['staff-roster', 'all'], queryFn: () => metaApi.getStaff() });
+  const idleHolders = staff.filter((s) => !s.is_available && s.active_task_count > 0);
+  const idleJobs = idleHolders.reduce((n, s) => n + s.active_task_count, 0);
 
   const blocks = useMemo(
     () =>
@@ -114,6 +118,20 @@ export const SupervisorDashboard: React.FC = () => {
             }
           >
             Students reported that the work did not fix the problem. Re-inspect and reassign.
+          </Alert>
+        )}
+
+        {idleHolders.length > 0 && (
+          <Alert
+            tone="warning"
+            title={`${idleJobs} open ${idleJobs === 1 ? 'job is' : 'jobs are'} with off-duty technicians`}
+            action={
+              <ButtonLink to="/supervisor/all-complaints" size="sm" variant="secondary">
+                Reassign
+              </ButtonLink>
+            }
+          >
+            {idleHolders.map((s) => `${s.full_name} (${s.active_task_count})`).join(', ')}. Reassign anything that cannot wait for their next shift.
           </Alert>
         )}
 

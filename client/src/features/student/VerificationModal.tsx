@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Star, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { feedbackApi } from '../../api/endpoints';
+import { ApiError } from '../../api/client';
 import { useToast } from '../../components/ui/Toast';
 import { Modal } from '../../components/ui/Modal';
 import { Alert } from '../../components/ui/Alert';
@@ -38,9 +39,21 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({ isOpen, on
         data.message || (isSatisfied ? 'Thank you for confirming the work.' : 'A supervisor will review it.')
       );
       queryClient.invalidateQueries({ queryKey: ['complaints'] });
+      queryClient.invalidateQueries({ queryKey: ['complaint', complaintId] });
       onClose();
     },
-    onError: (err: Error) => showToast('Could not submit your response', 'error', err.message),
+    onError: (err: Error) => {
+      // 409: a roommate answered first (or the ticket closed meanwhile). The
+      // message says who; refresh and close rather than leave a stale form.
+      if (err instanceof ApiError && err.status === 409) {
+        showToast('Already answered', 'info', err.message);
+        queryClient.invalidateQueries({ queryKey: ['complaints'] });
+        queryClient.invalidateQueries({ queryKey: ['complaint', complaintId] });
+        onClose();
+        return;
+      }
+      showToast('Could not submit your response', 'error', err.message);
+    },
   });
 
   const submit = () => {

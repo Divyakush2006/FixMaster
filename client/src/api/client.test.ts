@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { apiFetch, apiFetchPage, ApiError } from './client';
+import { apiFetch, apiFetchPage, apiErrorCode, ApiError } from './client';
 import { saveSession, getToken, clearSession, isTokenExpired } from './session';
 
 const user = { user_id: 'u1', reg_or_emp_id: 'S1', full_name: 'Test', role: 'STUDENT' as const };
@@ -154,5 +154,32 @@ describe('paged lists and empty responses', () => {
     expect(localStorage.getItem('fixmaster_last_activity')).not.toBeNull();
     clearSession();
     expect(localStorage.length).toBe(0);
+  });
+});
+
+describe('machine-readable error codes', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('exposes the API code and details so screens can branch on them', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: 'You have 2 open jobs.', code: 'OPEN_JOBS', details: { open_jobs: 2 } }), {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    );
+    const err = (await apiFetch('/me/availability', { method: 'PATCH' }).catch((e: unknown) => e)) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(409);
+    expect(apiErrorCode(err)).toBe('OPEN_JOBS');
+    expect(err.details).toEqual({ open_jobs: 2 });
+    expect(err.message).toBe('You have 2 open jobs.');
+  });
+
+  it('has no code for ordinary errors or non-API failures', () => {
+    expect(apiErrorCode(new ApiError('nope', 400, { error: 'nope' }))).toBeUndefined();
+    expect(apiErrorCode(new Error('boom'))).toBeUndefined();
   });
 });

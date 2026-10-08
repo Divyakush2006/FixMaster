@@ -79,3 +79,21 @@ export function logDescription(log: { action_note: string | null; changed_by_nam
   const note = log.action_note && !/^Transition:/i.test(log.action_note) ? log.action_note : null;
   return [note, log.changed_by_name].filter(Boolean).join(' · ') || 'Recorded by the system';
 }
+
+/**
+ * An audit entry that did not change the status: a note on the ticket such as
+ * a roommate also reporting it, a reassignment, or a merged duplicate.
+ */
+export const isNoteEntry = (log: { previous_status: string | null; new_status: string }): boolean =>
+  log.previous_status !== null && log.previous_status === log.new_status;
+
+/** Title for a note entry (see isNoteEntry), from the note the API wrote. */
+export function noteTitle(note: string | null): string {
+  if (!note) return 'Update';
+  if (/^Also reported/i.test(note)) return 'Also reported';
+  if (/^Reassigned from/i.test(note)) return 'Reassigned';
+  if (/^Priority raised/i.test(note)) return 'Priority raised';
+  if (/withdrew their report/i.test(note)) return 'Report withdrawn';
+  if (/merged into this ticket/i.test(note)) return 'Duplicate merged';
+  return 'Update';
+}

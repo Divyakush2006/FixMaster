@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Building2, DoorOpen } from 'lucide-react';
 import { metaApi, complaintsApi } from '../../api/endpoints';
 import { useMyAllotment } from '../../hooks/useMyAllotment';
-import { floorLabel } from '../../utils/formatters';
+import { floorLabel, formatRelativeTime } from '../../utils/formatters';
 import { useToast } from '../../components/ui/Toast';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card, CardBody, CardFooter, CardHeader } from '../../components/ui/Card';
@@ -95,9 +95,19 @@ export const NewComplaintForm: React.FC = () => {
   const mutation = useMutation({
     mutationFn: complaintsApi.create,
     onSuccess: (res) => {
-      showToast('Ticket raised', 'success', `${ticketRef(res.complaint.complaint_id)} · we will keep you updated here.`);
+      if (res.joined) {
+        // One live ticket per room / common area and issue: someone (often a
+        // roommate) already reported this, so the student was added to it.
+        showToast(
+          res.complaint.ticket_scope === 'ROOM' ? 'Already requested for your room' : 'Already reported',
+          'info',
+          `Raised ${formatRelativeTime(res.complaint.created_at)} as ${ticketRef(res.complaint.complaint_id)}. You have been added to it and will see its progress.`
+        );
+      } else {
+        showToast('Ticket raised', 'success', `${ticketRef(res.complaint.complaint_id)} · we will keep you updated here.`);
+      }
       queryClient.invalidateQueries({ queryKey: ['complaints'] });
-      navigate('/student/complaints');
+      navigate(`/student/complaints?id=${res.complaint.complaint_id}`);
     },
     onError: (err: Error) => setFormError(err.message || 'The ticket could not be submitted.'),
   });
