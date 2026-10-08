@@ -201,7 +201,9 @@ CREATE INDEX idx_users_role_specialization ON users(role, specialization, is_ava
 ### 3.1 Database & 11 Related Tables
 Implemented in pure PostgreSQL (15 and 16 are both tested in CI) with strong constraint enforcement (`CHECK`, `UNIQUE`, `NOT NULL`, `FOREIGN KEY` cascades).
 
-The 11 core tables are listed in section 2.2. Four operational tables were added as the system matured: `block_floors` (floor-based room numbering), `audit_log` (append-only record of administrative actions), `revoked_tokens` (server-side sign-out) and `schema_migrations` (applied migration versions and checksums).
+The 11 core tables are listed in section 2.2. Five operational tables were added as the system matured: `complaint_reporters` (everyone who reported a shared room or common-area ticket), `block_floors` (floor-based room numbering), `audit_log` (append-only record of administrative actions), `revoked_tokens` (server-side sign-out) and `schema_migrations` (applied migration versions and checksums).
+
+A partial unique index allows only one live ticket per location and issue (`uq_live_room_issue`, `uq_live_area_issue`), which keeps the data consistent even when roommates submit the same request at the same moment.
 
 ### 3.2 CRUD Operations & Joins
 - **Create**: Student submits 1-click cleaning or structured technical complaint.
@@ -340,7 +342,7 @@ The API uses node-postgres (`pg`) directly rather than an ORM, so the stored pro
 
 ### 4.3 Search, Filtering, Pagination & Form Validation
 - **Search**: Search complaints by Room Number, Registration ID, or Category.
-- **Filters**: Filter by Status (`OPEN`, `ESCALATED`, `ASSIGNED`, `IN_PROGRESS`, `PENDING_VERIFICATION`, `COMPLETED`, `REJECTED`), Block, Category and Priority.
+- **Filters**: Filter by Status (`OPEN`, `ESCALATED`, `ASSIGNED`, `IN_PROGRESS`, `PENDING_VERIFICATION`, `COMPLETED`, `REJECTED`, `CANCELLED`), Block, Category and Priority.
 - **Pagination**: Server-side offset pagination (`limit`, `offset`) with the total returned in the `X-Total-Count` header.
 - **Form Validation**: Server-side validation with `express-validator` and client-side validation with Zod, with meaningful HTTP error responses.
 

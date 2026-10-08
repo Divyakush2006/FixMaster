@@ -155,6 +155,52 @@ WCAG audit of every screen, and a load test.
 | Container stack | Migrations apply on start, production guard rejects weak secrets, CSP / HSTS / frame / nosniff headers present, assets immutable-cached and gzipped |
 | CI | Now also starts the composed stack and smoke-tests it through nginx |
 
+## Shared rooms and concurrency (round 4)
+
+A hostel room is shared by up to six students, so tickets were re-modelled
+around the **room (or common area)** instead of the person, and every place
+two people can act on the same ticket at once was analysed and made safe.
+Migrations 007-008; tests in `tests/room_tickets.test.js` (27 tests, several
+firing genuinely simultaneous requests).
+
+### Findings and fixes
+
+| # | Finding | Fix |
+|---|---|---|
+| C1 | **Roommates produced duplicate tickets.** The duplicate check was per person, so two roommates asking for the same room cleaning created two tickets, two dispatches and two separate verifications. Two submissions at the same instant also slipped past it. | One live ticket per location and issue, enforced by partial unique indexes. A second reporter is added to the existing ticket (`complaint_reporters`) and told when it was raised. Creation is serialized per location, with the unique index as the backstop: 15 simultaneous requests from three roommates give exactly one ticket and three reporters. |
+| C2 | **Deadlock** between a technician finishing a job and a supervisor reassigning it: the two transactions locked the ticket and its assignment in opposite order, and PostgreSQL killed one (a 500 for the user). | A single lock order everywhere: ticket row first, then its assignments (technician endpoints, staff deactivation, off-duty hand-back, procedures). As a safety net, `withTransaction` retries deadlock / serialization failures up to three times, and any that persist return 409 `CONCURRENT_UPDATE` instead of 500. A deterministic test reproduces the old interleaving: with the old order the supervisor side blocked about 0.7 s waiting for the deadlock detector; now it is not blocked at all. |
+| C3 | **Lost update between supervisors.** Since reassignment was allowed, a second supervisor working from a stale screen silently replaced the first one's choice. | Optimistic concurrency: the dispatch request carries who the screen showed holding the ticket; if that changed, the request is refused (409 `STALE_ASSIGNMENT`) with the name of who assigned it. |
+| C4 | **Uneven auto-dispatch.** Two cleaning tickets dispatched at the same instant both picked the same least-loaded cleaner. | The workload decision is serialized per trade (transaction-level advisory lock) with a deterministic tie-break. |
+| C5 | **Roommates could not see or confirm room work.** Only the person who raised a ticket could see or verify it; if they were away or had moved out, it waited forever and counted as unresolved. | Residents see their room's live tickets (and any raised since they moved in, not a previous occupant's history). Any current resident can confirm; the row lock serializes simultaneous answers and the second is told who answered. A former resident keeps read access but cannot confirm. |
+| C6 | **Work nobody verified stayed open forever.** | A background sweep closes tickets left unverified for 72 h (`AUTO_CONFIRMED`, no rating, clear history entry). It uses `SKIP LOCKED` and an advisory lock, so it is safe with several API instances and never touches a ticket being verified at that moment. |
+| C7 | **No way to close a ticket without work.** A student could not withdraw a mistaken request; the `REJECTED` status existed but nothing could set it, so spam stayed open. | Students withdraw while nobody is assigned (`CANCELLED`; if others reported it too, only they are removed). Supervisors reject with a reason the reporters see, or merge a duplicate into another live ticket at the same location (reporters move over). Both are audited. Every closed ticket records `closure_reason`. |
+| C8 | **Silent assignment to off-duty staff.** | Requires explicit confirmation (`STAFF_OFF_DUTY` until confirmed). |
+| C9 | **Jobs stranded with off-duty technicians.** Going off duty left open jobs in a queue nobody worked. | Going off duty with open jobs asks to keep or hand them back (`OPEN_JOBS`); handed-back tickets reopen for dispatch with the reason in their history. The supervisor dashboard flags jobs held by off-duty technicians. |
+| C10 | **One broken cooler, twenty tickets.** | Common-area reports join one ticket; at five reporters its priority rises one level (never to Emergency automatically). |
+| C11 | **Withdrawn and merged tickets would inflate statistics.** | Block totals and recurring-defect alerts exclude them. |
+
+Existing databases may already hold live duplicates. Migration 007 merges them
+into one surviving ticket per location and issue (the one furthest along),
+moves their reporters over and releases the duplicates' technicians before
+creating the unique indexes. Nothing is deleted. This upgrade path has its own
+test.
+
+The roster grew from 6 to 17 technicians (6 housekeeping, 3 electrical, 3
+plumbing, 3 AC, 2 carpentry), and two roommates share L-843 with the original
+demo student, so dispatch always has a choice and the shared-room flow can be
+tried end to end. Existing seed rows are unchanged; the new rows are appended.
+
+### Evidence
+
+| Check | Result |
+|---|---|
+| API test suite | 114 tests, all pass (87 before + 27 new) |
+| Web unit tests | 30 tests, all pass |
+| Browser end-to-end | Shared-room suite 29/29; lifecycle and hardening suites pass; no page errors |
+| Security probe | 40 / 40, 0 findings |
+| Accessibility (axe-core, WCAG 2.1 AA) | 21 / 21 screens plus the new drawers and dialogs, 0 violations |
+| Dependency audit | 0 vulnerabilities (API including dev dependencies; web production dependencies) |
+
 ## Not done — accepted risks and decisions for the team
 
 These were deliberately left out. Each is either a product decision, out of scope for code changes, or something that needs infrastructure this repo doesn't control.
@@ -162,7 +208,7 @@ These were deliberately left out. Each is either a product decision, out of scop
 1. **The JWT is stored in `localStorage`.** Any XSS could read it. Mitigated by the strict CSP and by React escaping. The stronger fix, httpOnly cookies plus CSRF protection, changes the auth contract on both sides; recommended before handling sensitive data.
 2. **Supervisors are not scoped to a block.** Any supervisor sees and dispatches every block. The schema has no supervisor↔block relationship, so this needs a product decision on how wardens map to blocks.
 3. **Rate limits are per-process.** Correct for one API instance. Running several replicas needs a shared store (e.g. Redis) or the limits multiply. (The per-account lockout lives in the database and already works across replicas.)
-4. **No notifications.** Nobody is told when a ticket is assigned or awaits verification; users must open the app. Needs an email/SMS/push provider.
+4. **No notifications.** Nobody is told when a ticket is assigned or awaits verification; users must open the app. Needs an email/SMS/push provider. (Unverified work now closes itself after 72 hours, so a missed notification no longer leaves a ticket open forever.)
 5. **Forgotten passwords** can only be reset by an admin; there is no self-service email reset.
 6. **Photo evidence is a URL field**, not an upload. Real uploads need object storage.
 7. **SLA tracking is not implemented**: `default_sla_hours` is stored but nothing measures or reports breaches. The academic report now states this as planned work.
@@ -172,6 +218,7 @@ These were deliberately left out. Each is either a product decision, out of scop
 11. **Backups:** `backup_restore.sh/.ps1` work but nothing schedules them. Use the managed database's automated backups, or schedule the script.
 12. **Web dev-only dependency advisories** remain inside Tailwind 3's build tooling (`braces` via its file watcher, `postcss-selector-parser`; fixed only in Tailwind 4). They run only at build time on our own source files, are not in any image and are not shipped to browsers. The web job audits production dependencies; the API job audits everything.
 13. **Session token in `localStorage`** (see 1) is now mitigated further by server-side revocation on sign-out and idle sign-out, but the cookie-based design remains the recommended next step.
+14. **Technicians have no home block.** Auto-dispatch picks the least-loaded technician in the trade across all blocks. Preferring someone already in the ticket's block needs a technician-to-block assignment, a product decision deferred until there are staff in more than one block.
 
 ## Running it
 

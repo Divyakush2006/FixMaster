@@ -53,6 +53,19 @@ data tables, Inter type and one corporate blue (`brand-*` in
   meets 4.5:1 on the canvas; keep using it rather than `slate-400` for text.
 - A password change returns a new token (the server revokes all older ones);
   `AuthContext.updateToken` swaps it in so the current session continues.
+- **Shared tickets.** A ticket belongs to a room (or common area), not a
+  person. `POST /complaints` may answer `200 { joined: true }`: the issue was
+  already open there and the student was added to it, so show "already
+  requested", not "ticket raised". Students' lists include their room's
+  tickets; use the per-viewer flags the API returns (`can_verify`,
+  `can_withdraw`, `is_reporter`, `is_room_resident`) to decide which actions
+  to show, never the status alone.
+- **Expected conflicts carry a code.** `ApiError.code` (helper `apiErrorCode`)
+  is set for 409s a screen should handle: `STALE_ASSIGNMENT` (someone else
+  dispatched the ticket - refresh), `STAFF_OFF_DUTY` (confirm, then resend with
+  `allowOffDuty`), `OPEN_JOBS` (going off duty - ask keep or hand back),
+  `TASK_REASSIGNED`, `ALREADY_REPORTED`. Dispatch requests always send the
+  assignee the screen showed (`expectedAssigneeId`).
 
 ## Screens
 

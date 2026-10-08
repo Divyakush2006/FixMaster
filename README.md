@@ -25,6 +25,7 @@ work floor by floor, and closes the ticket only after the student confirms the f
 - [Overview](#overview)
 - [Features](#features)
 - [Ticket lifecycle](#ticket-lifecycle)
+- [Shared tickets and concurrency](#shared-tickets-and-concurrency)
 - [Architecture](#architecture)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
@@ -46,7 +47,8 @@ the whole loop: intake, dispatch, on-site work, student verification and analyti
 |---|---|
 | Complaints get lost and nobody can see their status | Every ticket has a reference (`TKT-xxxxxx`), a live status and a full history |
 | Technicians criss-cross a building between floors | Each technician's queue is ordered by floor, then priority |
-| Work is marked done without the resident agreeing | Only the student who raised a ticket can close it; a rejection sends it back for rework |
+| Roommates report the same fault separately, and two people get sent | The room is the unit: one live ticket per room (or common area) and issue, shared by everyone who reports it |
+| Work is marked done without the resident agreeing | Only a resident of the room can close it; a rejection sends it back for rework |
 | Supervisors cannot see recurring failures | Dashboards show open work, escalations and repeat-fault hotspots |
 | No record of who changed what | Ticket history plus an append-only audit log of administrative actions |
 
@@ -55,16 +57,23 @@ the whole loop: intake, dispatch, on-site work, student verification and analyti
 **Students**
 - Register and sign in with their registration number.
 - Raise a ticket for their room or a common area, choosing from 6 categories and 25 issue types.
+- If a roommate already reported the same thing, they are added to that ticket instead of opening a second one.
+- See every ticket for their room, not only their own, and who reported it.
 - Priority defaults from the issue type; a student can raise it by at most one level.
-- Follow each ticket on a timeline, then accept the fix with a rating or reject it.
+- Follow each ticket on a timeline, then accept the fix with a rating or reject it. Any resident of the room can do this.
+- Withdraw a request until a technician is assigned.
 
 **Technicians**
 - A work queue ordered by floor, then priority.
 - Start a job, mark it done with a note, and set availability (on or off duty).
+- Going off duty with open jobs asks whether to keep them or hand them back for reassignment.
 
 **Supervisors**
 - A dashboard of key figures, a searchable and filterable ticket register, and an escalation queue.
 - Dispatch tickets to a technician or reassign them. Cleaning requests can be auto-dispatched.
+- If another supervisor changed the ticket while it was open on screen, the assignment is refused with who did it, instead of silently overriding them.
+- Assigning an off-duty technician needs a confirmation; the dashboard flags jobs held by off-duty technicians.
+- Reject a ticket that is not valid work (with a reason the reporters can see), or merge a duplicate into another ticket at the same location.
 - Hotspots: locations with recurring faults.
 
 **Administrators** (separate sign-in at `/admin`, shorter sessions)
@@ -82,21 +91,58 @@ the whole loop: intake, dispatch, on-site work, student verification and analyti
 
 ```mermaid
 stateDiagram-v2
-    [*] --> OPEN: Student raises a ticket
+    [*] --> OPEN: A resident reports an issue
     OPEN --> ASSIGNED: Supervisor dispatches (or auto-dispatch for cleaning)
+    OPEN --> CANCELLED: Every reporter withdraws
     ASSIGNED --> IN_PROGRESS: Technician starts work
     ASSIGNED --> ASSIGNED: Supervisor reassigns
     IN_PROGRESS --> ASSIGNED: Supervisor reassigns
     IN_PROGRESS --> PENDING_VERIFICATION: Technician marks the work done
-    PENDING_VERIFICATION --> COMPLETED: Student accepts and rates
-    PENDING_VERIFICATION --> ESCALATED: Student rejects the work
+    PENDING_VERIFICATION --> COMPLETED: A resident accepts and rates (or nobody answers in 72 h)
+    PENDING_VERIFICATION --> ESCALATED: A resident rejects the work
     ESCALATED --> ASSIGNED: Supervisor re-dispatches
+    OPEN --> REJECTED: Supervisor rejects or merges a duplicate
+    ASSIGNED --> REJECTED
+    ESCALATED --> REJECTED
     COMPLETED --> [*]
+    CANCELLED --> [*]
+    REJECTED --> [*]
 ```
 
 The database enforces these rules, not just the interface. Ticket transitions run inside
 stored procedures that lock the row, and a trigger writes every status change to the
-ticket's history.
+ticket's history. Every closed ticket records why it closed: confirmed, closed
+automatically, withdrawn, rejected as invalid, or merged as a duplicate.
+
+## Shared tickets and concurrency
+
+A hostel room is shared, so the **room (or common area) is the unit of a ticket**, not
+the person who reported it.
+
+- **One live ticket per location and issue.** When a roommate asks for room cleaning that
+  is already requested, they are added to the existing ticket and told when it was
+  raised. A partial unique index enforces this in the database, so it also holds when two
+  roommates tap at the same instant.
+- **Everyone in the room sees it.** Residents see their room's live tickets and any raised
+  since they moved in; they do not see a previous occupant's closed history.
+- **Any resident can confirm the work.** The first answer counts; a second resident
+  answering at the same moment is told who already did. Someone who has moved out keeps
+  read access but can no longer confirm.
+- **Nothing waits forever.** Work nobody confirms within 72 hours is closed automatically
+  (`VERIFICATION_AUTO_CLOSE_HOURS`).
+- **Common areas.** Twenty students reporting one broken water cooler produce one ticket
+  with twenty reporters; at five reporters its priority goes up one level (never to
+  Emergency automatically).
+
+Concurrent actions are made safe in the database rather than hoped for:
+
+| Situation | Guarantee |
+|---|---|
+| Roommates submitting the same request together | Exactly one ticket; the others join it |
+| Technician finishes a job while a supervisor reassigns it | No deadlock: every transaction locks the ticket before its assignments, and a rare deadlock or serialization failure is retried automatically |
+| Two supervisors dispatching the same ticket | The second is refused with the name of who assigned it (optimistic concurrency) |
+| Two cleaning tickets auto-dispatched at once | They go to different cleaners (workload decisions are serialized per trade) |
+| Two residents confirming at once | One answer is recorded; the other is told who answered |
 
 ## Architecture
 
@@ -151,13 +197,16 @@ Every seeded account uses the password `Password@123`.
 
 | Role | Sign-in ID | Portal |
 |---|---|---|
-| Student | `21BCE0843` | `/login` → Student |
+| Student (room L-843) | `21BCE0843` | `/login` → Student |
+| Roommates in L-843 | `22BCE1187`, `23BCE0456` | `/login` → Student |
 | Technician (electrician) | `EMP_ELEC_01` | `/login` → Staff |
 | Supervisor (L-Block) | `SUP_LBLOCK_01` | `/login` → Staff |
 | Administrator | `ADMIN_ESTATES_01` | `/admin` |
 
-More seeded students (`21BCE1042`, `21BCE1523`, `22BCE0190`) and technicians
-(`EMP_PLB_01`, `EMP_CARP_01`, `EMP_AC_01`, `EMP_CLN_01`, `EMP_CLN_02`) are available.
+More seeded students (`21BCE1042`, `21BCE1523`, `22BCE0190`) are available, and 17
+technicians in five trades: housekeeping `EMP_CLN_01`–`06`, electrical `EMP_ELEC_01`–`03`,
+plumbing `EMP_PLB_01`–`03`, AC `EMP_AC_01`–`03` and carpentry `EMP_CARP_01`–`02`.
+Sign in as two of the L-843 roommates to see a shared room ticket from both sides.
 
 > The demo password and the example `JWT_SECRET` are for local development only. In
 > production the API refuses to start with the example secret.
@@ -186,18 +235,22 @@ commented list. Only `DATABASE_URL` and `JWT_SECRET` are required.
 | `TRUST_PROXY` | Set when running behind a reverse proxy | off |
 | `LOGIN_LOCKOUT_THRESHOLD` / `LOGIN_LOCKOUT_MINUTES` | Account lockout after repeated failed sign-ins | `10` / `15` |
 | `RATE_LIMIT_*` | Request limits per user, per account and per IP | see `.env.example` |
+| `VERIFICATION_AUTO_CLOSE_HOURS` | Close finished work nobody confirmed after this many hours | `72` |
+| `VERIFICATION_SWEEP_MINUTES` | How often the auto-close check runs | `15` |
+| `COMMON_AREA_PRIORITY_BUMP_AT` | Reporters needed to raise a common-area ticket's priority one level | `5` |
 
 ## Database
 
-**15 tables.** The 11 core tables cover blocks, rooms, common areas, users, allotments,
+**16 tables.** The 11 core tables cover blocks, rooms, common areas, users, allotments,
 complaint categories and sub-categories, complaints, assignments, feedback and ticket
-logs. Four operational tables support them: `block_floors`, `audit_log`,
-`revoked_tokens` and `schema_migrations`. All users share one `users` table with a
+logs. Five operational tables support them: `complaint_reporters` (everyone who reported a
+shared ticket), `block_floors`, `audit_log`, `revoked_tokens` and `schema_migrations`. All users share one `users` table with a
 `role` column (role-based access control).
 
 **Programmable objects.** Stored procedures handle dispatch and reassignment, resolution
-confirmation and cleaning auto-dispatch. Triggers write the ticket audit trail, maintain
-timestamps and keep floor counts in sync. Views produce the technician queue, the
+confirmation, cleaning auto-dispatch and closing unverified work. Triggers write the ticket
+audit trail, register each ticket's first reporter, maintain timestamps and keep floor
+counts in sync. Views produce the technician queue, the
 supervisor summary and recurring-defect alerts.
 
 | Command | What it does |
@@ -219,9 +272,9 @@ All endpoints are under `/api`. Responses are JSON, and list endpoints page with
 | Area | Base path | Who |
 |---|---|---|
 | Authentication | `/api/auth` (student register and login, staff login, admin login, logout) | Public / signed in |
-| Tickets | `/api/complaints` | Students (own tickets), supervisors, administrators |
+| Tickets | `/api/complaints` (raise or join, list, detail, history; `withdraw`, `reject`, `merge`, `related`) | Students (their own and their room's), supervisors, administrators |
 | Dispatch and work queue | `/api/dispatch` | Supervisors (assign, auto-dispatch), technicians (queue, start, done) |
-| Verification | `/api/feedback` | The student who raised the ticket |
+| Verification | `/api/feedback` | A resident of the room (common areas: anyone who reported it) |
 | Analytics | `/api/analytics` (KPIs, hotspots) | Supervisors, administrators |
 | Reference data | `/api/meta` (blocks, floors, rooms, categories, staff) | Signed in |
 | Own account | `/api/me` (profile, allotment, password, availability) | Signed in |
@@ -238,8 +291,11 @@ All endpoints are under `/api`. Responses are JSON, and list endpoints page with
   limits are counted per account, per user and per IP.
 - **Password policy.** At least 8 characters with a letter and a digit, not a common
   password, and not containing the account ID. Passwords are stored as bcrypt hashes.
-- **Authorization checks on every request.** Role checks, ownership checks on tickets,
-  and validation of all input. Every query is parameterized.
+- **Authorization checks on every request.** Role checks, room-residency and reporter
+  checks on tickets, and validation of all input. Every query is parameterized.
+- **Machine-readable conflicts.** Expected conflicts (a stale screen, an off-duty
+  technician, open jobs) return 409 with a stable `code`, so clients react precisely
+  instead of showing a generic error.
 - **Web tier hardening.** Content Security Policy, HSTS, `X-Frame-Options: DENY` and
   `nosniff`; the API uses Helmet and refuses weak production configuration.
 - **Accountability.** An append-only audit log records each administrative action with the
@@ -257,9 +313,10 @@ cd client && npm test    # web app unit tests
 
 | Check | Result |
 |---|---|
-| API and database tests (Node test runner, real PostgreSQL) | 87 passing |
-| Web unit tests (Vitest) | 26 passing |
-| Security probe of the running system (auth, authorization, injection, races, brute force) | 39 / 39 |
+| API and database tests (Node test runner, real PostgreSQL) | 114 passing, including genuinely simultaneous requests and a deterministic deadlock regression test |
+| Web unit tests (Vitest) | 30 passing |
+| Browser end-to-end (Playwright: lifecycle, hardening, shared tickets) | All passing, no page errors |
+| Security probe of the running system (auth, authorization, injection, races, brute force) | 40 / 40 |
 | Accessibility (axe-core, WCAG 2.1 AA) | 21 / 21 screens, 0 violations |
 | Load (50 concurrent connections) | About 600 authenticated req/s, p99 about 120 ms, 0 errors |
 | Dependency audit (shipped dependencies) | 0 known vulnerabilities |
