@@ -2,6 +2,7 @@ const db = require('../config/db');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { createUser, hashPassword, PUBLIC_USER_COLUMNS } = require('../services/userService');
 const { recordAudit } = require('../services/auditService');
+const { releaseLiveJobs } = require('../services/taskService');
 
 // ---- Users -------------------------------------------------------------------
 
@@ -105,21 +106,12 @@ exports.updateUser = asyncHandler(async (req, res) => {
             // A deactivated technician's live tasks would otherwise be stuck:
             // nobody else may act on them and they no longer appear in any
             // working queue. Hand them back to OPEN for reassignment.
-            const released = await client.query(
-                `UPDATE complaint_assignments SET current_state = 'DECLINED'
-                 WHERE staff_user_id = $1 AND current_state IN ('ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS')
-                 RETURNING complaint_id`,
-                [user_id]
+            const reopened = await releaseLiveJobs(
+                client,
+                user_id,
+                `Returned for reassignment: ${target.rows[0].reg_or_emp_id}'s account was deactivated`
             );
-            if (released.rows.length > 0) {
-                const reopened = await client.query(
-                    `UPDATE complaints SET status = 'OPEN'
-                     WHERE complaint_id = ANY($1) AND status IN ('ASSIGNED', 'IN_PROGRESS')
-                     RETURNING complaint_id`,
-                    [released.rows.map((r) => r.complaint_id)]
-                );
-                releasedTickets = reopened.rows.length;
-            }
+            releasedTickets = reopened.length;
         }
 
         const updated = await client.query(

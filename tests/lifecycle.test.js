@@ -222,7 +222,11 @@ describe('complaint lifecycle (closed loop)', () => {
         const c1 = await t.login(SEED.cleaner1);
         const c2 = await t.login(SEED.cleaner2);
         const sup = await t.login(SEED.supervisor);
-        assert.equal((await t.api('/me/availability', { method: 'PATCH', token: c1, body: { is_available: false } })).status, 200);
+        // cleaner1 has the seed's in-progress cleaning job; keep it while off duty.
+        assert.equal(
+            (await t.api('/me/availability', { method: 'PATCH', token: c1, body: { is_available: false, release_open_jobs: false } })).status,
+            200
+        );
         try {
             const student = await t.login(SEED.student2);
             const r = await t.api('/complaints', { method: 'POST', token: student, body: { ticket_scope: 'ROOM', block_id: 'L_BLOCK', room_id: 'L-810', subcategory_id: SEED.sub.dusting } });

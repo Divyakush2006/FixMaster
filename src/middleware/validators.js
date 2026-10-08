@@ -4,7 +4,7 @@ const ROLES = ['STUDENT', 'STAFF', 'SUPERVISOR', 'ADMIN'];
 const SPECIALIZATIONS = ['CLEANING', 'ELECTRICIAN', 'CARPENTER', 'AC_TECH', 'PLUMBER'];
 const TICKET_SCOPES = ['ROOM', 'COMMON_AREA'];
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'];
-const STATUSES = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING_VERIFICATION', 'COMPLETED', 'ESCALATED', 'REJECTED'];
+const STATUSES = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING_VERIFICATION', 'COMPLETED', 'ESCALATED', 'REJECTED', 'CANCELLED'];
 
 // bcrypt only uses the first 72 BYTES of a password and silently ignores the
 // rest, so two passwords sharing a 72-byte prefix are interchangeable.
@@ -143,14 +143,38 @@ const listComplaintsValidators = [
     handleValidation,
 ];
 
-const complaintIdParamValidators = [
-    param('id').trim().notEmpty().isLength({ max: 36 }).withMessage('complaint id is invalid.'),
+const complaintIdParam = param('id').trim().notEmpty().isLength({ max: 36 }).withMessage('complaint id is invalid.');
+
+const complaintIdParamValidators = [complaintIdParam, handleValidation];
+
+const rejectComplaintValidators = [
+    complaintIdParam,
+    body('reason')
+        .isString()
+        .withMessage('reason is required.')
+        .bail()
+        .trim()
+        .isLength({ min: 5, max: 300 })
+        .withMessage('Give a reason of 5 to 300 characters; the people who reported the issue will see it.'),
+    handleValidation,
+];
+
+const mergeComplaintValidators = [
+    complaintIdParam,
+    body('target_id').isString().withMessage('target_id is required.').bail().trim().notEmpty().isLength({ max: 36 }),
     handleValidation,
 ];
 
 const assignTechnicianValidators = [
     body('complaint_id').trim().notEmpty().withMessage('complaint_id is required.'),
     body('staff_user_id').trim().notEmpty().withMessage('staff_user_id is required.'),
+    // Optimistic concurrency: who the caller believes holds the ticket now
+    // (null = nobody). Omit it to skip the check (older clients).
+    body('expected_assignee_id')
+        .optional({ values: 'undefined' })
+        .custom((v) => v === null || (typeof v === 'string' && v.length > 0 && v.length <= 36))
+        .withMessage('expected_assignee_id must be a user id or null.'),
+    body('allow_off_duty').optional().isBoolean({ strict: true }).withMessage('allow_off_duty must be true or false.'),
     handleValidation,
 ];
 
@@ -192,6 +216,9 @@ const changePasswordValidators = [
 
 const availabilityValidators = [
     body('is_available').isBoolean({ strict: true }).withMessage('is_available must be true or false.'),
+    // Going off duty with open jobs: true hands them back to the supervisor,
+    // false keeps them. Required only when there are open jobs.
+    body('release_open_jobs').optional().isBoolean({ strict: true }).withMessage('release_open_jobs must be true or false.'),
     handleValidation,
 ];
 
@@ -329,6 +356,8 @@ module.exports = {
     createComplaintValidators,
     listComplaintsValidators,
     complaintIdParamValidators,
+    rejectComplaintValidators,
+    mergeComplaintValidators,
     assignTechnicianValidators,
     autoDispatchValidators,
     assignmentIdParamValidators,

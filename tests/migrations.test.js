@@ -94,4 +94,70 @@ describe('database migrations', () => {
             await withDb(admin, (c) => c.query(`DROP DATABASE IF EXISTS ${legacyName} WITH (FORCE)`));
         }
     });
+
+    it('007 merges live duplicates that already exist before enforcing one live ticket per location and issue', async () => {
+        const name = 'fix_master_test_dupes';
+        const url = siblingUrl(name);
+        const admin = siblingUrl('postgres');
+        await withDb(admin, async (c) => {
+            await c.query(`DROP DATABASE IF EXISTS ${name}`);
+            await c.query(`CREATE DATABASE ${name}`);
+        });
+        try {
+            // A database at version 006 - before the rule existed - with the
+            // demo data and two roommates' duplicate requests on top.
+            const before007 = listMigrations().filter((m) => m.version < '007');
+            await withDb(url, async (c) => {
+                await c.query(`CREATE TABLE schema_migrations (
+                    version TEXT PRIMARY KEY, checksum TEXT NOT NULL,
+                    applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+                for (const m of before007) {
+                    await c.query(m.sql);
+                    await c.query('INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)', [m.version, m.checksum]);
+                }
+                await c.query(fs.readFileSync(path.join(__dirname, '..', 'database', 'seed_data.sql'), 'utf8'));
+                // Seed has L-843 room cleaning IN_PROGRESS (Vihaan). Two more
+                // live requests for the same thing from his roommates:
+                await c.query(`
+                    INSERT INTO complaints (complaint_id, ticket_scope, room_id, block_id, raised_by_user_id, subcategory_id, status, created_at)
+                    VALUES ('dup-0001', 'ROOM', 'L-843', 'L_BLOCK', 'u024-stud-0843-uuid-000000000024', 1, 'OPEN', CURRENT_TIMESTAMP - INTERVAL '3 hours'),
+                           ('dup-0002', 'ROOM', 'L-843', 'L_BLOCK', 'u025-stud-0843-uuid-000000000025', 1, 'ASSIGNED', CURRENT_TIMESTAMP)`);
+                await c.query(`INSERT INTO complaint_assignments (complaint_id, staff_user_id, current_state)
+                               VALUES ('dup-0002', 'u004-staf-clean-uuid-000000000004', 'ASSIGNED')`);
+            });
+
+            const applied = await migrate({ connectionString: url, log: () => {} });
+            assert.ok(applied.includes('007_room_centric_tickets'));
+
+            await withDb(url, async (c) => {
+                // The ticket furthest along (in progress) survives, even though
+                // a duplicate is older.
+                const live = await c.query(
+                    `SELECT complaint_id FROM complaints WHERE room_id = 'L-843' AND subcategory_id = 1
+                     AND status IN ('OPEN','ASSIGNED','IN_PROGRESS','PENDING_VERIFICATION','ESCALATED')`
+                );
+                assert.deepEqual(live.rows.map((r) => r.complaint_id), ['cmp-843-0001-uuid-000000000001']);
+
+                const merged = await c.query(
+                    "SELECT complaint_id, status, closure_reason, merged_into_id, closed_at FROM complaints WHERE complaint_id LIKE 'dup-%' ORDER BY 1"
+                );
+                for (const row of merged.rows) {
+                    assert.equal(row.status, 'REJECTED');
+                    assert.equal(row.closure_reason, 'DUPLICATE');
+                    assert.equal(row.merged_into_id, 'cmp-843-0001-uuid-000000000001');
+                    assert.ok(row.closed_at);
+                }
+                const reporters = await c.query(
+                    "SELECT COUNT(*)::int AS n FROM complaint_reporters WHERE complaint_id = 'cmp-843-0001-uuid-000000000001'"
+                );
+                assert.equal(reporters.rows[0].n, 3, 'all three roommates are reporters of the surviving ticket');
+                const declined = await c.query("SELECT current_state FROM complaint_assignments WHERE complaint_id = 'dup-0002'");
+                assert.equal(declined.rows[0].current_state, 'DECLINED', "the duplicate's cleaner is released");
+                // Nothing was deleted.
+                assert.equal((await c.query("SELECT COUNT(*)::int AS n FROM complaints WHERE complaint_id LIKE 'dup-%'")).rows[0].n, 2);
+            });
+        } finally {
+            await withDb(admin, (c) => c.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`));
+        }
+    });
 });

@@ -39,7 +39,34 @@ pool.on('error', (err) => {
  * fn_audit_complaint_status_change() reads it to attribute each status
  * change to the user who caused it.
  */
+// SQLSTATEs that mean "a concurrent transaction won; nothing was changed" -
+// safe to retry the whole unit of work from the start.
+const RETRYABLE = new Set(['40P01', '40001']); // deadlock_detected, serialization_failure
+const MAX_ATTEMPTS = 3;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * withTransaction, retried on deadlock / serialization failure.
+ *
+ * Lock ordering (ticket row first, then its assignments) keeps deadlocks out
+ * of normal operation; this is the safety net for orderings nobody foresaw.
+ * `work` must therefore be safe to run again - it is, as long as everything
+ * it does goes through `client` (it all rolled back) and it does not send
+ * responses or call external services.
+ */
 async function withTransaction(work, actingUserId = null) {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return await runTransaction(work, actingUserId);
+        } catch (err) {
+            if (!RETRYABLE.has(err && err.code) || attempt >= MAX_ATTEMPTS) throw err;
+            // Jittered back-off so the two contenders don't collide again.
+            await sleep(15 * attempt + Math.floor(Math.random() * 35));
+        }
+    }
+}
+
+async function runTransaction(work, actingUserId) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');

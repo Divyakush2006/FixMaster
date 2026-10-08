@@ -123,9 +123,11 @@ describe('hostel infrastructure: blocks, floors, room numbering', () => {
     });
 
     it('protects occupied rooms: no closing them or shrinking below occupancy', async () => {
-        // L-843 has one current occupant (seed: Vihaan) and 3 beds.
+        // L-843: 3 beds, 3 current residents (Vihaan and two roommates).
         assert.equal((await t.api('/admin/rooms/L-843', { method: 'PATCH', token: admin, body: { is_active: false } })).status, 409);
-        assert.equal((await t.api('/admin/rooms/L-843', { method: 'PATCH', token: admin, body: { bed_capacity: 1 } })).status, 200);
+        assert.equal((await t.api('/admin/rooms/L-843', { method: 'PATCH', token: admin, body: { bed_capacity: 2 } })).status, 409);
+        // L-810: 4 beds, one resident (Rahul) - shrinking to 1 is fine.
+        assert.equal((await t.api('/admin/rooms/L-810', { method: 'PATCH', token: admin, body: { bed_capacity: 1 } })).status, 200);
         const closed = await t.api('/admin/rooms/A-G03', { method: 'PATCH', token: admin, body: { is_active: false } });
         assert.equal(closed.status, 200);
         assert.equal(closed.data.is_active, false);

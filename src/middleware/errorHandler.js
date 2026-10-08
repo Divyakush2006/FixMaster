@@ -4,10 +4,19 @@
  * AppError is treated as unexpected and never sent to the client verbatim.
  */
 class AppError extends Error {
-    constructor(statusCode, message) {
+    /**
+     * @param {number} statusCode
+     * @param {string} message  safe to show the user
+     * @param {{ code?: string, details?: object }} [extra]  `code` is a stable,
+     *   machine-readable reason a client can branch on (e.g. OPEN_JOBS);
+     *   `details` carries data for that branch.
+     */
+    constructor(statusCode, message, { code, details } = {}) {
         super(message);
         this.statusCode = statusCode;
         this.isAppError = true;
+        this.code = code;
+        this.details = details;
     }
 }
 
@@ -26,6 +35,20 @@ const PG_ERROR_MAP = {
     '22P02': { status: 400, message: 'One or more values were in an invalid format.' },
     '22001': { status: 400, message: 'A value is longer than the field allows.' },
     '57014': { status: 503, message: 'The request took too long. Please try again.' }, // statement_timeout
+    // Deadlock / serialization failure that survived withTransaction's retries.
+    '40P01': { status: 409, message: 'Someone else changed this at the same moment. Please try again.', code: 'CONCURRENT_UPDATE' },
+    '40001': { status: 409, message: 'Someone else changed this at the same moment. Please try again.', code: 'CONCURRENT_UPDATE' },
+};
+
+// A procedure may attach a machine-readable reason as the exception HINT
+// (e.g. STAFF_OFF_DUTY); only simple upper-case tokens are passed through.
+const HINT_CODE = /^[A-Z][A-Z_]{2,40}$/;
+
+const body = (message, code, details) => {
+    const out = { error: message };
+    if (code) out.code = code;
+    if (details) out.details = details;
+    return out;
 };
 
 // Custom SQLSTATEs raised by our stored procedures (see migration 003):
@@ -36,7 +59,7 @@ const FM_CODE = /^FM(4\d\d)$/;
 // eslint-disable-next-line no-unused-vars
 function errorHandler(err, req, res, next) {
     if (err && err.isAppError) {
-        return res.status(err.statusCode).json({ error: err.message });
+        return res.status(err.statusCode).json(body(err.message, err.code, err.details));
     }
 
     // body-parser failures. Previously a malformed JSON body fell through to
@@ -51,12 +74,13 @@ function errorHandler(err, req, res, next) {
     if (err && typeof err.code === 'string') {
         const fm = err.code.match(FM_CODE);
         if (fm) {
-            return res.status(parseInt(fm[1], 10)).json({ error: err.message });
+            const code = typeof err.hint === 'string' && HINT_CODE.test(err.hint) ? err.hint : undefined;
+            return res.status(parseInt(fm[1], 10)).json(body(err.message, code));
         }
         if (PG_ERROR_MAP[err.code]) {
             console.error(`[db:${err.code}] ${req.method} ${req.originalUrl}:`, err.message);
             const mapped = PG_ERROR_MAP[err.code];
-            return res.status(mapped.status).json({ error: mapped.message });
+            return res.status(mapped.status).json(body(mapped.message, mapped.code));
         }
     }
 

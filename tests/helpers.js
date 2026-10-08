@@ -113,14 +113,21 @@ async function startApp() {
 const SEED = {
     student: '21BCE0843', // Vihaan, allotted L-843
     student2: '21BCE1042', // Rahul, allotted L-810
+    student3: '21BCE1523', // Aditya, allotted L-825
+    student4: '22BCE0190', // Priya, allotted L-305
+    roommate1: '22BCE1187', // Karan, shares L-843 with Vihaan
+    roommate2: '23BCE0456', // Rohan, shares L-843 with Vihaan
     supervisor: 'SUP_LBLOCK_01',
     admin: 'ADMIN_ESTATES_01',
     electrician: 'EMP_ELEC_01',
+    electrician2: 'EMP_ELEC_02',
+    electrician3: 'EMP_ELEC_03',
     cleaner1: 'EMP_CLN_01',
     cleaner2: 'EMP_CLN_02',
     plumber: 'EMP_PLB_01',
+    plumber2: 'EMP_PLB_02',
     // subcategory ids from seed_data.sql
-    sub: { roomCleaning: 1, dusting: 2, trash: 3, tubeLight: 4, socket: 5, switchBoard: 6, fan: 7, mcb: 8, tap: 17, coolerTemp: 21 },
+    sub: { roomCleaning: 1, dusting: 2, trash: 3, tubeLight: 4, socket: 5, switchBoard: 6, fan: 7, mcb: 8, tap: 17, coolerTemp: 21, corridorLight: 25 },
 };
 
 module.exports = { TEST_DB_URL, SEED_PASSWORD, SEED, resetDatabase, startApp, ensureTestDatabase };

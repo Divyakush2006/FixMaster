@@ -79,6 +79,38 @@ INSERT INTO student_room_allotments (student_id, room_id, academic_year, is_curr
 ('u012-stud-0305-uuid-000000000012', 'L-305', '2026-2027', TRUE)
 ON CONFLICT DO NOTHING;
 
+-- 5b. Expanded maintenance roster and shared-room residents
+-- 17 technicians in total (6 cleaning, 3 electrical, 3 plumbing, 3 AC,
+-- 2 carpentry), so dispatch always has a choice. Two roommates join Vihaan in
+-- L-843 (a 3-bed room) to demonstrate room-shared tickets: a roommate asking
+-- for the same service joins the existing ticket instead of opening another.
+INSERT INTO users (user_id, reg_or_emp_id, full_name, email, phone_number, password_hash, role, specialization, is_available) VALUES
+-- Housekeeping
+('u013-staf-clean-uuid-000000000013', 'EMP_CLN_03', 'Selvi R (Housekeeper)', 'selvi.cln@vit.ac.in', '9876543240', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'CLEANING', TRUE),
+('u014-staf-clean-uuid-000000000014', 'EMP_CLN_04', 'Anand S (Housekeeper)', 'anand.cln@vit.ac.in', '9876543241', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'CLEANING', TRUE),
+('u015-staf-clean-uuid-000000000015', 'EMP_CLN_05', 'Kavitha M (Housekeeper)', 'kavitha.cln@vit.ac.in', '9876543242', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'CLEANING', TRUE),
+('u016-staf-clean-uuid-000000000016', 'EMP_CLN_06', 'Prakash T (Housekeeper)', 'prakash.cln@vit.ac.in', '9876543243', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'CLEANING', TRUE),
+-- Electrical
+('u017-staf-elec-uuid-000000000017', 'EMP_ELEC_02', 'Manikandan R (Electrician)', 'manikandan.elec@vit.ac.in', '9876543244', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'ELECTRICIAN', TRUE),
+('u018-staf-elec-uuid-000000000018', 'EMP_ELEC_03', 'Vignesh P (Electrician)', 'vignesh.elec@vit.ac.in', '9876543245', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'ELECTRICIAN', TRUE),
+-- Plumbing
+('u019-staf-plumb-uuid-000000000019', 'EMP_PLB_02', 'Senthil K (Plumber)', 'senthil.plb@vit.ac.in', '9876543246', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'PLUMBER', TRUE),
+('u020-staf-plumb-uuid-000000000020', 'EMP_PLB_03', 'Arjun B (Plumber)', 'arjun.plb@vit.ac.in', '9876543247', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'PLUMBER', TRUE),
+-- AC & HVAC
+('u021-staf-actech-uuid-000000000021', 'EMP_AC_02', 'Balaji S (AC Specialist)', 'balaji.ac@vit.ac.in', '9876543248', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'AC_TECH', TRUE),
+('u022-staf-actech-uuid-000000000022', 'EMP_AC_03', 'Naveen R (AC Specialist)', 'naveen.ac@vit.ac.in', '9876543249', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'AC_TECH', TRUE),
+-- Carpentry
+('u023-staf-carp-uuid-000000000023', 'EMP_CARP_02', 'Rajesh V (Carpenter)', 'rajesh.carp@vit.ac.in', '9876543250', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STAFF', 'CARPENTER', TRUE),
+-- Vihaan's roommates in L-843
+('u024-stud-0843-uuid-000000000024', '22BCE1187', 'Karan Mehta', 'karan.mehta2022@vitstudent.ac.in', '9876543234', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STUDENT', NULL, TRUE),
+('u025-stud-0843-uuid-000000000025', '23BCE0456', 'Rohan Das', 'rohan.das2023@vitstudent.ac.in', '9876543235', '$2b$12$FHrTmI5VL8yWlJQ07Vfcx.nuZhvBoNSdei0tQSGyJwCjM1BY2uxiS', 'STUDENT', NULL, TRUE)
+ON CONFLICT (user_id) DO NOTHING;
+
+INSERT INTO student_room_allotments (student_id, room_id, academic_year, is_current) VALUES
+('u024-stud-0843-uuid-000000000024', 'L-843', '2026-2027', TRUE),
+('u025-stud-0843-uuid-000000000025', 'L-843', '2026-2027', TRUE)
+ON CONFLICT DO NOTHING;
+
 -- 6. Insert Complaint Categories Master
 INSERT INTO complaint_categories (category_id, category_code, category_name, is_quick_action, default_sla_hours) VALUES
 (1, 'CLEANING', 'Housekeeping & Cleaning', TRUE, 4),

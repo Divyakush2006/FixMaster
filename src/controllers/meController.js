@@ -3,6 +3,7 @@ const db = require('../config/db');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { PUBLIC_USER_COLUMNS, hashPassword } = require('../services/userService');
 const { signToken } = require('../middleware/auth');
+const { countLiveJobs, releaseLiveJobs } = require('../services/taskService');
 
 // GET /api/me - full profile of the caller (password_hash never selected).
 exports.getMe = asyncHandler(async (req, res) => {
@@ -60,11 +61,44 @@ exports.changePassword = asyncHandler(async (req, res) => {
 });
 
 // PATCH /api/me/availability (STAFF) - go on/off duty. Auto-dispatch only
-// picks staff who are available; previously nothing could change the flag.
+// picks staff who are available.
+//
+// Going off duty with jobs still in the queue must be a deliberate choice,
+// otherwise those jobs sit unnoticed until the next shift:
+//   no release_open_jobs   -> 409, code OPEN_JOBS, details.open_jobs = n
+//   release_open_jobs=false -> go off duty and keep them (supervisors see
+//                              "off duty with n open jobs")
+//   release_open_jobs=true  -> hand them back for reassignment
 exports.setAvailability = asyncHandler(async (req, res) => {
-    const result = await db.query(
-        'UPDATE users SET is_available = $1 WHERE user_id = $2 RETURNING is_available',
-        [req.body.is_available, req.user.userId]
-    );
-    res.json({ is_available: result.rows[0].is_available });
+    const { is_available, release_open_jobs } = req.body;
+    const { userId } = req.user;
+
+    const outcome = await db.withTransaction(async (client) => {
+        const me = await client.query('SELECT full_name FROM users WHERE user_id = $1 FOR UPDATE', [userId]);
+        let released = [];
+        if (is_available === false) {
+            const open = await countLiveJobs(client, userId);
+            if (open > 0 && release_open_jobs === undefined) {
+                throw new AppError(
+                    409,
+                    `You have ${open} open job${open === 1 ? '' : 's'}. Keep ${open === 1 ? 'it' : 'them'}, or hand ${open === 1 ? 'it' : 'them'} back to your supervisor for reassignment?`,
+                    { code: 'OPEN_JOBS', details: { open_jobs: open } }
+                );
+            }
+            if (open > 0 && release_open_jobs === true) {
+                released = await releaseLiveJobs(client, userId, `Returned for reassignment: ${me.rows[0].full_name} went off duty`);
+            }
+        }
+        const updated = await client.query('UPDATE users SET is_available = $1 WHERE user_id = $2 RETURNING is_available', [
+            is_available,
+            userId,
+        ]);
+        return { is_available: updated.rows[0].is_available, released };
+    }, userId);
+
+    res.json({
+        is_available: outcome.is_available,
+        open_jobs: await countLiveJobs(db, userId),
+        released_jobs: outcome.released.length,
+    });
 });

@@ -8,12 +8,30 @@ const { AppError, asyncHandler } = require('../middleware/errorHandler');
 // messages and are mapped to HTTP statuses by the central error handler.
 
 // POST /api/dispatch/assign (SUPERVISOR, ADMIN)
+//
+// Optional body fields:
+//   expected_assignee_id  who the caller's screen shows holding the ticket
+//                         (null = unassigned). If someone else changed it in
+//                         the meantime the request fails with 409 and code
+//                         STALE_ASSIGNMENT instead of silently overriding them.
+//   allow_off_duty        confirm assigning a technician who is off duty
+//                         (otherwise 409, code STAFF_OFF_DUTY).
 exports.assignTechnician = asyncHandler(async (req, res) => {
     const { complaint_id, staff_user_id } = req.body;
+    const checkExpected = Object.prototype.hasOwnProperty.call(req.body, 'expected_assignee_id');
+    const expected = checkExpected ? req.body.expected_assignee_id : null;
+    const allowOffDuty = req.body.allow_off_duty === true;
     const supervisorId = req.user.userId;
 
     await db.withTransaction(async (client) => {
-        await client.query('CALL sp_supervisor_assign_task($1, $2, $3)', [complaint_id, staff_user_id, supervisorId]);
+        await client.query('CALL sp_supervisor_assign_task($1, $2, $3, $4, $5, $6)', [
+            complaint_id,
+            staff_user_id,
+            supervisorId,
+            checkExpected,
+            expected,
+            allowOffDuty,
+        ]);
     }, supervisorId);
 
     res.status(200).json({ message: 'Task successfully assigned to technician.' });
@@ -55,11 +73,26 @@ exports.getStaffQueue = asyncHandler(async (req, res) => {
 });
 
 /**
- * Loads an assignment FOR UPDATE inside the caller's transaction and checks
- * it belongs to the calling staff member. assignment_id is a sequential
- * integer, so without this check any staff account could act on any task.
+ * Locks a task for the calling technician inside their transaction and checks
+ * it is theirs (assignment_id is a sequential integer, so without the check
+ * any staff account could act on any task).
+ *
+ * Lock order matters: the ticket row is locked BEFORE the assignment row, the
+ * same order the dispatch procedures use. Locking the assignment first
+ * deadlocked against a supervisor reassigning the same ticket at the same
+ * moment (see migration 008).
  */
-async function loadOwnedAssignment(client, assignmentId, staffUserId) {
+async function lockOwnedAssignment(client, assignmentId, staffUserId) {
+    const peek = await client.query('SELECT complaint_id, staff_user_id FROM complaint_assignments WHERE assignment_id = $1', [
+        assignmentId,
+    ]);
+    if (peek.rows.length === 0) {
+        throw new AppError(404, 'Assignment not found.');
+    }
+    if (peek.rows[0].staff_user_id !== staffUserId) {
+        throw new AppError(403, 'You can only act on tasks assigned to you.');
+    }
+    await client.query('SELECT 1 FROM complaints WHERE complaint_id = $1 FOR UPDATE', [peek.rows[0].complaint_id]);
     const result = await client.query(
         `SELECT assignment_id, complaint_id, staff_user_id, current_state
          FROM complaint_assignments
@@ -67,12 +100,11 @@ async function loadOwnedAssignment(client, assignmentId, staffUserId) {
          FOR UPDATE`,
         [assignmentId]
     );
-    if (result.rows.length === 0) {
-        throw new AppError(404, 'Assignment not found.');
-    }
     const assignment = result.rows[0];
-    if (assignment.staff_user_id !== staffUserId) {
-        throw new AppError(403, 'You can only act on tasks assigned to you.');
+    if (assignment.current_state === 'DECLINED') {
+        throw new AppError(409, 'This job was reassigned or withdrawn by your supervisor and is no longer yours.', {
+            code: 'TASK_REASSIGNED',
+        });
     }
     return assignment;
 }
@@ -82,7 +114,7 @@ exports.startWork = asyncHandler(async (req, res) => {
     const staffId = req.user.userId;
 
     const complaintId = await db.withTransaction(async (client) => {
-        const assignment = await loadOwnedAssignment(client, req.params.assignment_id, staffId);
+        const assignment = await lockOwnedAssignment(client, req.params.assignment_id, staffId);
         if (assignment.current_state !== 'ASSIGNED') {
             throw new AppError(409, `This task is ${assignment.current_state}, not ASSIGNED, and cannot be started.`);
         }
@@ -103,7 +135,7 @@ exports.markWorkCompleted = asyncHandler(async (req, res) => {
     const staffId = req.user.userId;
 
     const complaintId = await db.withTransaction(async (client) => {
-        const assignment = await loadOwnedAssignment(client, req.params.assignment_id, staffId);
+        const assignment = await lockOwnedAssignment(client, req.params.assignment_id, staffId);
         if (!['ASSIGNED', 'IN_PROGRESS'].includes(assignment.current_state)) {
             throw new AppError(409, `This task is already ${assignment.current_state} and cannot be marked done.`);
         }
