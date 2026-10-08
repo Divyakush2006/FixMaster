@@ -9,17 +9,29 @@ const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
 // ---- Configuration checks (fail at startup, not on the first request) --------
 
-const EXAMPLE_JWT_SECRET = 'REDACTED-published-example-secret';
 const isProduction = process.env.NODE_ENV === 'production';
 
+// SHA-256 of signing secrets that have been published (earlier versions of
+// this repository shipped one as an "example" value). Anyone can forge a
+// token for any user - including ADMIN - with a published secret, so they are
+// refused in production. Only the hashes are kept, never the secrets.
+const PUBLISHED_JWT_SECRET_HASHES = new Set(['595f9a3dfd65ec7992d8dafbfbc0fb2b751110268d0d4a230a35a074f81c3da2']);
+const sha256 = (value) => require('crypto').createHash('sha256').update(value).digest('hex');
+
 if (!process.env.JWT_SECRET) {
-    throw new Error('JWT_SECRET is not set. Copy .env.example to .env and set a real secret.');
+    if (isProduction || process.env.NODE_ENV === 'test') {
+        throw new Error('JWT_SECRET is not set. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"');
+    }
+    // Local development without a configured secret: use a random one for
+    // this process only, so no secret ever needs to be committed. Sessions
+    // end when the API restarts; set JWT_SECRET in .env to keep them.
+    process.env.JWT_SECRET = require('crypto').randomBytes(48).toString('hex');
+    console.warn('[WARN] JWT_SECRET is not set; using a random per-process secret (development only). Sessions end on restart.');
 }
+const publishedSecret = PUBLISHED_JWT_SECRET_HASHES.has(sha256(process.env.JWT_SECRET));
 if (isProduction) {
-    // Anyone who can read the repo knows the example secret and could forge a
-    // token for any user, including ADMIN.
-    if (process.env.JWT_SECRET === EXAMPLE_JWT_SECRET) {
-        throw new Error('JWT_SECRET is still the committed example value. Set a unique secret for production.');
+    if (publishedSecret) {
+        throw new Error('JWT_SECRET has been published and must not be used. Set a unique secret for production.');
     }
     if (process.env.JWT_SECRET.length < 32) {
         throw new Error('JWT_SECRET must be at least 32 characters in production.');
@@ -27,8 +39,8 @@ if (isProduction) {
     if (!process.env.CORS_ORIGIN) {
         throw new Error('CORS_ORIGIN must be set in production (comma-separated list of allowed frontend origins).');
     }
-} else if (process.env.JWT_SECRET === EXAMPLE_JWT_SECRET && process.env.NODE_ENV !== 'test') {
-    console.warn('[WARN] JWT_SECRET is the committed example value. Fine for local dev, never deploy like this.');
+} else if (publishedSecret && process.env.NODE_ENV !== 'test') {
+    console.warn('[WARN] JWT_SECRET is a published value. Replace it in .env; never deploy with it.');
 }
 
 // Behind a reverse proxy / load balancer, req.ip is the proxy's address

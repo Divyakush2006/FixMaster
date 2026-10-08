@@ -177,7 +177,7 @@ business rules live in the database (`database/migrations/003_programmable_objec
 git clone https://github.com/Divyakush2006/FixMaster.git
 cd FixMaster
 
-cp .env.example .env              # defaults point at a local PostgreSQL
+cp .env.example .env              # then put your local PostgreSQL password in DATABASE_URL
 npm ci
 npm run db:migrate                # create or upgrade the schema
 npm run db:seed                   # load the VIT L-Block demo dataset
@@ -224,12 +224,14 @@ on start. To load demo data, run the one-shot `seed` service (`docker compose --
 ## Configuration
 
 All settings live in `.env`; see [`.env.example`](.env.example) for the full,
-commented list. Only `DATABASE_URL` and `JWT_SECRET` are required.
+commented list. Only `DATABASE_URL` is required for local development; production also
+requires a strong `JWT_SECRET` and `CORS_ORIGIN`. No credential is ever committed: `.env`
+is git-ignored and `.env.example` holds placeholders only.
 
 | Variable | Purpose | Default |
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL connection string (TLS is enabled automatically for managed providers such as Neon) | local `fix_master_db` |
-| `JWT_SECRET` | Signing key for session tokens; must be strong in production | example value |
+| `JWT_SECRET` | Signing key for session tokens; required (32+ random characters) in production | random per run in development |
 | `JWT_EXPIRES_IN` / `JWT_ADMIN_EXPIRES_IN` | Session length for users and administrators | `24h` / `8h` |
 | `CORS_ORIGIN` | Allowed web origin; required in production | none |
 | `TRUST_PROXY` | Set when running behind a reverse proxy | off |

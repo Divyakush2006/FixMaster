@@ -14,6 +14,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: No credentials in the repository (gitleaks, rules in .gitleaks.toml)
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 \
+            dir /repo --config /repo/.gitleaks.toml --redact --no-banner
+
   backend:
     name: API tests (PostgreSQL ${{ matrix.postgres }})
     runs-on: ubuntu-latest
@@ -26,8 +36,10 @@ jobs:
         image: postgres:${{ matrix.postgres }}-alpine
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: <password>
           POSTGRES_DB: postgres
+          # Throwaway database reachable only from this job: no password, so
+          # none has to be written into the repository.
+          POSTGRES_HOST_AUTH_METHOD: trust
         ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U postgres"
@@ -35,7 +47,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      TEST_DATABASE_URL: postgresql://postgres:<password>@localhost:5432/fix_master_test
+      TEST_DATABASE_URL: postgresql://postgres@localhost:5432/fix_master_test
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -76,7 +88,6 @@ jobs:
     env:
       WEB_PORT: 8080
       CORS_ORIGIN: http://localhost:8080
-      POSTGRES_PASSWORD: <generated-per-run>
     steps:
       - uses: actions/checkout@v5
       - name: The API refuses to start in production with a weak secret
@@ -85,13 +96,17 @@ jobs:
           if docker run --rm -e NODE_ENV=production -e JWT_SECRET=short -e CORS_ORIGIN=x -e DATABASE_URL=postgresql://x@localhost/x fix-master-api node -e "require('./src/app')"; then
             echo "API started with a weak JWT_SECRET"; exit 1
           fi
-      - name: Generate a throwaway JWT secret for this run
+      - name: Generate throwaway secrets for this run
         # Job-wide (via GITHUB_ENV): every later compose command, including the
-        # cleanup step, interpolates the compose file and needs it.
+        # cleanup step, interpolates the compose file and needs them. Nothing
+        # is written into the repository.
         run: |
           secret=$(openssl rand -hex 48)
+          dbpass=$(openssl rand -hex 24)
           echo "::add-mask::$secret"
+          echo "::add-mask::$dbpass"
           echo "JWT_SECRET=$secret" >> "$GITHUB_ENV"
+          echo "POSTGRES_PASSWORD=$dbpass" >> "$GITHUB_ENV"
       - name: Start the stack
         run: docker compose up -d --build --wait
       - name: Smoke test through nginx

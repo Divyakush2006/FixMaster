@@ -225,7 +225,7 @@ These were deliberately left out. Each is either a product decision, out of scop
 **Local development**
 
 ```bash
-cp .env.example .env              # points at a local PostgreSQL
+cp .env.example .env              # then put your local PostgreSQL password in DATABASE_URL
 npm ci
 npm run db:migrate                # create/upgrade the schema
 npm run db:seed                   # optional demo data (password: Password@123)

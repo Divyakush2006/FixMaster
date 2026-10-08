@@ -1,0 +1,32 @@
+# Secret scanning configuration (gitleaks, https://github.com/gitleaks/gitleaks).
+# CI runs it on every push and pull request; run it locally with:
+#   docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 dir /repo --config /repo/.gitleaks.toml
+#
+# The default rule set is extended with patterns it does not cover, both of
+# which have actually leaked in this project's history.
+
+title = "FixMaster secret scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "neon-database-password"
+description = "Neon PostgreSQL password"
+regex = '''npg_[A-Za-z0-9]{8,}'''
+keywords = ["npg_"]
+
+[[rules]]
+id = "database-url-with-password"
+description = "Database connection string with an inline password"
+# Placeholders (<...>, ${VAR}) and the literal words "password"/"pass" are not secrets.
+regex = '''(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|amqp)://[^:/\s"'@]+:([^@/\s"'<>${}]{4,})@'''
+secretGroup = 1
+keywords = ["://"]
+
+[[rules.allowlists]]
+regexes = ['''^(?i:password|pass)$''']
+
+[[allowlists]]
+description = "Lock files contain integrity hashes, not secrets"
+paths = ['''(^|/)package-lock\.json$''']

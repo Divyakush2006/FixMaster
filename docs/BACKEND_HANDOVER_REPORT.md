@@ -21,7 +21,7 @@ NODE_ENV=development
 DATABASE_URL="<ADD FROM THE NEOM CONSOLE>"
 
 # JWT Authentication Secrets
-JWT_SECRET="REDACTED-published-example-secret"
+JWT_SECRET="<generate: node -e \"console.log(require('crypto').randomBytes(48).toString('hex'))\">"
 JWT_EXPIRES_IN="24h"
 ```
 

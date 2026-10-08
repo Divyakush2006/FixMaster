@@ -14,13 +14,26 @@
  * at load time.
  */
 const { Client } = require('pg');
+require('dotenv').config({ quiet: true });
 
-const TEST_DB_URL =
-    process.env.TEST_DATABASE_URL || 'postgresql://postgres:<password>@localhost:5432/fix_master_test';
+/**
+ * TEST_DATABASE_URL, or else the developer's own DATABASE_URL (from .env)
+ * pointed at a fix_master_test database - so no credentials live in the repo.
+ */
+function testDatabaseUrl() {
+    if (process.env.TEST_DATABASE_URL) return process.env.TEST_DATABASE_URL;
+    if (process.env.DATABASE_URL) {
+        const url = new URL(process.env.DATABASE_URL);
+        url.pathname = '/fix_master_test';
+        return url.toString();
+    }
+    return 'postgresql://localhost:5432/fix_master_test';
+}
+const TEST_DB_URL = testDatabaseUrl();
 
 process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = TEST_DB_URL;
-process.env.JWT_SECRET = 'REDACTED-test-secret';
+process.env.JWT_SECRET = require('crypto').randomBytes(32).toString('hex'); // fresh for every run
 // Rate limits are effectively off for the suite (it logs in many times from
 // one IP); the limiter itself is exercised by its library's own tests.
 process.env.RATE_LIMIT_AUTH_MAX = '1000000';
