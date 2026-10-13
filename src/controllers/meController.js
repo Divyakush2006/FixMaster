@@ -4,6 +4,7 @@ const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { PUBLIC_USER_COLUMNS, hashPassword } = require('../services/userService');
 const { signToken } = require('../middleware/auth');
 const { countLiveJobs, releaseLiveJobs } = require('../services/taskService');
+const { managedBlocks } = require('../services/scopeService');
 
 // GET /api/me - full profile of the caller (password_hash never selected).
 exports.getMe = asyncHandler(async (req, res) => {
@@ -11,7 +12,12 @@ exports.getMe = asyncHandler(async (req, res) => {
     if (result.rows.length === 0) {
         throw new AppError(404, 'User not found.');
     }
-    res.json(result.rows[0]);
+    const me = result.rows[0];
+    // Supervisors see which blocks they look after (block scoping, migration 009).
+    if (me.role === 'SUPERVISOR') {
+        me.managed_blocks = await managedBlocks(me.user_id);
+    }
+    res.json(me);
 });
 
 // GET /api/me/allotment - the student's current room (404 if none).

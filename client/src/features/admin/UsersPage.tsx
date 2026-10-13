@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, LockOpen, Power, UserPlus } from 'lucide-react';
-import { adminApi } from '../../api/endpoints';
+import { Building2, KeyRound, LockOpen, MapPin, Power, UserPlus } from 'lucide-react';
+import { adminApi, metaApi } from '../../api/endpoints';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
@@ -21,7 +21,7 @@ import { Pagination } from '../../components/ui/Pagination';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
 import { RoleBadge, SpecializationBadge } from '../../components/common/Badges';
 import { CreateUserPayload, Role, Specialization, User } from '../../types';
-import { ROLE_LABEL, SPECIALIZATION_LABEL } from '../../utils/labels';
+import { ROLE_LABEL, SPECIALIZATION_LABEL, blockLabel } from '../../utils/labels';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
 import { PASSWORD_HINT, passwordProblem } from '../../utils/password';
 
@@ -46,6 +46,7 @@ export const UsersPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const [resetting, setResetting] = useState<User | null>(null);
+  const [scoping, setScoping] = useState<User | null>(null);
   const q = useDebouncedValue(search.trim(), 300);
 
   // Search, filters and paging run on the server, so the page stays fast
@@ -227,7 +228,7 @@ export const UsersPage: React.FC = () => {
                     <Th>Name</Th>
                     <Th>ID</Th>
                     <Th>Role</Th>
-                    <Th>Trade</Th>
+                    <Th>Trade / blocks</Th>
                     <Th>Status</Th>
                     <Th>Last sign-in</Th>
                     <Th className="text-right">Actions</Th>
@@ -255,7 +256,22 @@ export const UsersPage: React.FC = () => {
                         <Td>
                           <RoleBadge role={u.role} />
                         </Td>
-                        <Td>{u.specialization ? <SpecializationBadge specialization={u.specialization} /> : <span className="text-slate-500">—</span>}</Td>
+                        <Td>
+                          {u.specialization ? (
+                            <div className="space-y-1">
+                              <SpecializationBadge specialization={u.specialization} />
+                              {u.home_block_id && <p className="text-xs text-slate-500">Based in {blockLabel(u.home_block_id)}</p>}
+                            </div>
+                          ) : u.role === 'SUPERVISOR' ? (
+                            u.managed_blocks && u.managed_blocks.length ? (
+                              <span className="text-xs text-slate-700">{u.managed_blocks.map(blockLabel).join(', ')}</span>
+                            ) : (
+                              <Badge tone="warning">No blocks</Badge>
+                            )
+                          ) : (
+                            <span className="text-slate-500">—</span>
+                          )}
+                        </Td>
                         <Td>
                           <div className="flex flex-wrap gap-1.5">
                             {u.is_active ? (
@@ -282,6 +298,16 @@ export const UsersPage: React.FC = () => {
                             {isLocked(u) && (
                               <Button size="sm" variant="secondary" icon={LockOpen} disabled={unlock.isPending} onClick={() => unlock.mutate(u)}>
                                 Unlock
+                              </Button>
+                            )}
+                            {u.role === 'SUPERVISOR' && (
+                              <Button size="sm" variant="secondary" icon={Building2} onClick={() => setScoping(u)}>
+                                Blocks
+                              </Button>
+                            )}
+                            {u.role === 'STAFF' && (
+                              <Button size="sm" variant="secondary" icon={MapPin} onClick={() => setScoping(u)}>
+                                Home block
                               </Button>
                             )}
                             <Button size="sm" variant="secondary" icon={KeyRound} onClick={() => setResetting(u)}>
@@ -314,6 +340,8 @@ export const UsersPage: React.FC = () => {
 
       {creating && <CreateUserModal onClose={() => setCreating(false)} />}
       {resetting && <ResetPasswordModal user={resetting} onClose={() => setResetting(null)} />}
+      {scoping && scoping.role === 'SUPERVISOR' && <SupervisorBlocksModal user={scoping} onClose={() => setScoping(null)} />}
+      {scoping && scoping.role === 'STAFF' && <HomeBlockModal user={scoping} onClose={() => setScoping(null)} />}
     </div>
   );
 };
@@ -479,6 +507,144 @@ const ResetPasswordModal: React.FC<{ user: User; onClose: () => void }> = ({ use
           {(a) => <PasswordInput {...a} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />}
         </Field>
       </form>
+    </Modal>
+  );
+};
+
+/** Admin: the hostel blocks a supervisor looks after (they see tickets there only). */
+const SupervisorBlocksModal: React.FC<{ user: User; onClose: () => void }> = ({ user, onClose }) => {
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: blocks = [], isLoading } = useQuery({ queryKey: ['meta-blocks'], queryFn: metaApi.getBlocks });
+  const [chosen, setChosen] = useState<string[]>(user.managed_blocks ?? []);
+  const [error, setError] = useState<string | null>(null);
+  const toggle = (id: string) => setChosen((c) => (c.includes(id) ? c.filter((b) => b !== id) : [...c, id]));
+  const mutation = useMutation({
+    mutationFn: () => adminApi.setSupervisorBlocks(user.user_id, chosen),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      showToast(
+        'Blocks updated',
+        'success',
+        res.managed_blocks.length
+          ? `${user.full_name} now looks after ${res.managed_blocks.map(blockLabel).join(', ')}.`
+          : `${user.full_name} has no blocks.`
+      );
+      onClose();
+    },
+    onError: (err: Error) => setError(err.message || 'Could not update blocks.'),
+  });
+
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="Blocks this supervisor looks after"
+      subtitle={`${user.full_name} · ${user.reg_or_emp_id}`}
+      maxWidth="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button loading={mutation.isPending} onClick={() => mutation.mutate()}>
+            Save blocks
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {error && <Alert tone="danger">{error}</Alert>}
+        <p className="text-[13px] text-slate-600">
+          Supervisors see, dispatch and report on tickets only in these blocks. With none selected they see no tickets.
+        </p>
+        {isLoading ? (
+          <p className="text-[13px] text-slate-500">Loading blocks…</p>
+        ) : (
+          <fieldset>
+            <legend className="sr-only">Blocks</legend>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {blocks.map((b) => (
+                <label
+                  key={b.block_id}
+                  className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-[13px] hover:bg-slate-50 has-[:checked]:border-brand-300 has-[:checked]:bg-brand-50"
+                >
+                  <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={chosen.includes(b.block_id)} onChange={() => toggle(b.block_id)} />
+                  <span className="truncate">{b.block_name}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
+        <div className="flex gap-3 text-xs">
+          <button type="button" className="text-brand-700 hover:underline" onClick={() => setChosen(blocks.map((b) => b.block_id))}>
+            Select all
+          </button>
+          <button type="button" className="text-brand-700 hover:underline" onClick={() => setChosen([])}>
+            Clear
+          </button>
+          <span className="ml-auto text-slate-500">{chosen.length} selected</span>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+/** Admin: the block a technician is based in (auto-dispatch prefers them there). */
+const HomeBlockModal: React.FC<{ user: User; onClose: () => void }> = ({ user, onClose }) => {
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: blocks = [] } = useQuery({ queryKey: ['meta-blocks'], queryFn: metaApi.getBlocks });
+  const [block, setBlock] = useState(user.home_block_id ?? '');
+  const [error, setError] = useState<string | null>(null);
+  const mutation = useMutation({
+    mutationFn: () => adminApi.updateUser(user.user_id, { home_block_id: block || null }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      queryClient.invalidateQueries({ queryKey: ['staff-roster'] });
+      showToast(
+        'Home block updated',
+        'success',
+        block ? `${user.full_name} is based in ${blockLabel(block)}.` : `${user.full_name} has no home block.`
+      );
+      onClose();
+    },
+    onError: (err: Error) => setError(err.message || 'Could not update the home block.'),
+  });
+
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="Home block"
+      subtitle={`${user.full_name} · ${user.reg_or_emp_id}`}
+      maxWidth="md"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button loading={mutation.isPending} onClick={() => mutation.mutate()}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {error && <Alert tone="danger">{error}</Alert>}
+        <Field label="Based in" hint="Automatic dispatch prefers technicians based in the ticket's block; supervisors see them first when assigning.">
+          {(a) => (
+            <Select {...a} value={block} onChange={(e) => setBlock(e.target.value)}>
+              <option value="">No home block (any block)</option>
+              {blocks.map((b) => (
+                <option key={b.block_id} value={b.block_id}>
+                  {b.block_name}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+      </div>
     </Modal>
   );
 };

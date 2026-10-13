@@ -8,7 +8,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Skeleton } from '../../components/ui/PageLoader';
-import { PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
+import { PriorityBadge, SpecializationBadge, SlaBadge } from '../../components/common/Badges';
 import { DispatchDrawer } from './DispatchDrawer';
 import { Complaint } from '../../types';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
@@ -55,6 +55,7 @@ export const EscalatedQueue: React.FC = () => {
                     <span className="font-mono text-xs text-slate-500">{ticketRef(c.complaint_id)}</span>
                     <PriorityBadge priority={c.priority} />
                     <SpecializationBadge specialization={c.required_specialization} />
+                    <SlaBadge complaint={c} />
                   </div>
                   <p className="font-medium text-slate-900">{c.issue_name}</p>
                   <p className="text-xs text-slate-500">

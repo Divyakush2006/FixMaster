@@ -207,3 +207,10 @@ ON CONFLICT DO NOTHING;
 -- subcategory created through the column default collides with id 1.
 SELECT setval(pg_get_serial_sequence('complaint_categories', 'category_id'), (SELECT MAX(category_id) FROM complaint_categories));
 SELECT setval(pg_get_serial_sequence('complaint_subcategories', 'subcategory_id'), (SELECT MAX(subcategory_id) FROM complaint_subcategories));
+
+-- 13. Supervisor responsibilities (migration 009).
+-- Mr. R. Sundaram looks after L-Block, so he sees and dispatches L-Block
+-- tickets only. Administrators remain campus-wide.
+INSERT INTO supervisor_blocks (supervisor_id, block_id) VALUES
+('u002-supv-0001-uuid-000000000002', 'L_BLOCK')
+ON CONFLICT DO NOTHING;

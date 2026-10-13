@@ -5,6 +5,7 @@ const SPECIALIZATIONS = ['CLEANING', 'ELECTRICIAN', 'CARPENTER', 'AC_TECH', 'PLU
 const TICKET_SCOPES = ['ROOM', 'COMMON_AREA'];
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'];
 const STATUSES = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING_VERIFICATION', 'COMPLETED', 'ESCALATED', 'REJECTED', 'CANCELLED'];
+const SLA_STATUSES = ['ON_TRACK', 'AT_RISK', 'OVERDUE', 'MET', 'BREACHED'];
 
 // bcrypt only uses the first 72 BYTES of a password and silently ignores the
 // rest, so two passwords sharing a 72-byte prefix are interchangeable.
@@ -137,6 +138,7 @@ const createComplaintValidators = [
 const listComplaintsValidators = [
     query('status').optional().isIn(STATUSES).withMessage(`status must be one of: ${STATUSES.join(', ')}.`),
     query('block_id').optional().trim().notEmpty(),
+    query('sla').optional().isIn(SLA_STATUSES).withMessage(`sla must be one of: ${SLA_STATUSES.join(', ')}.`),
     query('q').optional().isString().trim().isLength({ max: 100 }).withMessage('q must be at most 100 characters.'),
     query('limit').optional().isInt({ min: 1, max: 500 }).withMessage('limit must be between 1 and 500.').toInt(),
     query('offset').optional().isInt({ min: 0 }).withMessage('offset must be 0 or more.').toInt(),
@@ -203,6 +205,8 @@ const blockIdParamValidators = [
 
 const listStaffValidators = [
     query('specialization').optional().isIn(SPECIALIZATIONS).withMessage(`specialization must be one of: ${SPECIALIZATIONS.join(', ')}.`),
+    // The ticket's block: technicians based there are listed first.
+    query('block_id').optional().isString().trim().notEmpty().isLength({ max: 10 }),
     handleValidation,
 ];
 
@@ -268,8 +272,25 @@ const adminUpdateUserValidators = [
     body('is_active').optional().isBoolean({ strict: true }).withMessage('is_active must be true or false.'),
     body('is_available').optional().isBoolean({ strict: true }).withMessage('is_available must be true or false.'),
     body('unlock').optional().isBoolean({ strict: true }).withMessage('unlock must be true or false.'),
-    body().custom((value) => value && (value.is_active !== undefined || value.is_available !== undefined || value.unlock === true))
-        .withMessage('Provide is_active, is_available and/or unlock: true.'),
+    // A technician's home block (null clears it).
+    body('home_block_id')
+        .optional({ values: 'undefined' })
+        .custom((v) => v === null || (typeof v === 'string' && v.trim().length > 0 && v.length <= 10))
+        .withMessage('home_block_id must be a block id or null.'),
+    body().custom(
+        (value) =>
+            value &&
+            (value.is_active !== undefined || value.is_available !== undefined || value.unlock === true || value.home_block_id !== undefined)
+    )
+        .withMessage('Provide is_active, is_available, home_block_id and/or unlock: true.'),
+    handleValidation,
+];
+
+// PUT /api/admin/users/:user_id/blocks { block_ids: [...] } - a supervisor's blocks.
+const adminSetSupervisorBlocksValidators = [
+    userIdParam,
+    body('block_ids').isArray({ max: 100 }).withMessage('block_ids must be a list of block ids.'),
+    body('block_ids.*').isString().trim().notEmpty().isLength({ max: 10 }).withMessage('Each block id must be text of at most 10 characters.'),
     handleValidation,
 ];
 
@@ -371,6 +392,7 @@ module.exports = {
     adminListAllotmentsValidators,
     adminAuditValidators,
     adminUpdateUserValidators,
+    adminSetSupervisorBlocksValidators,
     adminResetPasswordValidators,
     adminAllotValidators,
     adminEndAllotmentValidators,

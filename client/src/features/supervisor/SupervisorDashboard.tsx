@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Clock3, Inbox, Layers, Star, Wrench } from 'lucide-react';
-import { analyticsApi, metaApi } from '../../api/endpoints';
+import { AlarmClock, AlertTriangle, CheckCircle2, ClipboardCheck, Clock3, Gauge, Hourglass, Inbox, Layers, Star, Wrench } from 'lucide-react';
+import { analyticsApi, meApi, metaApi } from '../../api/endpoints';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { StatCard } from '../../components/ui/StatCard';
@@ -13,6 +13,7 @@ import { Switch } from '../../components/ui/Switch';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
 import { coerceNumber } from '../../utils/formatters';
 import { cn } from '../../components/ui/cn';
+import { blockLabel } from '../../utils/labels';
 
 // One colour per lifecycle stage, used by both charts and the legend.
 const SERIES = [
@@ -39,6 +40,9 @@ export const SupervisorDashboard: React.FC = () => {
   const { data: staff = [] } = useQuery({ queryKey: ['staff-roster', 'all'], queryFn: () => metaApi.getStaff() });
   const idleHolders = staff.filter((s) => !s.is_available && s.active_task_count > 0);
   const idleJobs = idleHolders.reduce((n, s) => n + s.active_task_count, 0);
+  // Supervisors only see the blocks they look after; administrators see all.
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: meApi.getMe });
+  const managed = me?.role === 'SUPERVISOR' ? me.managed_blocks ?? [] : null;
 
   const blocks = useMemo(
     () =>
@@ -53,6 +57,10 @@ export const SupervisorDashboard: React.FC = () => {
         escalated: coerceNumber(b.escalated_count),
         commonArea: coerceNumber(b.common_area_issues),
         rating: coerceNumber(b.average_student_rating),
+        overdue: coerceNumber(b.overdue_count),
+        atRisk: coerceNumber(b.at_risk_count),
+        met: coerceNumber(b.sla_met_count),
+        breached: coerceNumber(b.sla_breached_count),
       })),
     [kpis]
   );
@@ -65,9 +73,16 @@ export const SupervisorDashboard: React.FC = () => {
       verification: acc.verification + b.verification,
       resolved: acc.resolved + b.resolved,
       escalated: acc.escalated + b.escalated,
+      overdue: acc.overdue + b.overdue,
+      atRisk: acc.atRisk + b.atRisk,
+      met: acc.met + b.met,
+      breached: acc.breached + b.breached,
     }),
-    { total: 0, notStarted: 0, inProgress: 0, verification: 0, resolved: 0, escalated: 0 }
+    { total: 0, notStarted: 0, inProgress: 0, verification: 0, resolved: 0, escalated: 0, overdue: 0, atRisk: 0, met: 0, breached: 0 }
   );
+  const finished = totals.met + totals.breached;
+  const compliance = finished ? Math.round((totals.met / finished) * 100) : null;
+  const scopeText = managed ? (managed.length ? managed.map(blockLabel).join(', ') : 'no blocks') : 'all hostel blocks';
 
   const pct = (n: number) => (totals.total ? `${Math.round((n / totals.total) * 100)}% of all tickets` : 'No tickets yet');
   const activeBlocks = blocks.filter((b) => b.total > 0);
@@ -96,8 +111,8 @@ export const SupervisorDashboard: React.FC = () => {
         title="Operations overview"
         description={
           dataUpdatedAt
-            ? `Maintenance activity across all hostel blocks · updated ${new Date(dataUpdatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
-            : 'Maintenance activity across all hostel blocks.'
+            ? `Maintenance activity in ${scopeText} · updated ${new Date(dataUpdatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
+            : `Maintenance activity in ${scopeText}.`
         }
         actions={
           <ButtonLink to="/supervisor/all-complaints" variant="secondary" icon={Inbox}>
@@ -107,6 +122,26 @@ export const SupervisorDashboard: React.FC = () => {
       />
 
       <div className="space-y-6">
+        {managed && managed.length === 0 && (
+          <Alert tone="info" title="You have not been given any blocks yet">
+            Supervisors see and dispatch tickets only for the hostel blocks they look after. Ask an administrator to assign your blocks.
+          </Alert>
+        )}
+
+        {totals.overdue > 0 && (
+          <Alert
+            tone="danger"
+            title={`${totals.overdue} ${totals.overdue === 1 ? 'ticket is' : 'tickets are'} past the service deadline`}
+            action={
+              <ButtonLink to="/supervisor/all-complaints?sla=OVERDUE" size="sm" variant="danger">
+                View overdue
+              </ButtonLink>
+            }
+          >
+            Each issue type has a time within which it should be fixed. Dispatch or chase these first.
+          </Alert>
+        )}
+
         {totals.escalated > 0 && (
           <Alert
             tone="danger"
@@ -149,6 +184,27 @@ export const SupervisorDashboard: React.FC = () => {
             highlight={totals.escalated > 0}
             loading={isLoading}
             subtitle={pct(totals.escalated)}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCard
+            title="Overdue"
+            value={totals.overdue}
+            icon={AlarmClock}
+            tone="danger"
+            highlight={totals.overdue > 0}
+            loading={isLoading}
+            subtitle="Open tickets past their deadline"
+          />
+          <StatCard title="Due soon" value={totals.atRisk} icon={Hourglass} tone="warning" loading={isLoading} subtitle="In the last quarter of their time" />
+          <StatCard
+            title="Fixed within SLA"
+            value={compliance === null ? '—' : `${compliance}%`}
+            icon={Gauge}
+            tone={compliance === null || compliance >= 90 ? 'success' : compliance >= 75 ? 'warning' : 'danger'}
+            loading={isLoading}
+            subtitle={finished ? `${totals.met} of ${finished} finished on time` : 'No finished work yet'}
           />
         </div>
 
@@ -244,16 +300,18 @@ export const SupervisorDashboard: React.FC = () => {
                   <Th className="text-right">Resolved</Th>
                   <Th className="text-right">Escalated</Th>
                   <Th className="text-right">Common areas</Th>
+                  <Th className="text-right">Overdue</Th>
+                  <Th className="text-right">Within SLA</Th>
                   <Th className="text-right">Avg. rating</Th>
                 </tr>
               </THead>
               {isLoading ? (
-                <TableSkeleton columns={9} rows={4} />
+                <TableSkeleton columns={11} rows={4} />
               ) : (
                 <TBody>
                   {tableBlocks.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="px-4 py-10 text-center text-[13px] text-slate-500">
+                      <td colSpan={11} className="px-4 py-10 text-center text-[13px] text-slate-500">
                         No tickets have been raised in any block yet.
                       </td>
                     </tr>
@@ -271,6 +329,10 @@ export const SupervisorDashboard: React.FC = () => {
                       <Td className="text-right tabular">{b.resolved}</Td>
                       <Td className={cn('text-right tabular', b.escalated > 0 && 'font-semibold text-rose-600')}>{b.escalated}</Td>
                       <Td className="text-right tabular">{b.commonArea}</Td>
+                      <Td className={cn('text-right tabular', b.overdue > 0 && 'font-semibold text-rose-600')}>{b.overdue}</Td>
+                      <Td className="text-right tabular">
+                        {b.met + b.breached > 0 ? `${Math.round((b.met / (b.met + b.breached)) * 100)}%` : <span className="text-slate-500">—</span>}
+                      </Td>
                       <Td className="text-right">
                         {b.rating > 0 ? (
                           <span className="inline-flex items-center gap-1 font-medium text-slate-900 tabular">

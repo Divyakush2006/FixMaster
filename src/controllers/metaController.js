@@ -33,13 +33,14 @@ exports.getCommonAreasByBlock = asyncHandler(async (req, res) => {
 // of querying the database directly, which made POST /dispatch/assign
 // unusable from any client.
 exports.getStaff = asyncHandler(async (req, res) => {
-    const { specialization } = req.query;
+    const { specialization, block_id } = req.query;
 
     let query = `
         SELECT
             u.user_id,
             u.full_name,
             u.specialization,
+            u.home_block_id,
             u.is_available,
             (COUNT(ca.assignment_id) FILTER (WHERE ca.current_state IN ('ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS')))::int AS active_task_count
         FROM users u
@@ -51,7 +52,13 @@ exports.getStaff = asyncHandler(async (req, res) => {
         params.push(specialization);
         query += ` AND u.specialization = $${params.length}`;
     }
-    query += ` GROUP BY u.user_id ORDER BY u.full_name ASC`;
+    // With a block given, technicians based in that block come first.
+    let order = 'u.full_name ASC';
+    if (block_id) {
+        params.push(block_id);
+        order = `(u.home_block_id IS NOT DISTINCT FROM $${params.length}) DESC, u.full_name ASC`;
+    }
+    query += ` GROUP BY u.user_id ORDER BY ${order}`;
 
     const result = await db.query(query, params);
     res.json(result.rows);

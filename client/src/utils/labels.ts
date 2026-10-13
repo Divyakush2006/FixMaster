@@ -1,4 +1,4 @@
-import { Complaint, ComplaintStatus, Priority, Role, RoomType, Specialization, TicketScope } from '../types';
+import { Complaint, ComplaintStatus, Priority, Role, RoomType, SlaStatus, Specialization, TicketScope } from '../types';
 
 /**
  * Display vocabulary. The API speaks in enum codes (PENDING_VERIFICATION,
@@ -22,6 +22,50 @@ export const PRIORITY_LABEL: Record<Priority, string> = {
   MEDIUM: 'Medium',
   LOW: 'Low',
 };
+
+export const SLA_LABEL: Record<SlaStatus, string> = {
+  ON_TRACK: 'On track',
+  AT_RISK: 'Due soon',
+  OVERDUE: 'Overdue',
+  MET: 'Within SLA',
+  BREACHED: 'SLA missed',
+  NOT_APPLICABLE: '',
+};
+
+/** "3h", "45m", "2d 4h" - a compact duration for SLA text. */
+export function shortDuration(ms: number): string {
+  const mins = Math.max(Math.round(Math.abs(ms) / 60000), 1);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  return rest ? `${days}d ${rest}h` : `${days}d`;
+}
+
+/**
+ * One line about a ticket's deadline, e.g. "Due in 3h", "Overdue by 2h",
+ * "Done within SLA". Null when the SLA does not apply.
+ */
+export function slaText(c: Pick<Complaint, 'sla_status' | 'sla_due_at' | 'resolved_at' | 'closed_at'>, now = Date.now()): string | null {
+  if (!c.sla_status || c.sla_status === 'NOT_APPLICABLE' || !c.sla_due_at) return null;
+  const due = new Date(c.sla_due_at).getTime();
+  switch (c.sla_status) {
+    case 'ON_TRACK':
+    case 'AT_RISK':
+      return `Due in ${shortDuration(due - now)}`;
+    case 'OVERDUE':
+      return `Overdue by ${shortDuration(now - due)}`;
+    case 'MET':
+      return 'Done within SLA';
+    case 'BREACHED': {
+      const done = new Date(c.resolved_at || c.closed_at || due).getTime();
+      return `SLA missed by ${shortDuration(done - due)}`;
+    }
+    default:
+      return null;
+  }
+}
 
 export const PRIORITY_RANK: Record<Priority, number> = { EMERGENCY: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 

@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
+const { assertManagesComplaint } = require('../services/scopeService');
 
 // Validation of dispatch requests (complaint exists, is in a dispatchable
 // state, staff member exists, is active and has the right trade) lives in the
@@ -45,6 +46,7 @@ exports.autoDispatchCleaning = asyncHandler(async (req, res) => {
     const supervisorId = req.user.userId;
 
     const assignedStaffId = await db.withTransaction(async (client) => {
+        await assertManagesComplaint(req.user, complaint_id, client);
         const call = await client.query('CALL sp_auto_dispatch_cleaning($1, $2)', [complaint_id, null]);
         return call.rows[0] ? call.rows[0].p_assigned_staff_id : null;
     }, supervisorId);

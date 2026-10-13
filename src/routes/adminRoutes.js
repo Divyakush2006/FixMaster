@@ -12,6 +12,7 @@ router.get('/users/summary', admin.userSummary);
 router.post('/users', v.adminCreateUserValidators, admin.createUser);
 router.patch('/users/:user_id', v.adminUpdateUserValidators, admin.updateUser);
 router.post('/users/:user_id/reset-password', v.adminResetPasswordValidators, admin.resetPassword);
+router.put('/users/:user_id/blocks', v.adminSetSupervisorBlocksValidators, admin.setSupervisorBlocks);
 
 router.get('/audit', v.adminAuditValidators, admin.listAudit);
 
