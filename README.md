@@ -208,8 +208,10 @@ technicians in five trades: housekeeping `EMP_CLN_01`–`06`, electrical `EMP_EL
 plumbing `EMP_PLB_01`–`03`, AC `EMP_AC_01`–`03` and carpentry `EMP_CARP_01`–`02`.
 Sign in as two of the L-843 roommates to see a shared room ticket from both sides.
 
-> The demo password and the example `JWT_SECRET` are for local development only. In
-> production the API refuses to start with the example secret.
+> The demo password is for local development only. No signing secret is shipped:
+> generate your own `JWT_SECRET` per environment (with none set, local development
+> uses a random one per run). In production the API refuses to start without a
+> strong secret, and it rejects the secret published in this repository's early history.
 
 ### Run with Docker
 

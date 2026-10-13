@@ -14,16 +14,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/CodeClosed/FIX_MASTER.git"
+    "url": "git+https://github.com/Divyakush2006/FixMaster.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/CodeClosed/FIX_MASTER/issues"
+    "url": "https://github.com/Divyakush2006/FixMaster/issues"
   },
-  "homepage": "https://github.com/CodeClosed/FIX_MASTER#readme",
+  "homepage": "https://github.com/Divyakush2006/FixMaster#readme",
   "dependencies": {
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",

@@ -3,27 +3,35 @@
 > **To**: Backend Engineering Team  
 > **From**: Database Architecture Team  
 > **Course**: BCSE307L – Database Systems (Dr. Deepika J, VIT Vellore)  
-> **Database Status**: **100% Implemented & Verified Live on Neon Serverless PostgreSQL**  
-> **Live DB Engine**: PostgreSQL 16  
+> **Database Status**: **100% Implemented & Verified** on the project's own PostgreSQL (local and Docker)  
+> **DB Engine**: PostgreSQL 15/16  
 
 ---
 
-## 1. Live Database Connection & Environment
+## 1. Database Connection & Environment
 
-The database is live and hosted on Neon. Configure your backend `.env` file as follows:
+The project runs on its own PostgreSQL database: a local PostgreSQL 15
+install for development, or the `db` service in `docker-compose.yml`. The
+Neon database used during early development is not used by this project
+any more, and nothing in the code or configuration points to it. Configure your
+backend `.env` file (git-ignored; copy `.env.example`) as follows:
 
 ```env
 # Server Configuration
 PORT=5000
 NODE_ENV=development
 
-# Neon Serverless Cloud PostgreSQL Connection String
-DATABASE_URL="<ADD FROM THE NEOM CONSOLE>"
+# Your own PostgreSQL. Never commit a real connection string.
+DATABASE_URL="postgresql://postgres:<your-local-postgres-password>@localhost:5432/fix_master_db"
 
-# JWT Authentication Secrets
+# JWT Authentication Secret (generate a new one per environment)
 JWT_SECRET="<generate: node -e \"console.log(require('crypto').randomBytes(48).toString('hex'))\">"
 JWT_EXPIRES_IN="24h"
 ```
+
+A managed PostgreSQL (for example a Neon or Supabase project created under
+the team's own account) works too: put its URL in `DATABASE_URL` and TLS is
+enabled automatically.
 
 ---
 
