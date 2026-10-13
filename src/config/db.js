@@ -7,8 +7,20 @@ const int = (value, fallback) => {
     return Number.isFinite(n) && n > 0 ? n : fallback;
 };
 
+const baseConfig = connectionConfig();
+const statementTimeout = int(process.env.DB_STATEMENT_TIMEOUT_MS, 15000);
+
+// A PgBouncer pooler (Neon's "-pooler" host) rejects per-connection startup
+// parameters such as statement_timeout: libpq sends it in the startup packet
+// and the pooler answers "unsupported startup parameter". Passing it there
+// would make the very first query fail. On a pooled host we therefore leave it
+// out of the startup packet and set it per checked-out connection instead (see
+// the 'connect' handler below); on a direct/local connection we keep sending it
+// in the startup packet, which is reliable per-session.
+const isPooler = /-pooler\./.test(baseConfig.connectionString || '');
+
 const pool = new Pool({
-    ...connectionConfig(),
+    ...baseConfig,
     max: int(process.env.DB_POOL_MAX, 10),
     idleTimeoutMillis: int(process.env.DB_IDLE_TIMEOUT_MS, 30000),
     // Fail fast instead of queueing forever when the database is unreachable
@@ -16,9 +28,18 @@ const pool = new Pool({
     connectionTimeoutMillis: int(process.env.DB_CONNECT_TIMEOUT_MS, 5000),
     // A runaway query is cancelled server-side rather than pinning a
     // connection (and the request waiting on it) indefinitely.
-    statement_timeout: int(process.env.DB_STATEMENT_TIMEOUT_MS, 15000),
+    ...(isPooler ? {} : { statement_timeout: statementTimeout }),
     application_name: 'fix_master_api',
 });
+
+if (isPooler && statementTimeout > 0) {
+    // SET (not SET LOCAL) applies for the lifetime of this physical backend,
+    // so each connection the pool opens carries the cap. This complements the
+    // server-side default set on the Neon database/role.
+    pool.on('connect', (client) => {
+        client.query(`SET statement_timeout = ${statementTimeout}`).catch(() => {});
+    });
+}
 
 pool.on('error', (err) => {
     console.error('Unexpected error on idle PostgreSQL client', err);

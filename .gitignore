@@ -28,3 +28,4 @@ Thumbs.db
 
 # Temporary database backups
 database/backups/
+.neon

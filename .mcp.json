@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "Neon": {
+      "type": "http",
+      "url": "https://mcp.neon.tech/mcp?projectId=winter-lab-83490525"
+    }
+  }
+}

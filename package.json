@@ -37,5 +37,9 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@neon/config": "^1.9.1",
+    "@neon/env": "^1.6.1"
   }
 }
