@@ -203,6 +203,15 @@ const blockIdParamValidators = [
     handleValidation,
 ];
 
+const listNotificationsValidators = [
+    query('unread').optional().isBoolean().withMessage('unread must be true or false.'),
+    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('limit must be between 1 and 100.').toInt(),
+    query('offset').optional().isInt({ min: 0 }).withMessage('offset must be 0 or more.').toInt(),
+    handleValidation,
+];
+
+const notificationIdValidators = [param('id').isInt({ min: 1 }).withMessage('notification id is invalid.'), handleValidation];
+
 const listStaffValidators = [
     query('specialization').optional().isIn(SPECIALIZATIONS).withMessage(`specialization must be one of: ${SPECIALIZATIONS.join(', ')}.`),
     // The ticket's block: technicians based there are listed first.
@@ -385,6 +394,8 @@ module.exports = {
     feedbackValidators,
     blockIdParamValidators,
     listStaffValidators,
+    listNotificationsValidators,
+    notificationIdValidators,
     changePasswordValidators,
     availabilityValidators,
     adminCreateUserValidators,

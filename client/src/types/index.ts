@@ -357,3 +357,13 @@ export interface UserSummary {
   locked: number;
   deactivated: number;
 }
+
+export interface AppNotification {
+  notification_id: number;
+  kind: string;
+  title: string;
+  body: string | null;
+  complaint_id: string | null;
+  created_at: string;
+  read_at: string | null;
+}

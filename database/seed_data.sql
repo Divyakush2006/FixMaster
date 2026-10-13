@@ -214,3 +214,7 @@ SELECT setval(pg_get_serial_sequence('complaint_subcategories', 'subcategory_id'
 INSERT INTO supervisor_blocks (supervisor_id, block_id) VALUES
 ('u002-supv-0001-uuid-000000000002', 'L_BLOCK')
 ON CONFLICT DO NOTHING;
+
+-- 14. Loading demo data is not news: drop the notifications the triggers
+-- raised while inserting it, so every account starts with an empty inbox.
+DELETE FROM notifications;
