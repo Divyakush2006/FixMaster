@@ -228,6 +228,13 @@ const blockIdParamValidators = [
     handleValidation,
 ];
 
+const listNotificationsValidators = [
+    query('since').optional().isISO8601().withMessage('since must be an ISO date-time.'),
+    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('limit must be between 1 and 100.').toInt(),
+    query('offset').optional().isInt({ min: 0 }).withMessage('offset must be 0 or more.').toInt(),
+    handleValidation,
+];
+
 const listStaffValidators = [
     query('specialization').optional().isIn(SPECIALIZATIONS).withMessage(`specialization must be one of: ${SPECIALIZATIONS.join(', ')}.`),
     handleValidation,
@@ -391,6 +398,7 @@ module.exports = {
     feedbackValidators,
     blockIdParamValidators,
     listStaffValidators,
+    listNotificationsValidators,
     roomRequestValidators,
     declineRoomRequestValidators,
     changePasswordValidators,

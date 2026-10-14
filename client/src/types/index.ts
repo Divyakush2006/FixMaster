@@ -140,6 +140,16 @@ export interface RegisterPayload {
   room_id?: string;
 }
 
+/** A derived in-app notification (no stored read state; see the server's notificationFeed). */
+export interface AppNotification {
+  id: string;
+  kind: string;
+  title: string;
+  body: string | null;
+  complaint_id: string | null;
+  created_at: string;
+}
+
 export interface RoomRequest {
   status: 'PENDING' | 'DECLINED';
   block_id: string;

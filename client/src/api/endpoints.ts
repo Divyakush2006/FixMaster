@@ -30,6 +30,7 @@ import {
   UserSummary,
   RoomRequest,
   PendingAllotmentRequest,
+  AppNotification,
 } from '../types';
 
 // Three separate sign-in portals; each endpoint only accepts its own accounts.
@@ -171,6 +172,12 @@ export const metaApi = {
       method: 'GET',
       params: specialization ? { specialization } : undefined,
     }),
+};
+
+export const notificationsApi = {
+  /** Newest first, last 14 days. Unread is decided by the caller (it remembers when it last looked). */
+  list: (opts: { limit?: number; offset?: number } = {}) =>
+    apiFetch<AppNotification[]>('/notifications', { method: 'GET', params: { limit: 30, ...opts } }),
 };
 
 export const meApi = {

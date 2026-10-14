@@ -67,6 +67,9 @@ const studentCanSee = (student) => `(
     ))
 )`;
 
+// Shared with the notification feed so both apply the same residency rule.
+exports.studentCanSee = studentCanSee;
+
 /** Adds the viewer-specific action flags the UI needs. */
 function withViewerFlags(row, { role }) {
     const isStudent = role === 'STUDENT';
