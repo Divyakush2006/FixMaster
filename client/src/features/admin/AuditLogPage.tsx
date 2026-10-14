@@ -12,7 +12,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Pagination } from '../../components/ui/Pagination';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
 import { AuditEntry } from '../../types';
-import { blockLabel, ticketRef } from '../../utils/labels';
+import { ticketRef } from '../../utils/labels';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
 
 const PAGE_SIZE = 50;
@@ -26,8 +26,6 @@ const ACTION_LABEL: Record<string, string> = {
   'user.deactivate': 'Account deactivated',
   'user.reactivate': 'Account reactivated',
   'user.set_availability': 'Duty status changed',
-  'user.set_blocks': 'Supervisor blocks changed',
-  'user.set_home_block': 'Home block changed',
   'user.unlock': 'Account unlocked',
   'user.reset_password': 'Password reset',
   'allotment.request': 'Room requested at registration',
@@ -78,12 +76,6 @@ export function describeAudit(e: AuditEntry): string {
       return d.released_tickets ? `${d.reg_or_emp_id} · ${d.released_tickets} open task(s) returned to the queue` : String(d.reg_or_emp_id ?? '');
     case 'user.set_availability':
       return `${d.reg_or_emp_id} · ${d.is_available ? 'on duty' : 'off duty'}`;
-    case 'user.set_blocks': {
-      const list = (v: unknown) => (Array.isArray(v) && v.length ? v.map((b) => blockLabel(String(b))).join(', ') : 'none');
-      return `${d.reg_or_emp_id} · ${list(d.previous)} → ${list(d.block_ids)}`;
-    }
-    case 'user.set_home_block':
-      return `${d.reg_or_emp_id} · ${d.previous ? blockLabel(d.previous) : 'none'} → ${d.home_block_id ? blockLabel(d.home_block_id) : 'none'}`;
     case 'auth.account_locked':
       return `${d.failed_attempts} failed attempts · locked for ${d.locked_minutes} min (${d.portal} sign-in)`;
     case 'allotment.request':

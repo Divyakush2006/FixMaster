@@ -1,9 +1,9 @@
 import React from 'react';
-import { Complaint, ComplaintStatus, Priority, SlaStatus, Specialization, Role } from '../../types';
+import { ComplaintStatus, Priority, Specialization, Role } from '../../types';
 import { Badge, Tone } from '../ui/Badge';
 import { cn } from '../ui/cn';
-import { PRIORITY_LABEL, ROLE_LABEL, SLA_LABEL, SPECIALIZATION_LABEL, STATUS_LABEL, slaText } from '../../utils/labels';
-import { Sparkles, Zap, Hammer, Wind, Droplets, Clock, LucideIcon } from 'lucide-react';
+import { PRIORITY_LABEL, ROLE_LABEL, SPECIALIZATION_LABEL, STATUS_LABEL } from '../../utils/labels';
+import { Sparkles, Zap, Hammer, Wind, Droplets, LucideIcon } from 'lucide-react';
 
 const STATUS_TONE: Record<ComplaintStatus, Tone> = {
   OPEN: 'info',
@@ -89,32 +89,3 @@ const ROLE_TONE: Record<Role, Tone> = {
 };
 
 export const RoleBadge: React.FC<{ role: Role }> = ({ role }) => <Badge tone={ROLE_TONE[role] ?? 'neutral'}>{ROLE_LABEL[role] ?? role}</Badge>;
-
-const SLA_TONE: Record<SlaStatus, Tone> = {
-  ON_TRACK: 'neutral',
-  AT_RISK: 'warning',
-  OVERDUE: 'danger',
-  MET: 'success',
-  BREACHED: 'orange',
-  NOT_APPLICABLE: 'neutral',
-};
-
-type SlaFields = Pick<Complaint, 'sla_status' | 'sla_due_at' | 'resolved_at' | 'closed_at'>;
-
-/**
- * The ticket's deadline in a few words ("Due in 3h", "Overdue by 2h"), toned
- * by urgency. `quiet` hides it while the ticket is comfortably on track, for
- * dense tables where only problems should stand out.
- */
-export const SlaBadge: React.FC<{ complaint: SlaFields; quiet?: boolean }> = ({ complaint, quiet }) => {
-  const status = complaint.sla_status;
-  const text = slaText(complaint);
-  if (!status || !text) return null;
-  if (quiet && status === 'ON_TRACK') return null;
-  const due = complaint.sla_due_at ? new Date(complaint.sla_due_at).toLocaleString() : '';
-  return (
-    <Badge tone={SLA_TONE[status]} icon={<Clock className="h-3 w-3" aria-hidden />} title={`${SLA_LABEL[status]}. Deadline: ${due}`}>
-      {text}
-    </Badge>
-  );
-};

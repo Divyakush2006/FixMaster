@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { blockLabel, greeting, initials, isOpenStatus, shortDuration, slaText, STATUS_LABEL, ticketLocation, ticketRef } from './labels';
+import { blockLabel, greeting, initials, isOpenStatus, STATUS_LABEL, ticketLocation, ticketRef } from './labels';
 import { floorCode, floorLabel, roomNumberFor } from './formatters';
 
 describe('ticketRef', () => {
@@ -47,31 +47,5 @@ describe('room numbering', () => {
     expect(roomNumberFor(4, 28)).toBe('428');
     expect(roomNumberFor(10, 7)).toBe('1007');
     expect(floorLabel(0)).toBe('Ground floor');
-  });
-});
-
-describe('SLA wording', () => {
-  const now = Date.parse('2026-10-14T12:00:00Z');
-  const at = (hoursFromNow: number) => new Date(now + hoursFromNow * 3600000).toISOString();
-
-  it('formats short durations', () => {
-    expect(shortDuration(45 * 60000)).toBe('45m');
-    expect(shortDuration(3 * 3600000)).toBe('3h');
-    expect(shortDuration(52 * 3600000)).toBe('2d 4h');
-    expect(shortDuration(48 * 3600000)).toBe('2d');
-    expect(shortDuration(10)).toBe('1m');
-  });
-
-  it('describes open and finished tickets against their deadline', () => {
-    expect(slaText({ sla_status: 'ON_TRACK', sla_due_at: at(5), resolved_at: null, closed_at: null }, now)).toBe('Due in 5h');
-    expect(slaText({ sla_status: 'AT_RISK', sla_due_at: at(0.5), resolved_at: null, closed_at: null }, now)).toBe('Due in 30m');
-    expect(slaText({ sla_status: 'OVERDUE', sla_due_at: at(-2), resolved_at: null, closed_at: null }, now)).toBe('Overdue by 2h');
-    expect(slaText({ sla_status: 'MET', sla_due_at: at(-2), resolved_at: at(-3), closed_at: null }, now)).toBe('Done within SLA');
-    expect(slaText({ sla_status: 'BREACHED', sla_due_at: at(-5), resolved_at: at(-2), closed_at: null }, now)).toBe('SLA missed by 3h');
-  });
-
-  it('says nothing where no SLA applies', () => {
-    expect(slaText({ sla_status: 'NOT_APPLICABLE', sla_due_at: at(1), resolved_at: null, closed_at: null }, now)).toBeNull();
-    expect(slaText({ sla_status: undefined, sla_due_at: null, resolved_at: null, closed_at: null }, now)).toBeNull();
   });
 });

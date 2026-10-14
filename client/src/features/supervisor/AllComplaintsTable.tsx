@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ChevronRight } from 'lucide-react';
-import { complaintsApi, meApi, metaApi } from '../../api/endpoints';
+import { complaintsApi, metaApi } from '../../api/endpoints';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
@@ -12,52 +11,34 @@ import { Pagination } from '../../components/ui/Pagination';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Alert } from '../../components/ui/Alert';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
-import { StatusBadge, PriorityBadge, SpecializationBadge, SlaBadge } from '../../components/common/Badges';
+import { StatusBadge, PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
 import { DispatchDrawer } from './DispatchDrawer';
-import { Complaint, ComplaintStatus, SlaStatus } from '../../types';
+import { Complaint, ComplaintStatus } from '../../types';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
 import { STATUS_LABEL, ticketLocation, ticketRef } from '../../utils/labels';
 
 const STATUSES = Object.keys(STATUS_LABEL) as ComplaintStatus[];
 const PAGE_SIZE = 25;
 
-/** Deadline filters, in the order a supervisor triages them. */
-const SLA_FILTERS: { value: SlaStatus; label: string }[] = [
-  { value: 'OVERDUE', label: 'Overdue' },
-  { value: 'AT_RISK', label: 'Due soon' },
-  { value: 'ON_TRACK', label: 'On track' },
-  { value: 'BREACHED', label: 'Finished late' },
-  { value: 'MET', label: 'Finished on time' },
-];
-
 /**
  * The full ticket register. Filtering, search and paging all run on the
  * server (limit/offset + X-Total-Count), so it stays fast at any volume.
  */
 export const AllComplaintsTable: React.FC = () => {
-  // ?sla=OVERDUE etc. lets the dashboard link straight to a filtered register.
-  const [searchParams] = useSearchParams();
-  const initialSla = SLA_FILTERS.some((f) => f.value === searchParams.get('sla')) ? (searchParams.get('sla') as string) : '';
   const [statusFilter, setStatusFilter] = useState('');
-  const [slaFilter, setSlaFilter] = useState(initialSla);
   const [blockFilter, setBlockFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Complaint | null>(null);
   const q = useDebouncedValue(searchQuery.trim(), 300);
 
-  const { data: allBlocks = [] } = useQuery({ queryKey: ['meta-blocks'], queryFn: metaApi.getBlocks });
-  const { data: me } = useQuery({ queryKey: ['me'], queryFn: meApi.getMe });
-  // A supervisor only has tickets in the blocks they look after.
-  const managed = me?.role === 'SUPERVISOR' ? me.managed_blocks ?? [] : null;
-  const blocks = managed ? allBlocks.filter((b) => managed.includes(b.block_id)) : allBlocks;
+  const { data: blocks = [] } = useQuery({ queryKey: ['meta-blocks'], queryFn: metaApi.getBlocks });
 
   const { data, isLoading, isFetching, isError } = useQuery({
-    queryKey: ['complaints', 'register', statusFilter, slaFilter, blockFilter, q, page],
+    queryKey: ['complaints', 'register', statusFilter, blockFilter, q, page],
     queryFn: () =>
       complaintsApi.page({
         status: statusFilter || undefined,
-        sla: slaFilter || undefined,
         block_id: blockFilter || undefined,
         q: q || undefined,
         limit: PAGE_SIZE,
@@ -69,7 +50,7 @@ export const AllComplaintsTable: React.FC = () => {
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const filtering = !!(statusFilter || slaFilter || blockFilter || q);
+  const filtering = !!(statusFilter || blockFilter || q);
 
   // Keep the open record in sync with refreshed data after a dispatch.
   const liveSelected = selected && (rows.find((c) => c.complaint_id === selected.complaint_id) ?? selected);
@@ -97,14 +78,6 @@ export const AllComplaintsTable: React.FC = () => {
             label="Search tickets"
           />
           <div className="grid grid-cols-2 gap-3 lg:flex">
-            <Select aria-label="Filter by deadline" value={slaFilter} onChange={(e) => resetTo(setSlaFilter)(e.target.value)} className="lg:w-44">
-              <option value="">Any deadline</option>
-              {SLA_FILTERS.map((f) => (
-                <option key={f.value} value={f.value}>
-                  {f.label}
-                </option>
-              ))}
-            </Select>
             <Select aria-label="Filter by status" value={statusFilter} onChange={(e) => resetTo(setStatusFilter)(e.target.value)} className="lg:w-52">
               <option value="">All statuses</option>
               {STATUSES.map((s) => (
@@ -145,7 +118,6 @@ export const AllComplaintsTable: React.FC = () => {
                     label: 'Clear filters',
                     onClick: () => {
                       setStatusFilter('');
-                      setSlaFilter('');
                       setBlockFilter('');
                       setSearchQuery('');
                       setPage(1);
@@ -167,7 +139,6 @@ export const AllComplaintsTable: React.FC = () => {
                     <Th>Technician</Th>
                     <Th>Status</Th>
                     <Th>Priority</Th>
-                    <Th>Deadline</Th>
                     <Th>Age</Th>
                     <Th>
                       <span className="sr-only">Open</span>
@@ -175,7 +146,7 @@ export const AllComplaintsTable: React.FC = () => {
                   </tr>
                 </THead>
                 {isLoading ? (
-                  <TableSkeleton columns={10} />
+                  <TableSkeleton columns={9} />
                 ) : (
                   <TBody>
                     {rows.map((c) => (
@@ -209,9 +180,6 @@ export const AllComplaintsTable: React.FC = () => {
                         </Td>
                         <Td>
                           <PriorityBadge priority={c.priority} />
-                        </Td>
-                        <Td>
-                          <SlaBadge complaint={c} />
                         </Td>
                         <Td className="whitespace-nowrap text-slate-500" title={formatDateTime(c.created_at)}>
                           {formatRelativeTime(c.created_at)}

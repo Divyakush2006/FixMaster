@@ -33,12 +33,7 @@ exports.listUsers = asyncHandler(async (req, res) => {
     const [count, result] = await Promise.all([
         db.query(`SELECT COUNT(*)::int AS total FROM users WHERE ${whereSql}`, params),
         db.query(
-            `SELECT ${PUBLIC_USER_COLUMNS},
-                    CASE WHEN role = 'SUPERVISOR' THEN COALESCE(
-                        (SELECT array_agg(sb.block_id ORDER BY sb.block_id) FROM supervisor_blocks sb WHERE sb.supervisor_id = users.user_id),
-                        '{}'
-                    ) END AS managed_blocks
-             FROM users WHERE ${whereSql}
+            `SELECT ${PUBLIC_USER_COLUMNS} FROM users WHERE ${whereSql}
              ORDER BY role, full_name, user_id
              LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
             [...params, limit, offset]
@@ -82,8 +77,6 @@ exports.createUser = asyncHandler(async (req, res) => {
 exports.updateUser = asyncHandler(async (req, res) => {
     const { user_id } = req.params;
     const { is_active, is_available, unlock } = req.body;
-    const setHomeBlock = req.body.home_block_id !== undefined;
-    const homeBlock = setHomeBlock && req.body.home_block_id !== null ? req.body.home_block_id.trim() : null;
 
     if (is_active === false && user_id === req.user.userId) {
         throw new AppError(400, 'You cannot deactivate your own account.');
@@ -91,7 +84,7 @@ exports.updateUser = asyncHandler(async (req, res) => {
 
     const result = await db.withTransaction(async (client) => {
         const target = await client.query(
-            'SELECT role, reg_or_emp_id, is_active, is_available, home_block_id FROM users WHERE user_id = $1 FOR UPDATE',
+            'SELECT role, reg_or_emp_id, is_active, is_available FROM users WHERE user_id = $1 FOR UPDATE',
             [user_id]
         );
         if (target.rows.length === 0) {
@@ -99,15 +92,6 @@ exports.updateUser = asyncHandler(async (req, res) => {
         }
         if (is_available !== undefined && target.rows[0].role !== 'STAFF') {
             throw new AppError(400, 'is_available only applies to STAFF accounts.');
-        }
-        if (setHomeBlock && target.rows[0].role !== 'STAFF') {
-            throw new AppError(400, 'A home block only applies to technicians (STAFF accounts).');
-        }
-        if (homeBlock) {
-            const block = await client.query('SELECT 1 FROM hostel_blocks WHERE block_id = $1', [homeBlock]);
-            if (block.rows.length === 0) {
-                throw new AppError(404, `Block ${homeBlock} was not found.`);
-            }
         }
         if (is_active === false && target.rows[0].role === 'ADMIN') {
             const others = await client.query(
@@ -136,11 +120,10 @@ exports.updateUser = asyncHandler(async (req, res) => {
              SET is_active = COALESCE($2, is_active),
                  is_available = COALESCE($3, is_available),
                  failed_login_count = CASE WHEN $4 THEN 0 ELSE failed_login_count END,
-                 locked_until = CASE WHEN $4 THEN NULL ELSE locked_until END,
-                 home_block_id = CASE WHEN $5 THEN $6 ELSE home_block_id END
+                 locked_until = CASE WHEN $4 THEN NULL ELSE locked_until END
              WHERE user_id = $1
              RETURNING ${PUBLIC_USER_COLUMNS}`,
-            [user_id, is_active ?? null, is_available ?? null, unlock === true, setHomeBlock, homeBlock]
+            [user_id, is_active ?? null, is_available ?? null, unlock === true]
         );
 
         const before = target.rows[0];
@@ -158,53 +141,10 @@ exports.updateUser = asyncHandler(async (req, res) => {
             await audit('user.set_availability', { is_available });
         }
         if (unlock === true) await audit('user.unlock');
-        if (setHomeBlock && homeBlock !== before.home_block_id) {
-            await audit('user.set_home_block', { home_block_id: homeBlock, previous: before.home_block_id });
-        }
         return { user: updated.rows[0], releasedTickets };
     }, req.user.userId);
 
     res.json({ ...result.user, released_tickets: result.releasedTickets });
-});
-
-// PUT /api/admin/users/:user_id/blocks { block_ids } - replaces the set of
-// blocks a supervisor looks after. An empty list leaves them with none (they
-// then see no tickets until given a block).
-exports.setSupervisorBlocks = asyncHandler(async (req, res) => {
-    const { user_id } = req.params;
-    const blockIds = [...new Set(req.body.block_ids.map((b) => b.trim()))].sort();
-    const result = await db.withTransaction(async (client) => {
-        const target = await client.query('SELECT role, reg_or_emp_id FROM users WHERE user_id = $1 FOR UPDATE', [user_id]);
-        if (target.rows.length === 0) {
-            throw new AppError(404, 'User not found.');
-        }
-        if (target.rows[0].role !== 'SUPERVISOR') {
-            throw new AppError(400, 'Blocks can only be assigned to supervisor accounts.');
-        }
-        if (blockIds.length) {
-            const known = await client.query('SELECT block_id FROM hostel_blocks WHERE block_id = ANY($1)', [blockIds]);
-            const missing = blockIds.filter((b) => !known.rows.some((r) => r.block_id === b));
-            if (missing.length) {
-                throw new AppError(404, `Unknown block${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}.`);
-            }
-        }
-        const before = await client.query('SELECT block_id FROM supervisor_blocks WHERE supervisor_id = $1 ORDER BY block_id', [user_id]);
-        await client.query('DELETE FROM supervisor_blocks WHERE supervisor_id = $1 AND NOT (block_id = ANY($2))', [user_id, blockIds]);
-        await client.query(
-            `INSERT INTO supervisor_blocks (supervisor_id, block_id)
-             SELECT $1, unnest($2::varchar[])
-             ON CONFLICT DO NOTHING`,
-            [user_id, blockIds]
-        );
-        await recordAudit(client, req, {
-            action: 'user.set_blocks',
-            targetType: 'user',
-            targetId: user_id,
-            details: { reg_or_emp_id: target.rows[0].reg_or_emp_id, block_ids: blockIds, previous: before.rows.map((r) => r.block_id) },
-        });
-        return blockIds;
-    }, req.user.userId);
-    res.json({ user_id, managed_blocks: result });
 });
 
 // GET /api/admin/allotment-requests - students waiting for a room (see

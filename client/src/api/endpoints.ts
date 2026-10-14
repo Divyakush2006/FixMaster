@@ -70,7 +70,7 @@ export const complaintsApi = {
     }),
 
   /** Server-side filtered, searched and paged list (supervisor/admin register). */
-  page: (filters: { status?: string; block_id?: string; q?: string; sla?: string; limit: number; offset: number }) =>
+  page: (filters: { status?: string; block_id?: string; q?: string; limit: number; offset: number }) =>
     apiFetchPage<Complaint>('/complaints', { method: 'GET', params: filters }),
 
   getById: (id: string) => apiFetch<Complaint>(`/complaints/${id}`, { method: 'GET' }),
@@ -166,11 +166,10 @@ export const metaApi = {
   getCategories: () => apiFetch<Category[]>('/meta/categories', { method: 'GET' }),
 
   // SUPERVISOR/ADMIN only - the backend gates this route by role.
-  // With blockId, technicians based in that block are listed first.
-  getStaff: (specialization?: Specialization, blockId?: string) =>
+  getStaff: (specialization?: Specialization) =>
     apiFetch<StaffRosterItem[]>('/meta/staff', {
       method: 'GET',
-      params: specialization || blockId ? { specialization, block_id: blockId } : undefined,
+      params: specialization ? { specialization } : undefined,
     }),
 };
 
@@ -219,20 +218,10 @@ export const adminApi = {
   createUser: (data: CreateUserPayload) =>
     apiFetch<{ message: string; user: User }>('/admin/users', { method: 'POST', body: JSON.stringify(data) }),
 
-  updateUser: (
-    userId: string,
-    changes: { is_active?: boolean; is_available?: boolean; unlock?: boolean; home_block_id?: string | null }
-  ) =>
+  updateUser: (userId: string, changes: { is_active?: boolean; is_available?: boolean; unlock?: boolean }) =>
     apiFetch<User & { released_tickets: number }>(`/admin/users/${userId}`, {
       method: 'PATCH',
       body: JSON.stringify(changes),
-    }),
-
-  /** Replaces the blocks a supervisor looks after. */
-  setSupervisorBlocks: (userId: string, block_ids: string[]) =>
-    apiFetch<{ user_id: string; managed_blocks: string[] }>(`/admin/users/${userId}/blocks`, {
-      method: 'PUT',
-      body: JSON.stringify({ block_ids }),
     }),
 
   allotmentRequests: () => apiFetch<PendingAllotmentRequest[]>('/admin/allotment-requests', { method: 'GET' }),

@@ -14,7 +14,7 @@ import { Avatar } from '../../components/ui/Avatar';
 import { Field, Textarea } from '../../components/ui/Form';
 import { Skeleton } from '../../components/ui/PageLoader';
 import { cn } from '../../components/ui/cn';
-import { StatusBadge, PriorityBadge, SpecializationBadge, SlaBadge } from '../../components/common/Badges';
+import { StatusBadge, PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
 import { ActivityTimeline } from '../../components/common/ActivityTimeline';
 import { Complaint, TimelineEvent } from '../../types';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
@@ -65,8 +65,8 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
   // Staff roster, pre-filtered to the trade this ticket needs. The backend
   // also rejects a specialization mismatch, so this is a convenience only.
   const { data: staffList = [], isLoading: isLoadingStaff } = useQuery({
-    queryKey: ['staff-roster', complaint.required_specialization, complaint.block_id],
-    queryFn: () => metaApi.getStaff(complaint.required_specialization, complaint.block_id),
+    queryKey: ['staff-roster', complaint.required_specialization],
+    queryFn: () => metaApi.getStaff(complaint.required_specialization),
     enabled: isOpen && canDispatch,
   });
 
@@ -84,15 +84,8 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
   });
 
   const roster = useMemo(
-    // On duty first, then technicians based in this ticket's block, then the least busy.
-    () =>
-      [...staffList].sort(
-        (a, b) =>
-          Number(b.is_available) - Number(a.is_available) ||
-          Number(b.home_block_id === complaint.block_id) - Number(a.home_block_id === complaint.block_id) ||
-          a.active_task_count - b.active_task_count
-      ),
-    [staffList, complaint.block_id]
+    () => [...staffList].sort((a, b) => Number(b.is_available) - Number(a.is_available) || a.active_task_count - b.active_task_count),
+    [staffList]
   );
   const selectedStaff = roster.find((s) => s.user_id === selectedStaffId);
 
@@ -217,7 +210,6 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
           <span className="font-mono text-xs font-medium text-slate-500">{ticketRef(complaint.complaint_id)}</span>
           <StatusBadge status={complaint.status} />
           <PriorityBadge priority={complaint.priority} />
-          <SlaBadge complaint={complaint} />
         </>
       }
       title={complaint.issue_name}
@@ -359,7 +351,6 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
                             <span className="block text-xs text-slate-500">
                               {staff.active_task_count} open {staff.active_task_count === 1 ? 'job' : 'jobs'}
                               {!staff.is_available && staff.active_task_count > 0 ? ' while off duty' : ''}
-                              {staff.home_block_id === complaint.block_id ? ' · based in this block' : ''}
                             </span>
                           </span>
                           {isCurrent ? (

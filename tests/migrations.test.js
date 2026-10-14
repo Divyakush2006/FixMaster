@@ -115,10 +115,7 @@ describe('database migrations', () => {
                     await c.query(m.sql);
                     await c.query('INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)', [m.version, m.checksum]);
                 }
-                // The demo data as it was at that version: later seed sections
-                // fill tables that later migrations create (13 = migration 009).
-                const seed = fs.readFileSync(path.join(__dirname, '..', 'database', 'seed_data.sql'), 'utf8');
-                await c.query(seed.split('-- 13. Supervisor responsibilities')[0]);
+                await c.query(fs.readFileSync(path.join(__dirname, '..', 'database', 'seed_data.sql'), 'utf8'));
                 // Seed has L-843 room cleaning IN_PROGRESS (Vihaan). Two more
                 // live requests for the same thing from his roommates:
                 await c.query(`

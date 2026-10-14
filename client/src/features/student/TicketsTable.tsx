@@ -1,7 +1,7 @@
 import React from 'react';
 import { ChevronRight, ShieldCheck, Users } from 'lucide-react';
 import { Complaint } from '../../types';
-import { StatusBadge, PriorityBadge, SlaBadge } from '../../components/common/Badges';
+import { StatusBadge, PriorityBadge } from '../../components/common/Badges';
 import { Button } from '../../components/ui/Button';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
@@ -65,10 +65,7 @@ export const TicketsTable: React.FC<TicketsTableProps> = ({ complaints, loading,
                   <StatusBadge status={c.status} />
                 </Td>
                 <Td>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <PriorityBadge priority={c.priority} />
-                    <SlaBadge complaint={c} quiet />
-                  </div>
+                  <PriorityBadge priority={c.priority} />
                 </Td>
                 <Td className="whitespace-nowrap text-slate-500" title={formatDateTime(c.created_at)}>
                   {formatRelativeTime(c.created_at)}
@@ -115,7 +112,6 @@ export const TicketsTable: React.FC<TicketsTableProps> = ({ complaints, loading,
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                   <StatusBadge status={c.status} />
                   <PriorityBadge priority={c.priority} />
-                  <SlaBadge complaint={c} quiet />
                 </div>
                 <p className="text-xs text-slate-500">
                   <span className="font-mono">{ticketRef(c.complaint_id)}</span> · {ticketLocation(c)} · {formatRelativeTime(c.created_at)}

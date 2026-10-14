@@ -23,13 +23,6 @@ export interface Reporter {
 
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'EMERGENCY';
 
-/**
- * Where a ticket stands against its deadline (category SLA hours after it was raised).
- * ON_TRACK / AT_RISK (last quarter) / OVERDUE while unresolved; MET / BREACHED once
- * the work is done; NOT_APPLICABLE for withdrawn or rejected tickets.
- */
-export type SlaStatus = 'ON_TRACK' | 'AT_RISK' | 'OVERDUE' | 'MET' | 'BREACHED' | 'NOT_APPLICABLE';
-
 export type TicketScope = 'ROOM' | 'COMMON_AREA';
 
 export type AssignmentState =
@@ -55,10 +48,6 @@ export interface User {
   phone_number?: string;
   role: Role;
   specialization?: Specialization | null;
-  /** Technicians: the block they are based in (auto-dispatch prefers it). */
-  home_block_id?: string | null;
-  /** Supervisors: the blocks they look after (they only see tickets there). */
-  managed_blocks?: string[] | null;
   is_available?: boolean;
   is_active?: boolean;
   created_at?: string;
@@ -196,10 +185,6 @@ export interface Complaint {
   created_at: string;
   resolved_at: string | null;
   closed_at: string | null;
-  /** Deadline: created_at + the category's SLA hours. */
-  sla_due_at?: string | null;
-  sla_status?: SlaStatus;
-  default_sla_hours?: number;
   category_name: string;
   issue_name: string;
   required_specialization: Specialization;
@@ -266,8 +251,6 @@ export interface StaffTask {
   assigned_at: string;
   student_name: string;
   student_phone?: string;
-  sla_due_at?: string | null;
-  sla_status?: SlaStatus;
 }
 
 export interface FeedbackPayload {
@@ -288,12 +271,6 @@ export interface BlockKpi {
   escalated_count: string | number;
   common_area_issues: string | number;
   average_student_rating: string | number;
-  overdue_count?: string | number;
-  at_risk_count?: string | number;
-  sla_met_count?: string | number;
-  sla_breached_count?: string | number;
-  /** % of finished work done within its SLA; null when nothing has finished yet. */
-  sla_compliance_pct?: string | number | null;
 }
 
 export interface Hotspot {
@@ -340,7 +317,6 @@ export interface StaffRosterItem {
   user_id: string;
   full_name: string;
   specialization: Specialization;
-  home_block_id?: string | null;
   is_available: boolean;
   active_task_count: number;
 }

@@ -14,7 +14,7 @@ import { Switch } from '../../components/ui/Switch';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Skeleton } from '../../components/ui/PageLoader';
 import { cn } from '../../components/ui/cn';
-import { PriorityBadge, SpecializationBadge, SlaBadge } from '../../components/common/Badges';
+import { PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
 import { MarkDoneSheet } from './MarkDoneSheet';
 import { StaffTask } from '../../types';
 import { formatDateTime, formatRelativeTime, floorLabel } from '../../utils/formatters';
@@ -160,7 +160,6 @@ export const StaffQueue: React.FC = () => {
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                               <PriorityBadge priority={task.priority} />
                               <SpecializationBadge specialization={task.specialization} />
-                              <SlaBadge complaint={{ sla_status: task.sla_status, sla_due_at: task.sla_due_at, resolved_at: null, closed_at: null }} />
                               {inProgress && (
                                 <Badge tone="brand" dot>
                                   In progress

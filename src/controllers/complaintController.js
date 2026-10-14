@@ -1,7 +1,6 @@
 const db = require('../config/db');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { recordAudit } = require('../services/auditService');
-const { supervisorBlockFilter, assertManagesBlock, assertManagesComplaint } = require('../services/scopeService');
 
 // Ticket model (migrations 007-008): the ROOM or COMMON AREA is the unit of a
 // ticket, not the person. There is at most one live ticket per location and
@@ -27,8 +26,6 @@ const COMPLAINT_FROM = `
  */
 const complaintSelect = (viewer) => `
     SELECT c.*, cat.category_name, sub.issue_name, sub.required_specialization, u.full_name as student_name,
-           cat.default_sla_hours,
-           fn_sla_status(c.status, c.created_at, c.sla_due_at, c.resolved_at, c.closed_at) AS sla_status,
            asg.staff_user_id AS assigned_staff_id, asg.full_name AS assigned_staff_name,
            (SELECT COUNT(*)::int FROM complaint_reporters cr WHERE cr.complaint_id = c.complaint_id) AS reporter_count,
            EXISTS (
@@ -164,9 +161,6 @@ async function assertCanView(complaintId, { role, userId }) {
             throw new AppError(403, 'You may only view tickets you reported or tickets for the room you live in.');
         }
     }
-    if (role === 'SUPERVISOR') {
-        await assertManagesComplaint({ role, userId }, complaintId);
-    }
     if (role === 'STAFF') {
         const assigned = await db.query(
             'SELECT 1 FROM complaint_assignments WHERE complaint_id = $1 AND staff_user_id = $2',
@@ -243,7 +237,6 @@ exports.createComplaint = asyncHandler(async (req, res) => {
             await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`complaint-location:${locationKey}:${subcategory_id}`]);
 
             await assertValidLocation(client, { ticket_scope, room_id, common_area_id, block_id, userId, role });
-            await assertManagesBlock(req.user, block_id, client);
 
             const issue = await client.query('SELECT priority_level, issue_name FROM complaint_subcategories WHERE subcategory_id = $1', [
                 subcategory_id,
@@ -370,12 +363,10 @@ async function joinExistingTicket(client, ticket, { userId, description, ticket_
 // GET /api/complaints - role-scoped list.
 //   STUDENT: tickets they reported + their current room's tickets.
 //   STAFF: tickets they have (or had) an assignment on.
-//   SUPERVISOR: tickets in the blocks they look after.
-//   ADMIN: all tickets.
-// Filters: status, block_id, q (free text), sla (ON_TRACK | AT_RISK | OVERDUE | MET | BREACHED).
+//   SUPERVISOR / ADMIN: all tickets.
 exports.getComplaints = asyncHandler(async (req, res) => {
     const { role, userId } = req.user;
-    const { status, block_id, q, sla } = req.query;
+    const { status, block_id, q } = req.query;
     const limit = req.query.limit || DEFAULT_LIST_LIMIT;
     const offset = req.query.offset || 0;
 
@@ -391,13 +382,6 @@ exports.getComplaints = asyncHandler(async (req, res) => {
             SELECT 1 FROM complaint_assignments ca
             WHERE ca.complaint_id = c.complaint_id AND ca.staff_user_id = $${params.length}
         )`);
-    } else {
-        const scope = supervisorBlockFilter(req.user, params);
-        if (scope) where.push(scope);
-    }
-    if (sla) {
-        params.push(sla);
-        where.push(`fn_sla_status(c.status, c.created_at, c.sla_due_at, c.resolved_at, c.closed_at) = $${params.length}`);
     }
     if (status) {
         params.push(status);
@@ -507,7 +491,6 @@ exports.getRelatedComplaints = asyncHandler(async (req, res) => {
     if (base.rows.length === 0) {
         throw new AppError(404, 'Complaint not found.');
     }
-    await assertManagesComplaint(req.user, req.params.id);
     const { room_id, common_area_id } = base.rows[0];
     const result = await db.query(
         `${complaintSelect('$4')}
@@ -575,7 +558,6 @@ exports.rejectComplaint = asyncHandler(async (req, res) => {
     const reason = req.body.reason.trim();
     await db.withTransaction(async (client) => {
         const ticket = await lockComplaint(client, req.params.id);
-        await assertManagesBlock(req.user, ticket.block_id, client);
         if (!['OPEN', 'ESCALATED', 'ASSIGNED', 'IN_PROGRESS'].includes(ticket.status)) {
             throw new AppError(409, `This ticket is ${ticket.status} and cannot be rejected.`);
         }
@@ -621,8 +603,6 @@ exports.mergeComplaint = asyncHandler(async (req, res) => {
         if (!source || !target) {
             throw new AppError(404, 'Complaint not found.');
         }
-        await assertManagesBlock(req.user, source.block_id, client);
-        await assertManagesBlock(req.user, target.block_id, client);
         if (!LIVE_STATUSES.includes(source.status)) {
             throw new AppError(409, `This ticket is ${source.status} and cannot be merged.`);
         }

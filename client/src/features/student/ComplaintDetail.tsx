@@ -6,7 +6,7 @@ import { DetailList } from '../../components/ui/Card';
 import { Alert, AlertTone } from '../../components/ui/Alert';
 import { Button } from '../../components/ui/Button';
 import { Skeleton } from '../../components/ui/PageLoader';
-import { StatusBadge, PriorityBadge, SpecializationBadge, SlaBadge } from '../../components/common/Badges';
+import { StatusBadge, PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
 import { ActivityTimeline } from '../../components/common/ActivityTimeline';
 import { isNoteEntry, logDescription, noteTitle, reconstructTimeline } from '../../utils/timeline';
 import { complaintsApi } from '../../api/endpoints';
@@ -145,7 +145,6 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({ isOp
           <span className="font-mono text-xs font-medium text-slate-500">{ticketRef(complaint.complaint_id)}</span>
           <StatusBadge status={complaint.status} />
           <PriorityBadge priority={complaint.priority} />
-          <SlaBadge complaint={complaint} />
         </>
       }
       title={complaint.issue_name}
