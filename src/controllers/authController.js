@@ -4,6 +4,7 @@ const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { signToken } = require('../middleware/auth');
 const { createUser } = require('../services/userService');
 const { recordAudit } = require('../services/auditService');
+const { assertRequestableRoom, recordRoomRequest } = require('../services/roomRequestService');
 const { portalForRole } = require('../config/portals');
 
 // A real bcrypt hash (cost 12) of a throwaway string. Login compares against
@@ -60,9 +61,22 @@ exports.logout = asyncHandler(async (req, res) => {
  * Staff, supervisor and admin accounts are created by an administrator.
  */
 exports.registerStudent = asyncHandler(async (req, res) => {
-    const { reg_or_emp_id, full_name, email, phone_number, password } = req.body;
-    const user = await createUser({ reg_or_emp_id, full_name, email, phone_number, password, role: 'STUDENT' });
-    res.status(201).json({ message: 'User registered successfully', user });
+    const { reg_or_emp_id, full_name, email, phone_number, password, block_id, floor_number, room_id } = req.body;
+    const wantsRoom = !!room_id;
+    // One transaction: the account and its room request exist together or not at all.
+    const user = await db.withTransaction(async (client) => {
+        const room = wantsRoom ? await assertRequestableRoom(client, { block_id, floor_number, room_id }) : null;
+        const created = await createUser({ reg_or_emp_id, full_name, email, phone_number, password, role: 'STUDENT' }, client);
+        if (room) await recordRoomRequest(client, req, created.user_id, room);
+        return created;
+    });
+    res.status(201).json({
+        message: wantsRoom
+            ? 'Account created. Your room request has been sent to the hostel office; you can raise room tickets once it is approved.'
+            : 'Account created. Ask the hostel office to allot you a room.',
+        user,
+        room_request: wantsRoom ? { status: 'PENDING', block_id, floor_number, room_id } : null,
+    });
 });
 
 /**

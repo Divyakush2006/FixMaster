@@ -29,6 +29,8 @@ import {
   AuditEntry,
   UserSummary,
   AppNotification,
+  RoomRequest,
+  PendingAllotmentRequest,
 } from '../types';
 
 // Three separate sign-in portals; each endpoint only accepts its own accounts.
@@ -45,7 +47,7 @@ export const authApi = {
 
   // Public self-registration exists for students only.
   registerStudent: (data: RegisterPayload) =>
-    apiFetch<{ message: string; user: User }>('/auth/student/register', {
+    apiFetch<{ message: string; user: User; room_request: RoomRequest | null }>('/auth/student/register', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -176,6 +178,12 @@ export const metaApi = {
 export const meApi = {
   getMe: () => apiFetch<User>('/me', { method: 'GET' }),
 
+  /** The student's latest room request, or null when none is open / they already have a room. */
+  getRoomRequest: () => apiFetch<{ request: RoomRequest | null }>('/me/room-request', { method: 'GET' }),
+
+  requestRoom: (data: { block_id: string; floor_number: number; room_id: string }) =>
+    apiFetch<{ request: RoomRequest; message: string }>('/me/room-request', { method: 'POST', body: JSON.stringify(data) }),
+
   // Throws ApiError with status 404 when the student has no current allotment.
   getMyAllotment: () => apiFetch<Allotment>('/me/allotment', { method: 'GET' }),
 
@@ -238,6 +246,14 @@ export const adminApi = {
     apiFetch<{ user_id: string; managed_blocks: string[] }>(`/admin/users/${userId}/blocks`, {
       method: 'PUT',
       body: JSON.stringify({ block_ids }),
+    }),
+
+  allotmentRequests: () => apiFetch<PendingAllotmentRequest[]>('/admin/allotment-requests', { method: 'GET' }),
+
+  declineAllotmentRequest: (studentId: string, reason: string) =>
+    apiFetch<{ message: string }>(`/admin/allotment-requests/${studentId}/decline`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
     }),
 
   resetPassword: (userId: string, new_password: string) =>

@@ -16,6 +16,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Pagination } from '../../components/ui/Pagination';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
 import { StudentPicker } from './StudentPicker';
+import { RoomRequestsCard } from './RoomRequestsCard';
 import { User } from '../../types';
 import { floorLabel } from '../../utils/formatters';
 import { blockLabel, ROOM_TYPE_LABEL } from '../../utils/labels';
@@ -112,6 +113,8 @@ export const AllotmentsPage: React.FC = () => {
       />
 
       <div className="space-y-6">
+        <RoomRequestsCard />
+
         <Card>
           <form onSubmit={submit} noValidate>
             <CardHeader

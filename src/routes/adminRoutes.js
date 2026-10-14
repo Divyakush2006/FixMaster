@@ -16,6 +16,9 @@ router.put('/users/:user_id/blocks', v.adminSetSupervisorBlocksValidators, admin
 
 router.get('/audit', v.adminAuditValidators, admin.listAudit);
 
+router.get('/allotment-requests', admin.listAllotmentRequests);
+router.post('/allotment-requests/:student_id/decline', v.declineRoomRequestValidators, admin.declineAllotmentRequest);
+
 router.get('/allotments', v.adminListAllotmentsValidators, admin.listAllotments);
 router.post('/allotments', v.adminAllotValidators, admin.allotRoom);
 router.delete('/allotments/:student_id', v.adminEndAllotmentValidators, admin.endAllotment);

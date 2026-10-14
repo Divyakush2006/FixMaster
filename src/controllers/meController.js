@@ -5,6 +5,8 @@ const { PUBLIC_USER_COLUMNS, hashPassword } = require('../services/userService')
 const { signToken } = require('../middleware/auth');
 const { countLiveJobs, releaseLiveJobs } = require('../services/taskService');
 const { managedBlocks } = require('../services/scopeService');
+const { assertRequestableRoom, recordRoomRequest, requestStatus } = require('../services/roomRequestService');
+const { recordAudit } = require('../services/auditService');
 
 // GET /api/me - full profile of the caller (password_hash never selected).
 exports.getMe = asyncHandler(async (req, res) => {
@@ -36,6 +38,38 @@ exports.getMyAllotment = asyncHandler(async (req, res) => {
         throw new AppError(404, 'No current room allotment found for this student.');
     }
     res.json(result.rows[0]);
+});
+
+// GET /api/me/room-request - the student's latest room request (null when they
+// have none, or already have a room).
+exports.getMyRoomRequest = asyncHandler(async (req, res) => {
+    if (req.user.role !== 'STUDENT') {
+        throw new AppError(403, 'Only students request rooms.');
+    }
+    res.json({ request: await requestStatus(db, req.user.userId) });
+});
+
+// POST /api/me/room-request { block_id, floor_number, room_id } - (re)send a
+// room request to the hostel office. Grants nothing by itself.
+exports.requestRoom = asyncHandler(async (req, res) => {
+    if (req.user.role !== 'STUDENT') {
+        throw new AppError(403, 'Only students request rooms.');
+    }
+    const { block_id, floor_number, room_id } = req.body;
+    await db.withTransaction(async (client) => {
+        await client.query('SELECT 1 FROM users WHERE user_id = $1 FOR UPDATE', [req.user.userId]);
+        const has = await client.query('SELECT 1 FROM student_room_allotments WHERE student_id = $1 AND is_current = TRUE', [req.user.userId]);
+        if (has.rows.length > 0) {
+            throw new AppError(409, 'You already have a room. Ask the hostel office if you need to move.');
+        }
+        const room = await assertRequestableRoom(client, { block_id, floor_number, room_id });
+        const open = await requestStatus(client, req.user.userId);
+        if (open && open.status === 'PENDING' && open.room_id === room_id) {
+            throw new AppError(409, 'This request is already waiting for the hostel office.');
+        }
+        await recordRoomRequest(client, req, req.user.userId, room);
+    }, req.user.userId);
+    res.status(201).json({ request: await requestStatus(db, req.user.userId), message: 'Request sent to the hostel office.' });
 });
 
 // PATCH /api/me/password - change own password (requires the current one).

@@ -1,3 +1,4 @@
+import { RoomRequestPanel } from './RoomRequestPanel';
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -9,7 +10,6 @@ import { useToast } from '../../components/ui/Toast';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { StatCard } from '../../components/ui/StatCard';
-import { Alert } from '../../components/ui/Alert';
 import { Button, ButtonLink } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Skeleton } from '../../components/ui/PageLoader';
@@ -127,11 +127,7 @@ export const StudentHome: React.FC = () => {
           </Card>
         )}
 
-        {!isLoadingAllotment && !allotment && (
-          <Alert tone="warning" title="No room has been allotted to your account yet">
-            Room requests become available once the hostel office allots your room. You can still report problems in common areas.
-          </Alert>
-        )}
+        {!isLoadingAllotment && !allotment && <RoomRequestPanel />}
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <div className="space-y-6 xl:col-span-2">

@@ -3,6 +3,7 @@ const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { createUser, hashPassword, PUBLIC_USER_COLUMNS } = require('../services/userService');
 const { recordAudit } = require('../services/auditService');
 const { releaseLiveJobs } = require('../services/taskService');
+const { pendingRequests, DECLINE } = require('../services/roomRequestService');
 
 // ---- Users -------------------------------------------------------------------
 
@@ -204,6 +205,31 @@ exports.setSupervisorBlocks = asyncHandler(async (req, res) => {
         return blockIds;
     }, req.user.userId);
     res.json({ user_id, managed_blocks: result });
+});
+
+// GET /api/admin/allotment-requests - students waiting for a room (see
+// roomRequestService). Approve with POST /allotments, or decline below.
+exports.listAllotmentRequests = asyncHandler(async (req, res) => {
+    res.json(await pendingRequests(db));
+});
+
+// POST /api/admin/allotment-requests/:student_id/decline { reason }
+exports.declineAllotmentRequest = asyncHandler(async (req, res) => {
+    const studentId = req.params.student_id;
+    const reason = req.body.reason.trim();
+    await db.withTransaction(async (client) => {
+        const open = (await pendingRequests(client)).find((r) => r.student_id === studentId);
+        if (!open) {
+            throw new AppError(404, 'There is no open room request for this student.');
+        }
+        await recordAudit(client, req, {
+            action: DECLINE,
+            targetType: 'user',
+            targetId: studentId,
+            details: { reg_or_emp_id: open.reg_or_emp_id, room_id: open.room_id, reason },
+        });
+    }, req.user.userId);
+    res.json({ message: 'Request declined.' });
 });
 
 // POST /api/admin/users/:user_id/reset-password - for users locked out of

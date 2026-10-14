@@ -138,6 +138,34 @@ export interface RegisterPayload {
   email: string;
   phone_number: string;
   password: string;
+  /** The room asked for. A request only: the hostel office allots the room. */
+  block_id?: string;
+  floor_number?: number;
+  room_id?: string;
+}
+
+export interface RoomRequest {
+  status: 'PENDING' | 'DECLINED';
+  block_id: string;
+  floor_number: number;
+  room_id: string;
+  requested_at: string;
+  decline_reason: string | null;
+}
+
+export interface PendingAllotmentRequest {
+  audit_id: number;
+  requested_at: string;
+  student_id: string;
+  reg_or_emp_id: string;
+  full_name: string;
+  email: string;
+  room_id: string;
+  block_id: string;
+  floor_number: number;
+  room_number: string;
+  bed_capacity: number;
+  occupied_beds: number;
 }
 
 export interface CreateComplaintPayload {

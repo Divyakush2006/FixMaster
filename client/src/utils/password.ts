@@ -21,3 +21,17 @@ export function passwordProblem(password: string, accountId?: string): string | 
   if (id && password.toUpperCase().includes(id)) return 'The password must not contain the account ID.';
   return null;
 }
+
+export type PasswordStrength = { score: 0 | 1 | 2 | 3; label: string };
+
+/** A rough strength read-out for a form; the server's policy stays the authority. */
+export function passwordStrength(password: string): PasswordStrength {
+  if (!password) return { score: 0, label: '' };
+  let points = 0;
+  if (password.length >= 8) points++;
+  if (password.length >= 12) points++;
+  if (/\p{Ll}/u.test(password) && /\p{Lu}/u.test(password)) points++;
+  if (/\d/.test(password) && /[^\p{L}\d]/u.test(password)) points++;
+  const score = (passwordProblem(password) ? Math.min(points, 1) : Math.max(1, Math.min(points - 1, 3))) as 0 | 1 | 2 | 3;
+  return { score, label: ['', 'Weak', 'Good', 'Strong'][score] };
+}

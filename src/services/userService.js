@@ -17,13 +17,13 @@ const hashPassword = (password) => bcrypt.hash(password, BCRYPT_COST);
  * only checks that role and specialization are consistent (the database
  * enforces the same thing via chk_staff_specialization).
  */
-async function createUser({ reg_or_emp_id, full_name, email, phone_number, password, role, specialization }) {
+async function createUser({ reg_or_emp_id, full_name, email, phone_number, password, role, specialization }, executor = db) {
     const spec = role === 'STAFF' ? specialization || null : null;
     if (role === 'STAFF' && !spec) {
         throw new AppError(400, 'specialization is required for STAFF accounts.');
     }
 
-    const existing = await db.query(
+    const existing = await executor.query(
         'SELECT UPPER(reg_or_emp_id) = UPPER($1) AS same_id FROM users WHERE UPPER(reg_or_emp_id) = UPPER($1) OR LOWER(email) = LOWER($2)',
         [reg_or_emp_id, email]
     );
@@ -37,7 +37,7 @@ async function createUser({ reg_or_emp_id, full_name, email, phone_number, passw
     }
 
     const password_hash = await hashPassword(password);
-    const result = await db.query(
+    const result = await executor.query(
         `INSERT INTO users (reg_or_emp_id, full_name, email, phone_number, password_hash, role, specialization)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING ${PUBLIC_USER_COLUMNS}`,

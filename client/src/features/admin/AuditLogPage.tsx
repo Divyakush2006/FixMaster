@@ -30,6 +30,8 @@ const ACTION_LABEL: Record<string, string> = {
   'user.set_home_block': 'Home block changed',
   'user.unlock': 'Account unlocked',
   'user.reset_password': 'Password reset',
+  'allotment.request': 'Room requested at registration',
+  'allotment.decline': 'Room request declined',
   'allotment.create': 'Room allotted',
   'allotment.move': 'Student moved to another room',
   'allotment.end': 'Allotment ended',
@@ -84,6 +86,10 @@ export function describeAudit(e: AuditEntry): string {
       return `${d.reg_or_emp_id} · ${d.previous ? blockLabel(d.previous) : 'none'} → ${d.home_block_id ? blockLabel(d.home_block_id) : 'none'}`;
     case 'auth.account_locked':
       return `${d.failed_attempts} failed attempts · locked for ${d.locked_minutes} min (${d.portal} sign-in)`;
+    case 'allotment.request':
+      return `Room ${d.room_id} · ${blockLabel(String(d.block_id))}`;
+    case 'allotment.decline':
+      return `Room ${d.room_id} · ${d.reason ?? ''}`;
     case 'allotment.create':
       return `Room ${d.room_id} · ${d.academic_year}`;
     case 'allotment.move':

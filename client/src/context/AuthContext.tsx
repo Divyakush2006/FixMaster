@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { User, RegisterPayload, Portal } from '../types';
+import { User, RegisterPayload, Portal, RoomRequest } from '../types';
 import { authApi } from '../api/endpoints';
 import { queryClient } from '../api/queryClient';
 import {
@@ -19,7 +19,7 @@ interface AuthContextType {
   isLoading: boolean;
   /** Sign in through one of the three portals; each only accepts its own accounts. */
   login: (portal: Portal, reg_or_emp_id: string, password: string) => Promise<User>;
-  register: (payload: RegisterPayload) => Promise<User>;
+  register: (payload: RegisterPayload) => Promise<{ user: User; roomRequest: RoomRequest | null }>;
   logout: () => void;
   /** After a password change the server issues a new token (old ones are revoked). */
   updateToken: (token: string) => void;
@@ -96,9 +96,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return res.user;
   };
 
-  const register = async (payload: RegisterPayload): Promise<User> => {
+  const register = async (payload: RegisterPayload) => {
     const res = await authApi.registerStudent(payload);
-    return res.user;
+    return { user: res.user, roomRequest: res.room_request };
   };
 
   const logout = useCallback(() => {

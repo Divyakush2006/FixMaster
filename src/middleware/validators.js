@@ -94,7 +94,32 @@ const userProfileRules = [
         .withMessage(`specialization must be one of: ${SPECIALIZATIONS.join(', ')}.`),
 ];
 
-const registerValidators = [...userProfileRules, handleValidation];
+// Hostel details are all-or-nothing: a student names block, floor and room
+// together. They are a REQUEST for an allotment - the hostel office decides.
+const roomRequestRules = [
+    body('block_id').optional({ values: 'null' }).isString().trim().notEmpty().isLength({ max: 10 }).withMessage('block_id is invalid.'),
+    body('floor_number').optional({ values: 'null' }).isInt({ min: 0, max: 99 }).withMessage('floor_number is invalid.').toInt(),
+    body('room_id').optional({ values: 'null' }).isString().trim().notEmpty().isLength({ max: 20 }).withMessage('room_id is invalid.'),
+    body().custom((v) => {
+        const given = ['block_id', 'floor_number', 'room_id'].filter((k) => v && v[k] !== undefined && v[k] !== null);
+        return given.length === 0 || given.length === 3;
+    }).withMessage('Choose a block, a floor and a room together.'),
+];
+
+const registerValidators = [...userProfileRules, ...roomRequestRules, handleValidation];
+
+const roomRequestValidators = [
+    body('block_id').isString().trim().notEmpty().isLength({ max: 10 }).withMessage('block_id is required.'),
+    body('floor_number').isInt({ min: 0, max: 99 }).withMessage('floor_number is required.').toInt(),
+    body('room_id').isString().trim().notEmpty().isLength({ max: 20 }).withMessage('room_id is required.'),
+    handleValidation,
+];
+
+const declineRoomRequestValidators = [
+    param('student_id').trim().notEmpty().isLength({ max: 36 }).withMessage('student id is invalid.'),
+    body('reason').isString().trim().isLength({ min: 5, max: 300 }).withMessage('Give a reason of 5 to 300 characters.'),
+    handleValidation,
+];
 
 const loginValidators = [
     body('reg_or_emp_id').isString().withMessage('reg_or_emp_id is required.').bail().trim().notEmpty().withMessage('reg_or_emp_id is required.').bail().isLength({ max: 30 }),
@@ -395,6 +420,8 @@ module.exports = {
     blockIdParamValidators,
     listStaffValidators,
     listNotificationsValidators,
+    roomRequestValidators,
+    declineRoomRequestValidators,
     notificationIdValidators,
     changePasswordValidators,
     availabilityValidators,
