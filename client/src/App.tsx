@@ -17,6 +17,8 @@ const named = <T extends Record<string, React.ComponentType<any>>>(loader: () =>
 
 const LoginScreen = named(() => import('./features/auth/LoginScreen'), 'LoginScreen');
 const RegisterScreen = named(() => import('./features/auth/RegisterScreen'), 'RegisterScreen');
+const ForgotPasswordScreen = named(() => import('./features/auth/PasswordResetScreens'), 'ForgotPasswordScreen');
+const ResetPasswordScreen = named(() => import('./features/auth/PasswordResetScreens'), 'ResetPasswordScreen');
 const AdminLoginScreen = named(() => import('./features/auth/AdminLoginScreen'), 'AdminLoginScreen');
 const StudentHome = named(() => import('./features/student/StudentHome'), 'StudentHome');
 const NewComplaintForm = named(() => import('./features/student/NewComplaintForm'), 'NewComplaintForm');
@@ -58,6 +60,8 @@ export const App: React.FC = () => {
                         separate administrator sign-in. */}
                     <Route path="/login" element={<LoginScreen />} />
                     <Route path="/register" element={<RegisterScreen />} />
+                    <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
+                    <Route path="/reset-password" element={<ResetPasswordScreen />} />
                     <Route path="/admin" element={<AdminLoginScreen />} />
 
                     {/* Protected App Shell */}

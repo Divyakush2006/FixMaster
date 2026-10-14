@@ -127,6 +127,17 @@ const loginValidators = [
     handleValidation,
 ];
 
+const forgotPasswordValidators = [
+    body('reg_or_emp_id').isString().withMessage('reg_or_emp_id is required.').bail().trim().notEmpty().withMessage('reg_or_emp_id is required.').bail().isLength({ max: 30 }),
+    handleValidation,
+];
+
+const resetPasswordValidators = [
+    body('token').isString().withMessage('token is required.').bail().isLength({ min: 20, max: 2000 }).withMessage('token is invalid.'),
+    newPassword('new_password'),
+    handleValidation,
+];
+
 const createComplaintValidators = [
     body('ticket_scope').isIn(TICKET_SCOPES).withMessage(`ticket_scope must be one of: ${TICKET_SCOPES.join(', ')}.`),
     body('block_id').trim().notEmpty().withMessage('block_id is required.'),
@@ -387,6 +398,8 @@ module.exports = {
     handleValidation,
     registerValidators,
     loginValidators,
+    forgotPasswordValidators,
+    resetPasswordValidators,
     createComplaintValidators,
     listComplaintsValidators,
     complaintIdParamValidators,

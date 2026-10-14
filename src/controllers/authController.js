@@ -6,6 +6,9 @@ const { createUser } = require('../services/userService');
 const { recordAudit } = require('../services/auditService');
 const { assertRequestableRoom, recordRoomRequest } = require('../services/roomRequestService');
 const { portalForRole } = require('../config/portals');
+const mailer = require('../services/mailer');
+const { hashPassword } = require('../services/userService');
+const { issueResetToken, readResetToken, matchesCurrentPassword, TTL_MINUTES } = require('../services/passwordResetService');
 
 // A real bcrypt hash (cost 12) of a throwaway string. Login compares against
 // it when the ID doesn't exist, so an unknown ID costs the same ~250ms as a
@@ -77,6 +80,89 @@ exports.registerStudent = asyncHandler(async (req, res) => {
         user,
         room_request: wantsRoom ? { status: 'PENDING', block_id, floor_number, room_id } : null,
     });
+});
+
+// ---- Password reset by email ------------------------------------------------------
+
+const appBaseUrl = () => (process.env.APP_URL || (process.env.CORS_ORIGIN || '').split(',')[0] || 'http://localhost:3000').trim().replace(/\/+$/, '');
+const RESET_REFUSED = 'This reset link is invalid or has expired. Request a new one.';
+
+/** GET /api/auth/capabilities - lets the sign-in screens hide features this deployment cannot offer. */
+exports.capabilities = (req, res) => {
+    res.json({ password_reset: mailer.isConfigured() });
+};
+
+/**
+ * POST /api/auth/forgot-password { reg_or_emp_id }
+ * Emails a one-time reset link to the address on file. The answer is the same
+ * whether or not the account exists, so this cannot be used to find accounts.
+ * Administrator accounts are not eligible: another administrator resets those.
+ */
+exports.forgotPassword = asyncHandler(async (req, res) => {
+    if (!mailer.isConfigured()) {
+        throw new AppError(503, 'Password reset by email is not set up here. Please contact the hostel office.');
+    }
+    const { rows } = await db.query(
+        `SELECT user_id, reg_or_emp_id, full_name, email, role, password_hash, is_active
+         FROM users WHERE UPPER(reg_or_emp_id) = UPPER($1)`,
+        [req.body.reg_or_emp_id]
+    );
+    const user = rows[0];
+    if (user && user.is_active && portalForRole(user.role) !== 'admin') {
+        const link = `${appBaseUrl()}/reset-password#token=${issueResetToken(user)}`;
+        // Not awaited: the reply must not reveal, by its timing, whether mail was sent.
+        mailer
+            .sendMail({
+                to: user.email,
+                subject: 'Reset your FixMaster password',
+                text:
+                    `Hello ${user.full_name},
+
+` +
+                    `Someone asked to reset the password for ${user.reg_or_emp_id}. Open this link to choose a new one ` +
+                    `(valid for ${TTL_MINUTES} minutes, works once):
+
+${link}
+
+` +
+                    `If this was not you, ignore this message; your password has not changed.
+`,
+            })
+            .catch((err) => console.error(`[mail] reset email for ${user.reg_or_emp_id} failed: ${err.message}`));
+        await recordAudit(null, req, { actorUserId: null, action: 'auth.password_reset_requested', targetType: 'user', targetId: user.user_id });
+    }
+    res.status(202).json({ message: 'If that account exists, a reset link is on its way to the email address on file.' });
+});
+
+/** POST /api/auth/reset-password { token, new_password } - completes the flow; signs the user out everywhere. */
+exports.resetPassword = asyncHandler(async (req, res) => {
+    const parsed = readResetToken(req.body.token);
+    if (!parsed) throw new AppError(400, RESET_REFUSED);
+    const passwordHash = await hashPassword(req.body.new_password);
+    await db.withTransaction(async (client) => {
+        const { rows } = await client.query(
+            'SELECT user_id, reg_or_emp_id, role, password_hash, is_active FROM users WHERE user_id = $1 FOR UPDATE',
+            [parsed.userId]
+        );
+        const user = rows[0];
+        if (!user || !user.is_active || portalForRole(user.role) === 'admin' || !matchesCurrentPassword(parsed.fp, user.password_hash)) {
+            throw new AppError(400, RESET_REFUSED);
+        }
+        await client.query(
+            `UPDATE users SET password_hash = $1, credentials_changed_at = CURRENT_TIMESTAMP,
+                              failed_login_count = 0, locked_until = NULL
+             WHERE user_id = $2`,
+            [passwordHash, user.user_id]
+        );
+        await recordAudit(client, req, {
+            actorUserId: user.user_id,
+            action: 'auth.password_reset_completed',
+            targetType: 'user',
+            targetId: user.user_id,
+            details: { reg_or_emp_id: user.reg_or_emp_id },
+        });
+    });
+    res.json({ message: 'Password changed. Sign in with your new password.' });
 });
 
 /**

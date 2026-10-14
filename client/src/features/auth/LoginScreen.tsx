@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Navigate, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { GraduationCap, HardHat, ArrowRight } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { authApi } from '../../api/endpoints';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { ApiError } from '../../api/client';
@@ -48,6 +50,8 @@ export const LoginScreen: React.FC = () => {
   const isExpired = searchParams.get('expired') === '1';
   const isIdle = searchParams.get('idle') === '1';
   const ui = PORTAL_UI[portal];
+  // Offered only when this deployment can actually send the email.
+  const { data: capabilities } = useQuery({ queryKey: ['auth-capabilities'], queryFn: authApi.capabilities, staleTime: 5 * 60_000, retry: false });
 
   if (!authLoading && isAuthenticated && user && user.role !== 'ADMIN') {
     return <Navigate to={getHomeRouteForRole(user.role)} replace />;
@@ -169,7 +173,15 @@ export const LoginScreen: React.FC = () => {
         </Button>
       </form>
 
-      <p className="mt-4 text-center text-xs text-slate-500">Forgotten your password? The hostel office can reset it for you.</p>
+      <p className="mt-4 text-center text-[13px] text-slate-500">
+        {capabilities?.password_reset ? (
+          <Link to="/forgot-password" className="link">
+            Forgot your password?
+          </Link>
+        ) : (
+          'Forgotten your password? The hostel office can reset it for you.'
+        )}
+      </p>
 
       {SHOW_DEMO && (
         <DemoAccounts

@@ -66,6 +66,34 @@ const registerLimiter = rateLimit({
     message: { error: 'Too many registrations from this network. Please try again later.' },
 });
 
+// POST /api/auth/forgot-password: every request counts. Per account, so nobody
+// can flood one person's inbox; per IP as a coarse ceiling for the campus NAT.
+const forgotPasswordLimiters = [
+    rateLimit({
+        ...common,
+        windowMs: int(process.env.RATE_LIMIT_FORGOT_WINDOW_MS, 60 * 60 * 1000),
+        limit: int(process.env.RATE_LIMIT_FORGOT_IP_MAX, 60),
+        keyGenerator: (req) => `forgot:ip:${req.ip}`,
+        message: { error: 'Too many reset requests from this network. Please try again later.' },
+    }),
+    rateLimit({
+        ...common,
+        windowMs: int(process.env.RATE_LIMIT_FORGOT_WINDOW_MS, 60 * 60 * 1000),
+        limit: int(process.env.RATE_LIMIT_FORGOT_MAX, 3),
+        keyGenerator: (req) => `forgot:acct:${loginId(req)}`,
+        message: { error: 'A reset link was already requested for this account recently. Check your email, or try again later.' },
+    }),
+];
+
+// POST /api/auth/reset-password: a ceiling on guessing/replaying tokens.
+const resetPasswordLimiter = rateLimit({
+    ...common,
+    windowMs: int(process.env.RATE_LIMIT_FORGOT_WINDOW_MS, 60 * 60 * 1000),
+    limit: int(process.env.RATE_LIMIT_RESET_IP_MAX, 60),
+    keyGenerator: (req) => `reset:ip:${req.ip}`,
+    message: { error: 'Too many attempts. Please try again later.' },
+});
+
 /**
  * The general limiter counts signed-in users per user, and only anonymous
  * traffic per IP. The token is verified (cheap HMAC) rather than merely
@@ -96,4 +124,4 @@ const generalLimiter = rateLimit({
     message: { error: 'Too many requests. Please slow down.' },
 });
 
-module.exports = { loginLimiters, registerLimiter, generalLimiter };
+module.exports = { loginLimiters, registerLimiter, forgotPasswordLimiters, resetPasswordLimiter, generalLimiter };

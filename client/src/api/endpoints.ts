@@ -45,6 +45,15 @@ export const authApi = {
   // finish even when the page is navigating away.
   logout: () => apiFetch<void>('/auth/logout', { method: 'POST', keepalive: true }),
 
+  /** What this deployment can do, e.g. whether password-reset email is set up. */
+  capabilities: () => apiFetch<{ password_reset: boolean }>('/auth/capabilities', { method: 'GET' }),
+
+  forgotPassword: (reg_or_emp_id: string) =>
+    apiFetch<{ message: string }>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ reg_or_emp_id }) }),
+
+  resetPassword: (token: string, new_password: string) =>
+    apiFetch<{ message: string }>('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, new_password }) }),
+
   // Public self-registration exists for students only.
   registerStudent: (data: RegisterPayload) =>
     apiFetch<{ message: string; user: User; room_request: RoomRequest | null }>('/auth/student/register', {
