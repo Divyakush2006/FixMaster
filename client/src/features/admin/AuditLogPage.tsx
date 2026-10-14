@@ -12,7 +12,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Pagination } from '../../components/ui/Pagination';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
 import { AuditEntry } from '../../types';
-import { ticketRef } from '../../utils/labels';
+import { blockLabel, ticketRef } from '../../utils/labels';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
 
 const PAGE_SIZE = 50;
