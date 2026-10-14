@@ -54,6 +54,41 @@ services:
       - "${WEB_PORT:-8080}:80"
     restart: unless-stopped
 
+  # Scheduled logical backups (pg_dump) of the database, kept on the `backups`
+  # volume. Runs one backup at start-up, then every BACKUP_INTERVAL_HOURS.
+  # Copy that volume off this host (object storage, another machine): a backup
+  # that lives only next to the database does not survive losing the host.
+  # Restore: scripts/restore.sh (see docs/OPERATIONS.md).
+  backup:
+    image: postgres:16-alpine
+    depends_on:
+      api:
+        condition: service_healthy # the API applies migrations on start
+    environment:
+      DATABASE_URL: postgresql://fix_master:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (a random value)}@db:5432/fix_master_db
+      BACKUP_DIR: /backups
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+    volumes:
+      - backups:/backups
+      - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
+    entrypoint: ["/bin/sh", "-c"]
+    # A failed backup is logged and retried next cycle; the healthcheck below
+    # turns "no fresh backup" into an unhealthy container that monitoring sees.
+    command:
+      - |
+        while true; do
+          /bin/sh /usr/local/bin/backup.sh || echo "backup failed, will retry next cycle" >&2
+          sleep $$((BACKUP_INTERVAL_HOURS * 3600))
+        done
+    healthcheck:
+      test: ["CMD-SHELL", "find /backups -name 'fixmaster-*.dump' -mmin -$$((BACKUP_INTERVAL_HOURS * 60 + 60)) | grep -q ."]
+      interval: 10m
+      timeout: 10s
+      retries: 1
+      start_period: 5m
+    restart: unless-stopped
+
   seed:
     build: .
     profiles: ["demo"]
@@ -67,3 +102,4 @@ services:
 
 volumes:
   pgdata:
+  backups:
