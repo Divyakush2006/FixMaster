@@ -252,3 +252,39 @@ docker compose --profile demo run --rm seed   # optional demo data - never on a 
 ```
 
 The API container applies pending migrations on start. Production checklist: a real `JWT_SECRET`, `CORS_ORIGIN` set, `TRUST_PROXY` matching the number of proxies, TLS terminated in front of nginx, and database backups enabled.
+
+---
+
+## Round 5: features built inside the fixed database, and what that rules out
+
+FixMaster's database structure is a fixed dependency: no tables, columns,
+triggers, procedures, views or migrations are added by this round. Features
+that could be built on the existing schema were; the rest are documented here
+as limitations.
+
+**Built (no database change)**
+
+- *Registration with a room request.* Block, floor and room come from the
+  configured infrastructure; the choice is validated server-side and recorded
+  in `audit_log` (`allotment.request` / `allotment.decline`). It grants no
+  access until the office allots the room through the existing flow.
+- *SLA tracking.* Deadline = `created_at` + the category's `default_sla_hours`,
+  computed in queries (`src/services/slaService.js`). Statuses, a deadline
+  filter, dashboard figures and per-ticket badges.
+- *Notifications.* Derived on request from `complaint_logs`, assignments and
+  SLA (`src/services/notificationFeed.js`).
+
+**Limitations (genuinely blocked by the fixed schema or by missing integrations)**
+
+| Gap | Why | What would resolve it |
+|---|---|---|
+| Supervisor block scope, technician home block | `users` has no block column and there is no supervisor-block relationship; a supervisor sees every block | a `supervisor_blocks` table and `users.home_block_id` (a migration) |
+| Persistent notifications, read state across devices | no notification storage; "unread" is a per-browser timestamp | a `notifications` table |
+| Historical SLA ledger | nothing is stored; figures use each ticket's current timestamps | an SLA events table or stored deadlines |
+| Room-request withdrawal / editing | requests are append-only audit rows; a newer request supersedes an older one | a request table with a status |
+| Photo upload | no attachment metadata table; evidence stays a validated URL | an attachments table plus object storage |
+| Password reset / email verification | needs an email provider and single-use token storage (no table) | a provider account (e.g. Resend) and a token table |
+| External notifications (email, SMS) | no provider configured; nothing is reported as delivered | provider credentials |
+| Scheduled backups | scripts exist (`database/backup_restore.*`) but nothing schedules them | a scheduler on the chosen host |
+| Deployment | not deployed anywhere; requires the owner's authorization and a host | choose a host; provision its managed PostgreSQL |
+| httpOnly cookie sessions | tokens remain in `localStorage` (mitigated by CSP, revocation, idle sign-out); a safe migration needs CSRF protection across every route and an end-to-end test of all portals | a dedicated change with full regression coverage |
