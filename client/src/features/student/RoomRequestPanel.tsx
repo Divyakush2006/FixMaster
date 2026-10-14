@@ -35,6 +35,16 @@ export const RoomRequestPanel: React.FC = () => {
     onError: (err: Error) => setError(err.message || 'Could not send the request.'),
   });
 
+  const withdraw = useMutation({
+    mutationFn: meApi.withdrawRoomRequest,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-room-request'] });
+      showToast('Request withdrawn', 'success');
+      setEditing(false);
+    },
+    onError: (err: Error) => setError(err.message || 'Could not withdraw the request.'),
+  });
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -87,9 +97,16 @@ export const RoomRequestPanel: React.FC = () => {
             </div>
           </form>
         ) : (
-          <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
-            Request a different room
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
+              Request a different room
+            </Button>
+            {request?.status === 'PENDING' && (
+              <Button size="sm" variant="ghost" loading={withdraw.isPending} onClick={() => withdraw.mutate()}>
+                Withdraw request
+              </Button>
+            )}
+          </div>
         )}
       </div>
     </Alert>

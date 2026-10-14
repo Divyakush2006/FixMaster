@@ -4,7 +4,7 @@ const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { PUBLIC_USER_COLUMNS, hashPassword } = require('../services/userService');
 const { signToken } = require('../middleware/auth');
 const { countLiveJobs, releaseLiveJobs } = require('../services/taskService');
-const { assertRequestableRoom, recordRoomRequest, requestStatus } = require('../services/roomRequestService');
+const { assertRequestableRoom, recordRoomRequest, requestStatus, WITHDRAW } = require('../services/roomRequestService');
 const { recordAudit } = require('../services/auditService');
 
 // GET /api/me - full profile of the caller (password_hash never selected).
@@ -64,6 +64,29 @@ exports.requestRoom = asyncHandler(async (req, res) => {
         await recordRoomRequest(client, req, req.user.userId, room);
     }, req.user.userId);
     res.status(201).json({ request: await requestStatus(db, req.user.userId), message: 'Request sent to the hostel office.' });
+});
+
+// DELETE /api/me/room-request - take back a request the hostel office has not
+// answered yet. Only a pending request can be withdrawn.
+exports.withdrawRoomRequest = asyncHandler(async (req, res) => {
+    if (req.user.role !== 'STUDENT') {
+        throw new AppError(403, 'Only students request rooms.');
+    }
+    await db.withTransaction(async (client) => {
+        // Same lock as requestRoom, so a withdrawal cannot interleave with a new request.
+        await client.query('SELECT 1 FROM users WHERE user_id = $1 FOR UPDATE', [req.user.userId]);
+        const open = await requestStatus(client, req.user.userId);
+        if (!open || open.status !== 'PENDING') {
+            throw new AppError(404, 'You have no waiting room request to withdraw.');
+        }
+        await recordAudit(client, req, {
+            action: WITHDRAW,
+            targetType: 'user',
+            targetId: req.user.userId,
+            details: { room_id: open.room_id },
+        });
+    }, req.user.userId);
+    res.status(204).end();
 });
 
 // PATCH /api/me/password - change own password (requires the current one).

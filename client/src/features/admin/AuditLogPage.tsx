@@ -30,6 +30,7 @@ const ACTION_LABEL: Record<string, string> = {
   'user.reset_password': 'Password reset',
   'allotment.request': 'Room requested at registration',
   'allotment.decline': 'Room request declined',
+  'allotment.withdraw': 'Room request withdrawn by the student',
   'allotment.create': 'Room allotted',
   'allotment.move': 'Student moved to another room',
   'allotment.end': 'Allotment ended',
@@ -82,6 +83,8 @@ export function describeAudit(e: AuditEntry): string {
       return `Room ${d.room_id} · ${blockLabel(String(d.block_id))}`;
     case 'allotment.decline':
       return `Room ${d.room_id} · ${d.reason ?? ''}`;
+    case 'allotment.withdraw':
+      return `Room ${d.room_id}`;
     case 'allotment.create':
       return `Room ${d.room_id} · ${d.academic_year}`;
     case 'allotment.move':

@@ -9,11 +9,13 @@ const { recordAudit } = require('./auditService');
 // (`allotment.decline`). The student's permissions come from a real
 // student_room_allotments row only; a pending request grants nothing.
 //
-//   pending  = latest request, no current allotment, no later decline
-//   declined = latest request has a later decline (the student may ask again)
+//   pending   = latest request, no current allotment, nothing later closing it
+//   declined  = a later decline (the student may ask again)
+//   withdrawn = a later withdrawal by the student (as if never asked)
 
 const REQUEST = 'allotment.request';
 const DECLINE = 'allotment.decline';
+const WITHDRAW = 'allotment.withdraw';
 
 /** Confirms block, floor and room exist together, are active, and match. */
 async function assertRequestableRoom(client, { block_id, floor_number, room_id }) {
@@ -46,21 +48,21 @@ async function requestStatus(executor, studentId) {
     const { rows } = await executor.query(
         `SELECT a.audit_id, a.occurred_at, a.details,
                 EXISTS (SELECT 1 FROM student_room_allotments s WHERE s.student_id = $1 AND s.is_current = TRUE) AS allotted,
-                d.details->>'reason' AS decline_reason, d.occurred_at AS declined_at
+                d.action AS closing_action, d.details->>'reason' AS decline_reason
          FROM audit_log a
          LEFT JOIN LATERAL (
-             SELECT x.details, x.occurred_at FROM audit_log x
-             WHERE x.action = $3 AND x.target_id = $1 AND x.audit_id > a.audit_id
+             SELECT x.action, x.details FROM audit_log x
+             WHERE x.action IN ($3, $4) AND x.target_id = $1 AND x.audit_id > a.audit_id
              ORDER BY x.audit_id DESC LIMIT 1
          ) d ON TRUE
          WHERE a.action = $2 AND a.target_id = $1
          ORDER BY a.audit_id DESC LIMIT 1`,
-        [studentId, REQUEST, DECLINE]
+        [studentId, REQUEST, DECLINE, WITHDRAW]
     );
     const r = rows[0];
-    if (!r || r.allotted) return null;
+    if (!r || r.allotted || r.closing_action === WITHDRAW) return null;
     return {
-        status: r.declined_at ? 'DECLINED' : 'PENDING',
+        status: r.closing_action === DECLINE ? 'DECLINED' : 'PENDING',
         block_id: r.details.block_id,
         floor_number: r.details.floor_number,
         room_id: r.details.room_id,
@@ -83,13 +85,13 @@ async function pendingRequests(executor) {
              JOIN rooms r ON r.room_id = a.details->>'room_id' AND r.is_active = TRUE
              WHERE a.action = $1
                AND NOT EXISTS (SELECT 1 FROM student_room_allotments s WHERE s.student_id = u.user_id AND s.is_current = TRUE)
-               AND NOT EXISTS (SELECT 1 FROM audit_log d WHERE d.action = $2 AND d.target_id = a.target_id AND d.audit_id > a.audit_id)
+               AND NOT EXISTS (SELECT 1 FROM audit_log d WHERE d.action IN ($2, $3) AND d.target_id = a.target_id AND d.audit_id > a.audit_id)
              ORDER BY a.target_id, a.audit_id DESC
          ) latest
          ORDER BY requested_at, audit_id`,
-        [REQUEST, DECLINE]
+        [REQUEST, DECLINE, WITHDRAW]
     );
     return rows;
 }
 
-module.exports = { assertRequestableRoom, recordRoomRequest, requestStatus, pendingRequests, DECLINE };
+module.exports = { assertRequestableRoom, recordRoomRequest, requestStatus, pendingRequests, DECLINE, WITHDRAW };

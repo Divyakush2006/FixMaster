@@ -189,6 +189,9 @@ export const meApi = {
   requestRoom: (data: { block_id: string; floor_number: number; room_id: string }) =>
     apiFetch<{ request: RoomRequest; message: string }>('/me/room-request', { method: 'POST', body: JSON.stringify(data) }),
 
+  /** Takes back a request the hostel office has not answered yet. */
+  withdrawRoomRequest: () => apiFetch<void>('/me/room-request', { method: 'DELETE' }),
+
   // Throws ApiError with status 404 when the student has no current allotment.
   getMyAllotment: () => apiFetch<Allotment>('/me/allotment', { method: 'GET' }),
 

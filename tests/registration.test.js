@@ -149,6 +149,27 @@ describe('student registration and room requests', () => {
         assert.equal((await t.api('/me/room-request')).status, 401);
     });
 
+    it('a student can withdraw a waiting request; it then disappears from the office queue', async () => {
+        const token = await t.login('NEW2', 'Welcome@2026x');
+        const id = (await t.sql("SELECT user_id FROM users WHERE reg_or_emp_id = 'NEW2'")).rows[0].user_id;
+        const queue = async () => (await t.api('/admin/allotment-requests', { token: admin })).data.map((r) => r.student_id);
+        assert.ok((await queue()).includes(id));
+
+        assert.equal((await t.api('/me/room-request', { method: 'DELETE' })).status, 401);
+        assert.equal((await t.api('/me/room-request', { method: 'DELETE', token: await t.login(SEED.supervisor) })).status, 403);
+
+        assert.equal((await t.api('/me/room-request', { method: 'DELETE', token })).status, 204);
+        assert.equal((await t.api('/me/room-request', { token })).data.request, null);
+        assert.ok(!(await queue()).includes(id));
+        assert.equal((await t.api('/me/room-request', { method: 'DELETE', token })).status, 404, 'nothing left to withdraw');
+        const audited = await t.sql("SELECT COUNT(*)::int AS n FROM audit_log WHERE action = 'allotment.withdraw' AND target_id = $1", [id]);
+        assert.equal(audited.rows[0].n, 1);
+
+        // Asking again after a withdrawal is allowed.
+        const again = await t.api('/me/room-request', { method: 'POST', token, body: { block_id: 'B_BLOCK', floor_number: 2, room_id: 'B-202' } });
+        assert.equal(again.status, 201);
+    });
+
     it('a student with a room cannot request another one', async () => {
         const token = await t.login(SEED.student);
         const r = await t.api('/me/room-request', { method: 'POST', token, body: { block_id: 'B_BLOCK', floor_number: 2, room_id: 'B-202' } });
