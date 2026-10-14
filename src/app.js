@@ -91,7 +91,6 @@ app.use('/api/feedback', require('./routes/feedbackRoutes'));
 app.use('/api/analytics', require('./routes/analyticsRoutes'));
 app.use('/api/meta', require('./routes/metaRoutes'));
 app.use('/api/me', require('./routes/meRoutes'));
-app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 
 app.use(notFoundHandler);

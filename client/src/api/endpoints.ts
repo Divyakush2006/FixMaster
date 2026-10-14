@@ -28,7 +28,6 @@ import {
   RoomType,
   AuditEntry,
   UserSummary,
-  AppNotification,
   RoomRequest,
   PendingAllotmentRequest,
 } from '../types';
@@ -204,18 +203,6 @@ export const meApi = {
       method: 'PATCH',
       body: JSON.stringify({ is_available, ...(releaseOpenJobs !== undefined ? { release_open_jobs: releaseOpenJobs } : {}) }),
     }),
-};
-
-export const notificationsApi = {
-  /** Newest first; `unread` limits to unread ones. */
-  list: (opts: { unread?: boolean; limit?: number; offset?: number } = {}) =>
-    apiFetch<AppNotification[]>('/notifications', { method: 'GET', params: { limit: 15, ...opts } }),
-
-  unreadCount: () => apiFetch<{ unread: number }>('/notifications/unread-count', { method: 'GET' }),
-
-  markRead: (id: number) => apiFetch<{ message: string }>(`/notifications/${id}/read`, { method: 'POST' }),
-
-  markAllRead: () => apiFetch<{ marked: number }>('/notifications/read-all', { method: 'POST' }),
 };
 
 // ADMIN only.

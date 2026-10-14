@@ -3,8 +3,8 @@
  * Regenerates the human-readable SQL bundles from the migrations, so there
  * is exactly one source of truth for the schema:
  *
- *   database/schema.sql              <- drops + migrations/001 + 004 + 005 + 007 + 009 + 010 + 012 (tables, floors, room rules, audit, reporters, block scoping, SLA)
- *   database/triggers_procedures.sql <- migrations/003 + 006 + 008 + 011 + 013 (triggers, procedures, views)
+ *   database/schema.sql              <- drops + migrations/001 + 004 + 005 + 007 + 009 + 010 (tables, floors, room rules, audit, reporters, block scoping, SLA)
+ *   database/triggers_procedures.sql <- migrations/003 + 006 + 008 + 011 (triggers, procedures, views)
  *   database/init_all.sql            <- drops + every migration in order + seed (dev reset)
  *
  *   npm run db:bundle           rewrite the files
@@ -34,7 +34,6 @@ const DEV_ONLY_DROPS = `-- DEVELOPMENT ONLY: everything below starts by DROPPING
 -- schemas are created and upgraded with \`npm run db:migrate\`.
 DROP TABLE IF EXISTS schema_migrations CASCADE;
 DROP TABLE IF EXISTS supervisor_blocks CASCADE;
-DROP TABLE IF EXISTS notifications CASCADE;
 DROP TABLE IF EXISTS audit_log CASCADE;
 DROP TABLE IF EXISTS revoked_tokens CASCADE;
 DROP TABLE IF EXISTS complaint_reporters CASCADE;
@@ -66,7 +65,7 @@ function build() {
 
     return {
         'schema.sql': [
-            GENERATED('migrations/001 + 004 + 005 + 007 + 009 + 010 + 012'),
+            GENERATED('migrations/001 + 004 + 005 + 007 + 009 + 010'),
             DEV_ONLY_DROPS,
             mig('001'),
             mig('004'),
@@ -74,9 +73,8 @@ function build() {
             mig('007'),
             mig('009'),
             mig('010'),
-            mig('012'),
         ].join('\n'),
-        'triggers_procedures.sql': [GENERATED('migrations/003 + 006 + 008 + 011 + 013'), mig('003'), mig('006'), mig('008'), mig('011'), mig('013')].join('\n'),
+        'triggers_procedures.sql': [GENERATED('migrations/003 + 006 + 008 + 011'), mig('003'), mig('006'), mig('008'), mig('011')].join('\n'),
         'init_all.sql': [
             GENERATED(`every migration in order + seed_data.sql`),
             DEV_ONLY_DROPS,

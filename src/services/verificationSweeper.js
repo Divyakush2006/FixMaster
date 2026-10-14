@@ -4,8 +4,7 @@
  * ticket whose reporter is away or has moved out waits for verification
  * forever and keeps counting as unresolved.
  *
- * The work is done by sp_auto_close_stale_verifications (migration 008). The same
- * run raises overdue-ticket notifications (sp_notify_overdue_tickets, 013).
+ * The work is done by sp_auto_close_stale_verifications (migration 008).
  * Safe with several API instances: each run takes a transaction-level
  * advisory lock and skips if another instance is already sweeping.
  */
@@ -26,8 +25,6 @@ async function sweepOnce() {
         const lock = await client.query('SELECT pg_try_advisory_xact_lock($1) AS ok', [SWEEP_LOCK_KEY]);
         if (!lock.rows[0].ok) return 0;
         const result = await client.query('CALL sp_auto_close_stale_verifications($1, NULL)', [autoCloseHours()]);
-        // Same lock, same run: warn about tickets that have passed their SLA deadline.
-        await client.query('CALL sp_notify_overdue_tickets(NULL)');
         return result.rows[0] ? result.rows[0].p_closed : 0;
     });
 }

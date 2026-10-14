@@ -2,7 +2,6 @@ import React from 'react';
 import { Menu } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { WORKSPACE_NAME } from './navigation';
-import { NotificationBell } from './NotificationBell';
 import { UserMenu } from './UserMenu';
 
 export const Topbar: React.FC<{ onOpenNav: () => void }> = ({ onOpenNav }) => {
@@ -30,7 +29,6 @@ export const Topbar: React.FC<{ onOpenNav: () => void }> = ({ onOpenNav }) => {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
-        <NotificationBell />
         <UserMenu />
       </div>
     </header>
