@@ -2,7 +2,9 @@ const bcrypt = require('bcrypt');
 const db = require('../config/db');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { PUBLIC_USER_COLUMNS, hashPassword } = require('../services/userService');
+const jwt = require('jsonwebtoken');
 const { signToken } = require('../middleware/auth');
+const { setSessionCookies } = require('../utils/sessionCookies');
 const { countLiveJobs, releaseLiveJobs } = require('../services/taskService');
 const { assertRequestableRoom, recordRoomRequest, requestStatus, WITHDRAW } = require('../services/roomRequestService');
 const { recordAudit } = require('../services/auditService');
@@ -114,7 +116,15 @@ exports.changePassword = asyncHandler(async (req, res) => {
     // Every token issued before now is revoked (see auth.js), including the
     // one that made this request - so hand back a fresh one to keep this
     // session signed in while every other session is signed out.
-    res.json({ message: 'Password updated. Other sessions have been signed out.', token: signToken(updated.rows[0]) });
+    const token = signToken(updated.rows[0]);
+    const message = 'Password updated. Other sessions have been signed out.';
+    if (req.auth.via === 'cookie') {
+        // A browser session: refresh the cookie, never hand the token to page scripts.
+        const { exp } = jwt.decode(token);
+        setSessionCookies(req, res, token, exp);
+        return res.json({ message, expires_at: new Date(exp * 1000).toISOString() });
+    }
+    res.json({ message, token });
 });
 
 // PATCH /api/me/availability (STAFF) - go on/off duty. Auto-dispatch only

@@ -2,27 +2,18 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { User, RegisterPayload, Portal, RoomRequest } from '../types';
 import { authApi } from '../api/endpoints';
 import { queryClient } from '../api/queryClient';
-import {
-  clearSession,
-  getStoredUser,
-  getToken,
-  isTokenExpired,
-  replaceToken,
-  saveSession,
-  SESSION_TOKEN_KEY,
-} from '../api/session';
+import { clearSession, getStoredUser, hasSession, saveSession, SESSION_KEY, updateSessionExpiry } from '../api/session';
 
 interface AuthContextType {
   user: User | null;
-  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   /** Sign in through one of the three portals; each only accepts its own accounts. */
   login: (portal: Portal, reg_or_emp_id: string, password: string) => Promise<User>;
   register: (payload: RegisterPayload) => Promise<{ user: User; roomRequest: RoomRequest | null }>;
   logout: () => void;
-  /** After a password change the server issues a new token (old ones are revoked). */
-  updateToken: (token: string) => void;
+  /** After a password change the server re-issues the session cookie; record its new end time. */
+  renewSession: (expiresAt: string) => void;
   getHomeRouteForRole: (role?: string) => string;
 }
 
@@ -30,16 +21,13 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const storedToken = getToken();
     const storedUser = getStoredUser();
-    // An expired token would only fail on the first API call; drop it up front
-    // so the user lands on the login page instead of a screen of errors.
-    if (storedToken && storedUser && !isTokenExpired(storedToken)) {
-      setToken(storedToken);
+    // A session that has already ended would only fail on the first API call;
+    // drop it up front so the user lands on the login page, not a screen of errors.
+    if (storedUser && hasSession()) {
       setUser(storedUser);
     } else {
       clearSession();
@@ -52,24 +40,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // this tab so it never keeps showing the previous person's data.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key !== SESSION_TOKEN_KEY && e.key !== null) return;
-      const next = getToken();
+      if (e.key !== SESSION_KEY && e.key !== null) return;
+      const next = getStoredUser();
       if (!next) {
         queryClient.clear();
-        setToken(null);
         setUser(null);
-      } else if (next !== token) {
-        const nextUser = getStoredUser();
-        if (nextUser && user && nextUser.user_id === user.user_id) {
-          setToken(next); // same person, refreshed token (e.g. password change)
-        } else {
-          window.location.reload();
-        }
+      } else if (!user || next.user_id !== user.user_id) {
+        window.location.reload();
       }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  }, [token, user]);
+  }, [user]);
 
   const getHomeRouteForRole = (role?: string): string => {
     switch (role || user?.role) {
@@ -90,8 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const res = await authApi.login(portal, { reg_or_emp_id, password });
     // Nothing cached by a previous user on this browser may survive.
     queryClient.clear();
-    saveSession(res.token, res.user);
-    setToken(res.token);
+    saveSession(res.user, res.expires_at);
     setUser(res.user);
     return res.user;
   };
@@ -102,32 +83,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = useCallback(() => {
-    // Revoke the token on the server first (the request reads it from
-    // storage synchronously), then forget it locally. A failure here must not
-    // keep the user signed in on this device.
-    if (getToken()) authApi.logout().catch(() => undefined);
+    // Revoke the session on the server (which also clears the cookies), then
+    // forget it locally. A failure here must not keep the user signed in on
+    // this device.
+    if (hasSession()) authApi.logout().catch(() => undefined);
     clearSession();
     queryClient.clear();
-    setToken(null);
     setUser(null);
   }, []);
 
-  const updateToken = useCallback((newToken: string) => {
-    replaceToken(newToken);
-    setToken(newToken);
-  }, []);
+  const renewSession = useCallback((expiresAt: string) => updateSessionExpiry(expiresAt), []);
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        token,
-        isAuthenticated: !!token && !!user,
+        isAuthenticated: !!user,
         isLoading,
         login,
         register,
         logout,
-        updateToken,
+        renewSession,
         getHomeRouteForRole,
       }}
     >

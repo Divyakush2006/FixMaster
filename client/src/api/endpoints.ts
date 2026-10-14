@@ -204,10 +204,10 @@ export const meApi = {
   // Throws ApiError with status 404 when the student has no current allotment.
   getMyAllotment: () => apiFetch<Allotment>('/me/allotment', { method: 'GET' }),
 
-  // Returns a fresh token: the change revokes every token issued before it,
-  // including the one used for this request.
+  // The change revokes every older session, including this one, so the server
+  // re-issues the session cookie in the same response.
   changePassword: (current_password: string, new_password: string) =>
-    apiFetch<{ message: string; token: string }>('/me/password', {
+    apiFetch<{ message: string; expires_at: string }>('/me/password', {
       method: 'PATCH',
       body: JSON.stringify({ current_password, new_password }),
     }),

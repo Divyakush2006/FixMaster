@@ -64,8 +64,10 @@ app.use(
     cors({
         origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()) : true,
         exposedHeaders: ['X-Total-Count', 'X-Request-Id'],
+        credentials: true, // the web app's session cookie, from the listed origins only
     })
 );
+app.use(require('./middleware/originGuard'));
 app.use(express.json({ limit: '100kb' }));
 
 // Liveness: the process is up. Never touches the database, so a database

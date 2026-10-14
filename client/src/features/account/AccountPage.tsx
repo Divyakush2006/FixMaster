@@ -16,7 +16,7 @@ import { formatDateTime } from '../../utils/formatters';
 import { PASSWORD_HINT, passwordProblem } from '../../utils/password';
 
 export const AccountPage: React.FC = () => {
-  const { updateToken } = useAuth();
+  const { renewSession } = useAuth();
   const { showToast } = useToast();
   const { data: me, isLoading } = useQuery({ queryKey: ['me'], queryFn: meApi.getMe });
 
@@ -28,8 +28,8 @@ export const AccountPage: React.FC = () => {
   const mutation = useMutation({
     mutationFn: () => meApi.changePassword(current, next),
     onSuccess: (res) => {
-      // The change revoked every older token, including the one in storage.
-      updateToken(res.token);
+      // The change revoked every older session; the server re-issued our cookie.
+      renewSession(res.expires_at);
       setCurrent('');
       setNext('');
       setConfirm('');

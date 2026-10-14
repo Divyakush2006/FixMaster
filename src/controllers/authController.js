@@ -6,7 +6,9 @@ const { createUser } = require('../services/userService');
 const { recordAudit } = require('../services/auditService');
 const { assertRequestableRoom, recordRoomRequest } = require('../services/roomRequestService');
 const { portalForRole } = require('../config/portals');
+const jwt = require('jsonwebtoken');
 const mailer = require('../services/mailer');
+const { wantsCookies, setSessionCookies, clearSessionCookies } = require('../utils/sessionCookies');
 const { hashPassword } = require('../services/userService');
 const { issueResetToken, readResetToken, matchesCurrentPassword, TTL_MINUTES } = require('../services/passwordResetService');
 
@@ -56,6 +58,7 @@ exports.logout = asyncHandler(async (req, res) => {
     if (req.user.role === 'ADMIN') {
         await recordAudit(null, req, { action: 'auth.admin_sign_out', targetType: 'user', targetId: req.user.userId });
     }
+    clearSessionCookies(req, res);
     res.status(204).end();
 });
 
@@ -251,8 +254,8 @@ exports.loginFor = (portal) =>
             await recordAudit(null, req, { actorUserId: user.user_id, action: 'auth.admin_sign_in', targetType: 'user', targetId: user.user_id });
         }
 
-        res.json({
-            token: signToken(user),
+        const token = signToken(user);
+        const body = {
             portal,
             user: {
                 user_id: user.user_id,
@@ -260,5 +263,15 @@ exports.loginFor = (portal) =>
                 full_name: user.full_name,
                 role: user.role,
             },
-        });
+        };
+        if (wantsCookies(req)) {
+            // Browser: the token goes into an HttpOnly cookie and never into
+            // the response body, so page scripts cannot read it.
+            const { exp } = jwt.decode(token);
+            setSessionCookies(req, res, token, exp);
+            body.expires_at = new Date(exp * 1000).toISOString();
+        } else {
+            body.token = token;
+        }
+        res.json(body);
     });

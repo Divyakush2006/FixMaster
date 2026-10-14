@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { apiFetch, apiFetchPage, apiErrorCode, ApiError } from './client';
-import { saveSession, getToken, clearSession, isTokenExpired } from './session';
+import type { User } from '../types';
+import { saveSession, clearSession, hasSession, getCsrfToken } from './session';
 
 const user = { user_id: 'u1', reg_or_emp_id: 'S1', full_name: 'Test', role: 'STUDENT' as const };
+const inAnHour = () => new Date(Date.now() + 3_600_000).toISOString();
+const signIn = (u: User = user) => saveSession(u, inAnHour());
 
 /** Awaits a promise that must reject, and returns the ApiError it rejected with. */
 async function rejection(promise: Promise<unknown>): Promise<ApiError> {
@@ -37,26 +40,26 @@ describe('apiFetch auth handling', () => {
     Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
   });
 
-  it('signs the user out and redirects on 401 when a token was sent', async () => {
-    saveSession('tok', user);
+  it('signs the user out and redirects on 401 when a session was open', async () => {
+    signIn();
     vi.stubGlobal('fetch', mockFetch(401, { error: 'Invalid or expired token.' }));
     await expect(apiFetch('/complaints')).rejects.toBeInstanceOf(ApiError);
-    expect(getToken()).toBeNull();
+    expect(hasSession()).toBe(false);
     expect(window.location.href).toBe('/login?expired=1');
   });
 
   it('does NOT sign the user out on 403 (permission boundary, not an auth failure)', async () => {
-    saveSession('tok', user);
+    signIn();
     vi.stubGlobal('fetch', mockFetch(403, { error: 'You can only act on tasks assigned to you.' }));
     const err = await rejection(apiFetch('/dispatch/tasks/1'));
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(403);
     expect(err.message).toBe('You can only act on tasks assigned to you.');
-    expect(getToken()).toBe('tok');
+    expect(hasSession()).toBe(true);
     expect(window.location.href).toBe('/student');
   });
 
-  it('a 401 from the login form (no token) does not redirect', async () => {
+  it('a 401 from the login form (no session) does not redirect', async () => {
     window.location.pathname = '/login';
     vi.stubGlobal('fetch', mockFetch(401, { error: 'Invalid credentials.' }));
     const err = await rejection(apiFetch('/auth/login', { method: 'POST' }));
@@ -65,7 +68,7 @@ describe('apiFetch auth handling', () => {
   });
 
   it('an expired admin session returns to the admin sign-in, not the public one', async () => {
-    saveSession('tok', { ...user, role: 'ADMIN' });
+    signIn({ ...user, role: 'ADMIN' });
     window.location.pathname = '/admin/users';
     vi.stubGlobal('fetch', mockFetch(401, { error: 'Invalid or expired token.' }));
     await rejection(apiFetch('/admin/users'));
@@ -73,12 +76,12 @@ describe('apiFetch auth handling', () => {
   });
 
   it('a failed sign-in attempt never ends the session already open', async () => {
-    saveSession('tok', user);
+    signIn();
     window.location.pathname = '/admin';
     vi.stubGlobal('fetch', mockFetch(401, { error: 'Invalid credentials.' }));
     const err = await rejection(apiFetch('/auth/admin/login', { method: 'POST' }));
     expect(err.status).toBe(401);
-    expect(getToken()).toBe('tok');
+    expect(hasSession()).toBe(true);
   });
 
   it('turns a network failure into a readable ApiError with status 0', async () => {
@@ -89,14 +92,29 @@ describe('apiFetch auth handling', () => {
     expect(err.message).toMatch(/Cannot reach the server/);
   });
 
-  it('sends the bearer token and uses the same-origin /api base by default', async () => {
-    saveSession('abc', user);
+  it('uses the same-origin /api base, never puts a credential in a header, and asks for a cookie session', async () => {
+    signIn();
     const fetchMock = mockFetch(200, []);
     vi.stubGlobal('fetch', fetchMock);
     await apiFetch('/complaints', { params: { status: 'OPEN', block_id: '' } });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('/api/complaints?status=OPEN');
-    expect(init.headers.Authorization).toBe('Bearer abc');
+    expect(init.headers.Authorization).toBeUndefined();
+    expect(init.headers['X-Session-Transport']).toBe('cookie');
+    expect(init.credentials).toBe('same-origin');
+    expect(init.headers['X-CSRF-Token']).toBeUndefined();
+  });
+
+  it('echoes the CSRF cookie on state-changing requests only', async () => {
+    signIn();
+    document.cookie = 'fm_csrf=abc123; path=/';
+    const fetchMock = mockFetch(200, {});
+    vi.stubGlobal('fetch', fetchMock);
+    await apiFetch('/complaints', { method: 'POST', body: '{}' });
+    await apiFetch('/complaints');
+    expect(fetchMock.mock.calls[0][1].headers['X-CSRF-Token']).toBe('abc123');
+    expect(fetchMock.mock.calls[1][1].headers['X-CSRF-Token']).toBeUndefined();
+    document.cookie = 'fm_csrf=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
   });
 });
 
@@ -105,18 +123,37 @@ describe('session storage', () => {
 
   it('clearSession removes everything a session wrote, including the legacy shared allotment cache', () => {
     localStorage.setItem('fixmaster_student_allotment', JSON.stringify({ block_id: 'L_BLOCK', room_id: 'L-843' }));
-    saveSession('tok', user);
+    signIn();
     expect(localStorage.getItem('fixmaster_student_allotment')).toBeNull();
     clearSession();
     expect(localStorage.length).toBe(0);
   });
 
-  it('detects expired and malformed tokens', () => {
-    const encode = (payload: object) => `x.${btoa(JSON.stringify(payload))}.y`;
-    expect(isTokenExpired(encode({ exp: Math.floor(Date.now() / 1000) + 3600 }))).toBe(false);
-    expect(isTokenExpired(encode({ exp: Math.floor(Date.now() / 1000) - 10 }))).toBe(true);
-    expect(isTokenExpired(encode({}))).toBe(true);
-    expect(isTokenExpired('not-a-jwt')).toBe(true);
+  it('a session is only believed while it has not ended', () => {
+    expect(hasSession()).toBe(false);
+    saveSession(user, new Date(Date.now() + 60_000).toISOString());
+    expect(hasSession()).toBe(true);
+    saveSession(user, new Date(Date.now() - 1_000).toISOString());
+    expect(hasSession()).toBe(false);
+    localStorage.setItem('fixmaster_session_expires', 'not a date');
+    expect(hasSession()).toBe(false);
+  });
+
+  it('no credential is ever written to storage, and a token left by an older version is scrubbed', () => {
+    localStorage.setItem('fixmaster_token', 'old.jwt.token');
+    signIn();
+    expect(localStorage.getItem('fixmaster_token')).toBeNull();
+    const everything = Object.keys(localStorage).map((k) => localStorage.getItem(k)).join(' ');
+    expect(everything).not.toMatch(/eyJ|Bearer/);
+    clearSession();
+    expect(localStorage.length).toBe(0);
+  });
+
+  it('reads the CSRF value from its cookie', () => {
+    document.cookie = 'fm_csrf=tok%2Bvalue; path=/';
+    expect(getCsrfToken()).toBe('tok+value');
+    document.cookie = 'fm_csrf=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    expect(getCsrfToken()).toBeNull();
   });
 });
 
@@ -150,7 +187,7 @@ describe('paged lists and empty responses', () => {
 
   it('the activity timestamp is part of the session and cleared with it', () => {
     localStorage.clear();
-    saveSession('tok', user);
+    signIn();
     expect(localStorage.getItem('fixmaster_last_activity')).not.toBeNull();
     clearSession();
     expect(localStorage.length).toBe(0);

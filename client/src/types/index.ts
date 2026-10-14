@@ -91,9 +91,10 @@ export interface AdminAllotment {
 export type Portal = 'student' | 'staff' | 'admin';
 
 export interface AuthResponse {
-  token: string;
   portal: Portal;
   user: User;
+  /** When the cookie session ends (ISO time). The token itself is only ever in an HttpOnly cookie. */
+  expires_at: string;
 }
 
 export type RoomType = 'AC' | 'NON_AC' | 'DELUXE_AC';

@@ -3,13 +3,13 @@ const jwt = require('jsonwebtoken');
 const db = require('../config/db');
 const { asyncHandler } = require('./errorHandler');
 const { portalForRole, audienceFor, ALL_AUDIENCES } = require('../config/portals');
+const { credentialsOf } = require('../utils/sessionCookies');
 
 const JWT_ALGORITHM = 'HS256';
 
 /** null = no token supplied, undefined = token present but invalid/expired. */
-function verifyToken(authHeader) {
-    if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-    const token = authHeader.slice('Bearer '.length).trim();
+function verifyToken(token) {
+    if (!token) return null;
     try {
         // Pin the algorithm so a token can't choose how it is verified, and
         // require one of our portal audiences.
@@ -59,7 +59,8 @@ async function loadActiveUser(decoded) {
 // 403 (authorize below, and ownership checks in controllers) = signed in but
 // not allowed to do this one thing; clients must NOT sign out on 403.
 const authenticate = asyncHandler(async (req, res, next) => {
-    const decoded = verifyToken(req.headers.authorization);
+    const credentials = credentialsOf(req);
+    const decoded = verifyToken(credentials.token);
     if (decoded === null) {
         return res.status(401).json({ error: 'Access denied. No token provided.' });
     }
@@ -70,8 +71,14 @@ const authenticate = asyncHandler(async (req, res, next) => {
     if (!user) {
         return res.status(401).json({ error: 'Your session is no longer valid. Please sign in again.' });
     }
+    // A cookie is sent by the browser on its own, so a state-changing request
+    // that rides on one must prove it came from our page (double-submit token).
+    // Checked after the session itself so a missing session is still a 401.
+    if (!credentials.csrfOk) {
+        return res.status(403).json({ error: 'Request blocked: the security token is missing or wrong. Reload the page and try again.', code: 'CSRF' });
+    }
     req.user = user;
-    req.auth = { jti: decoded.jti, exp: decoded.exp };
+    req.auth = { jti: decoded.jti, exp: decoded.exp, via: credentials.via };
     next();
 });
 

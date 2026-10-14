@@ -1,5 +1,5 @@
 import { mapApiError } from '../utils/errorMapper';
-import { clearSession, getToken } from './session';
+import { clearSession, getCsrfToken, hasSession } from './session';
 
 // Same-origin '/api' by default: in development Vite proxies it to the API
 // (vite.config.ts), in production the web server does (client/nginx.conf).
@@ -66,16 +66,22 @@ async function request<T>(endpoint: string, options: RequestOptions): Promise<{ 
     if (queryString) url += `?${queryString}`;
   }
 
-  const token = getToken();
+  const signedIn = hasSession();
+  const method = (customOptions.method ?? 'GET').toUpperCase();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    // Ask for a cookie session at sign-in: the token then never reaches page scripts.
+    'X-Session-Transport': 'cookie',
     ...(customHeaders as Record<string, string>),
   };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  // Double-submit CSRF token: the API compares this header with the cookie it set.
+  const csrf = getCsrfToken();
+  if (csrf && method !== 'GET' && method !== 'HEAD') headers['X-CSRF-Token'] = csrf;
 
   let response: Response;
   try {
-    response = await fetch(url, { ...customOptions, headers });
+    // The session cookie is sent automatically; cross-origin APIs need 'include'.
+    response = await fetch(url, { credentials: API_BASE_URL.startsWith('http') ? 'include' : 'same-origin', ...customOptions, headers });
   } catch (error) {
     throw new ApiError('Cannot reach the server. Check your connection and try again.', 0, error);
   }
@@ -98,7 +104,7 @@ async function request<T>(endpoint: string, options: RequestOptions): Promise<{ 
     // A failed sign-in attempt (any /auth/* endpoint) must never end the
     // session the user already has open.
     const isSignInRequest = endpoint.startsWith('/auth/');
-    if (response.status === 401 && token && !isSignInRequest) {
+    if (response.status === 401 && signedIn && !isSignInRequest) {
       clearSession();
       const path = window.location.pathname;
       const isAdminArea = path === '/admin' || path.startsWith('/admin/');

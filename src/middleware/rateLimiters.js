@@ -1,6 +1,7 @@
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const { ALL_AUDIENCES } = require('../config/portals');
+const { credentialsOf } = require('../utils/sessionCookies');
 
 const int = (value, fallback) => {
     const n = parseInt(value, 10);
@@ -100,10 +101,10 @@ const resetPasswordLimiter = rateLimit({
  * decoded, so forging user ids can't be used to dodge the per-IP bucket.
  */
 function generalKey(req) {
-    const header = req.headers.authorization;
-    if (header && header.startsWith('Bearer ')) {
+    const { token } = credentialsOf(req);
+    if (token) {
         try {
-            const decoded = jwt.verify(header.slice(7).trim(), process.env.JWT_SECRET, {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET, {
                 algorithms: ['HS256'],
                 audience: ALL_AUDIENCES,
             });

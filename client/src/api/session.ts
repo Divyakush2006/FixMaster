@@ -2,25 +2,29 @@ import { User } from '../types';
 
 /**
  * Single owner of what the app keeps in browser storage for a signed-in user.
+ *
+ * The session itself is an HttpOnly cookie the browser holds and page scripts
+ * cannot read. Storage only keeps what the UI needs to draw itself before the
+ * first API call - the signed-in person's profile and when the session ends.
+ * Neither is a credential: with them alone nothing can be done.
+ *
  * Everything a session writes is removed by clearSession(), so on a shared
  * machine (hostel common-room PC) the next person to sign in inherits nothing
  * from the previous one.
  */
-const TOKEN_KEY = 'fixmaster_token';
 const USER_KEY = 'fixmaster_user';
+const EXPIRES_KEY = 'fixmaster_session_expires';
 // Time of the last user interaction, shared by every tab (idle sign-out).
 const ACTIVITY_KEY = 'fixmaster_last_activity';
-// Written by earlier versions of the app (a per-browser room cache that was
-// shared across every account on the machine). Cleared on sign-in/out so
-// stale copies don't linger.
-const LEGACY_KEYS = ['fixmaster_student_allotment'];
+// Written by earlier versions of the app. `fixmaster_token` held the session
+// token itself in storage; it is scrubbed on every sign-in/out so no copy of a
+// credential lingers in a browser that was used before cookies were adopted.
+const LEGACY_KEYS = ['fixmaster_token', 'fixmaster_student_allotment'];
 
-/** Storage key of the session token, for cross-tab change detection. */
-export const SESSION_TOKEN_KEY = TOKEN_KEY;
+/** Storage key that changes whenever the signed-in person does, for cross-tab detection. */
+export const SESSION_KEY = USER_KEY;
 
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
+const CSRF_COOKIE = 'fm_csrf';
 
 export function getStoredUser(): User | null {
   const raw = localStorage.getItem(USER_KEY);
@@ -32,11 +36,28 @@ export function getStoredUser(): User | null {
   }
 }
 
-export function saveSession(token: string, user: User): void {
+/** When the server-side session ends, if known. */
+export function getSessionExpiry(): number | null {
+  const value = Date.parse(localStorage.getItem(EXPIRES_KEY) ?? '');
+  return Number.isFinite(value) ? value : null;
+}
+
+/** True when this browser believes a session is open (the server stays the authority). */
+export function hasSession(): boolean {
+  const expiry = getSessionExpiry();
+  return getStoredUser() !== null && expiry !== null && expiry > Date.now();
+}
+
+export function saveSession(user: User, expiresAt: string): void {
   LEGACY_KEYS.forEach((k) => localStorage.removeItem(k));
-  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(EXPIRES_KEY, expiresAt);
   localStorage.setItem(USER_KEY, JSON.stringify(user));
   touchActivity();
+}
+
+/** After a password change the server re-issues the cookie with a new end time. */
+export function updateSessionExpiry(expiresAt: string): void {
+  localStorage.setItem(EXPIRES_KEY, expiresAt);
 }
 
 export function touchActivity(at = Date.now()): void {
@@ -49,20 +70,12 @@ export function getLastActivity(): number {
   return Number.isFinite(value) && value > 0 ? value : Date.now();
 }
 
-export function replaceToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
 export function clearSession(): void {
-  [TOKEN_KEY, USER_KEY, ACTIVITY_KEY, ...LEGACY_KEYS].forEach((k) => localStorage.removeItem(k));
+  [USER_KEY, EXPIRES_KEY, ACTIVITY_KEY, ...LEGACY_KEYS].forEach((k) => localStorage.removeItem(k));
 }
 
-/** True when the JWT's `exp` claim is in the past (or the token is unreadable). */
-export function isTokenExpired(token: string): boolean {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-    return typeof payload.exp !== 'number' || payload.exp * 1000 <= Date.now();
-  } catch {
-    return true;
-  }
+/** The CSRF value the server set at sign-in; sent back in a header on every state-changing request. */
+export function getCsrfToken(): string | null {
+  const match = document.cookie.split('; ').find((c) => c.startsWith(`${CSRF_COOKIE}=`));
+  return match ? decodeURIComponent(match.slice(CSRF_COOKIE.length + 1)) : null;
 }
