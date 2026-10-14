@@ -13,6 +13,11 @@ COPY src ./src
 COPY scripts ./scripts
 COPY database ./database
 
+# Ticket photos are stored here: mount a volume on it. The folder is created and
+# owned by the unprivileged user so a fresh volume is writable.
+ENV UPLOAD_DIR=/data/uploads
+RUN mkdir -p /data/uploads && chown -R node:node /data
+
 # Never run the app as root inside the container.
 USER node
 

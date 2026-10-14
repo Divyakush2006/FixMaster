@@ -1,6 +1,6 @@
 import React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, ShieldCheck, Undo2, Users } from 'lucide-react';
+import { ShieldCheck, Undo2, Users } from 'lucide-react';
 import { Drawer } from '../../components/ui/Drawer';
 import { DetailList } from '../../components/ui/Card';
 import { Alert, AlertTone } from '../../components/ui/Alert';
@@ -14,6 +14,7 @@ import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { Complaint, ComplaintStatus, TimelineEvent } from '../../types';
 import { formatDateTime } from '../../utils/formatters';
+import { TicketPhoto } from './TicketPhoto';
 import { CLOSED_STATUSES, SCOPE_LABEL, STATUS_LABEL, ticketLocation, ticketRef } from '../../utils/labels';
 
 interface ComplaintDetailModalProps {
@@ -134,8 +135,6 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({ isOp
         ]
       : reconstructTimeline(complaint);
 
-  const safePhoto = complaint.photo_evidence_url && /^https?:\/\//i.test(complaint.photo_evidence_url) ? complaint.photo_evidence_url : null;
-
   return (
     <Drawer
       isOpen={isOpen}
@@ -235,16 +234,7 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({ isOp
           </section>
         )}
 
-        {/* Only http(s) links are ever rendered: older records may hold other schemes. */}
-        {safePhoto && (
-          <section>
-            <h3 className="eyebrow mb-2">Attachment</h3>
-            <a href={safePhoto} target="_blank" rel="noopener noreferrer" className="link inline-flex items-center gap-1.5 text-[13px]">
-              View photo
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-          </section>
-        )}
+        <TicketPhoto complaint={complaint} />
 
         <section>
           <h3 className="eyebrow mb-3">Activity</h3>

@@ -45,6 +45,19 @@ rm -f "$partial.list"
 mv "$partial" "$final"
 echo "backup ok: $final ($(wc -c < "$final") bytes)"
 
+# Ticket photos are files, not database rows: back them up alongside.
+if [ -n "${UPLOAD_DIR:-}" ] && [ -d "$UPLOAD_DIR" ] && [ -n "$(ls -A "$UPLOAD_DIR" 2>/dev/null)" ]; then
+    photos="$BACKUP_DIR/fixmaster-photos-$stamp.tar.gz"
+    if tar -czf "$photos.partial" -C "$UPLOAD_DIR" . && tar -tzf "$photos.partial" > /dev/null; then
+        mv "$photos.partial" "$photos"
+        echo "backup ok: $photos ($(wc -c < "$photos") bytes)"
+    else
+        rm -f "$photos.partial"
+        echo "backup FAILED: could not archive the ticket photos" >&2
+        exit 1
+    fi
+fi
+
 if [ "$RETENTION_DAYS" -gt 0 ]; then
-    find "$BACKUP_DIR" -name 'fixmaster-*.dump' -type f -mtime "+$RETENTION_DAYS" -print -delete | sed 's/^/pruned: /'
+    find "$BACKUP_DIR" \( -name 'fixmaster-*.dump' -o -name 'fixmaster-photos-*.tar.gz' \) -type f -mtime "+$RETENTION_DAYS" -print -delete | sed 's/^/pruned: /'
 fi

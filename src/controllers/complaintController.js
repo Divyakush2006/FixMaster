@@ -2,6 +2,7 @@ const db = require('../config/db');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { recordAudit } = require('../services/auditService');
 const { slaDueSql, slaStatusSql } = require('../services/slaService');
+const { photoUrl, sanitizeImage, savePhoto, removePhoto, findPhoto } = require('../services/attachmentService');
 
 // Ticket model (migrations 007-008): the ROOM or COMMON AREA is the unit of a
 // ticket, not the person. There is at most one live ticket per location and
@@ -80,6 +81,7 @@ function withViewerFlags(row, { role }) {
             row.status === 'PENDING_VERIFICATION' &&
             (row.ticket_scope === 'ROOM' ? row.is_room_resident : row.is_reporter),
         can_withdraw: isStudent && row.is_reporter && row.status === 'OPEN',
+        can_attach_photo: isStudent && row.is_reporter && LIVE_STATUSES.includes(row.status),
     };
 }
 
@@ -475,6 +477,72 @@ exports.getComplaintById = asyncHandler(async (req, res) => {
         complaint.merged_into_ref = ticketRef(complaint.merged_into_id);
     }
     res.json(complaint);
+});
+
+// ---- Photo attachment ------------------------------------------------------------
+// Files live in UPLOAD_DIR (see attachmentService); the ticket's existing
+// photo_evidence_url column points at GET /api/complaints/:id/photo.
+
+/** Reporter-only, live-ticket-only guard shared by upload and removal. */
+async function lockForPhotoChange(client, complaintId, userId) {
+    const ticket = await lockComplaint(client, complaintId);
+    const mine = await client.query('SELECT 1 FROM complaint_reporters WHERE complaint_id = $1 AND user_id = $2', [ticket.complaint_id, userId]);
+    if (mine.rows.length === 0) {
+        throw new AppError(403, 'Only people who reported this issue can change its photo.');
+    }
+    if (!LIVE_STATUSES.includes(ticket.status)) {
+        throw new AppError(409, 'This ticket is closed, so its photo can no longer be changed.');
+    }
+    return ticket;
+}
+
+// PUT /api/complaints/:id/photo (STUDENT) - body is the image itself
+// (Content-Type image/jpeg or image/png, at most 5 MB). Replaces any earlier photo.
+exports.uploadPhoto = asyncHandler(async (req, res) => {
+    const image = sanitizeImage(req.body, req.headers['content-type']);
+    if (!image) {
+        throw new AppError(415, 'Send a JPEG or PNG photo (up to 5 MB) as the request body.');
+    }
+    const url = photoUrl(req.params.id);
+    await db.withTransaction(async (client) => {
+        await lockForPhotoChange(client, req.params.id, req.user.userId);
+        await client.query('UPDATE complaints SET photo_evidence_url = $2 WHERE complaint_id = $1', [req.params.id, url]);
+        // Inside the transaction: if the file cannot be written, nothing points at it.
+        await savePhoto(req.params.id, image.buffer, image.ext);
+    }, req.user.userId);
+    res.json({ photo_evidence_url: url });
+});
+
+// DELETE /api/complaints/:id/photo (STUDENT)
+exports.deletePhoto = asyncHandler(async (req, res) => {
+    await db.withTransaction(async (client) => {
+        await lockForPhotoChange(client, req.params.id, req.user.userId);
+        await client.query('UPDATE complaints SET photo_evidence_url = NULL WHERE complaint_id = $1', [req.params.id]);
+        await removePhoto(req.params.id);
+    }, req.user.userId);
+    res.status(204).end();
+});
+
+// GET /api/complaints/:id/photo - the stored photo, for anyone who may see the ticket.
+exports.getPhoto = asyncHandler(async (req, res) => {
+    const found = await db.query('SELECT 1 FROM complaints WHERE complaint_id = $1', [req.params.id]);
+    if (found.rows.length === 0) {
+        throw new AppError(404, 'Complaint not found.');
+    }
+    await assertCanView(req.params.id, req.user);
+    const photo = await findPhoto(req.params.id);
+    if (!photo) {
+        throw new AppError(404, 'This ticket has no photo.');
+    }
+    // Never rendered as a page: fixed type, no sniffing, no scripts even if it somehow were.
+    res.set({
+        'Content-Type': photo.contentType,
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+        'Content-Disposition': `inline; filename="ticket-photo.${photo.ext}"`,
+        'Cache-Control': 'private, max-age=300',
+    });
+    res.sendFile(photo.file, { dotfiles: 'deny' });
 });
 
 // GET /api/complaints/:id/logs - audit trail, same visibility as the detail view.

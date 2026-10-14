@@ -32,6 +32,8 @@ function testDatabaseUrl() {
 const TEST_DB_URL = testDatabaseUrl();
 
 process.env.NODE_ENV = 'test';
+// Uploaded photos go to a throwaway folder, never the working tree.
+process.env.UPLOAD_DIR = require('path').join(require('os').tmpdir(), `fixmaster-test-uploads-${process.pid}`);
 process.env.DATABASE_URL = TEST_DB_URL;
 process.env.JWT_SECRET = require('crypto').randomBytes(32).toString('hex'); // fresh for every run
 // Rate limits are effectively off for the suite (it logs in many times from
@@ -121,7 +123,7 @@ async function startApp() {
         await db.pool.end();
     }
 
-    return { api, login, sql, close, clearTokens: () => tokenCache.clear() };
+    return { base, api, login, sql, close, clearTokens: () => tokenCache.clear() };
 }
 
 /** Seed fixtures used across tests. */

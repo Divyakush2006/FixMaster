@@ -63,6 +63,16 @@ export const authApi = {
 };
 
 export const complaintsApi = {
+  /** Attach (or replace) the ticket's photo: the raw image is the request body. */
+  uploadPhoto: (complaintId: string, photo: Blob) =>
+    apiFetch<{ photo_evidence_url: string }>(`/complaints/${complaintId}/photo`, {
+      method: 'PUT',
+      headers: { 'Content-Type': photo.type },
+      body: photo,
+    }),
+
+  deletePhoto: (complaintId: string) => apiFetch<void>(`/complaints/${complaintId}/photo`, { method: 'DELETE' }),
+
   /**
    * One live ticket per room (or common area) and issue: if it is already
    * open, the caller is added to it and `joined` is true.

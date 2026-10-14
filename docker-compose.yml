@@ -39,10 +39,13 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
       TRUST_PROXY: 1
+      UPLOAD_DIR: /data/uploads
       # Optional: enables "Forgot password?" by email (see .env.example).
       SMTP_URL: ${SMTP_URL:-}
       MAIL_FROM: ${MAIL_FROM:-}
       APP_URL: ${APP_URL:-}
+    volumes:
+      - uploads:/data/uploads
     restart: unless-stopped
 
   web:
@@ -67,10 +70,12 @@ services:
     environment:
       DATABASE_URL: postgresql://fix_master:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (a random value)}@db:5432/fix_master_db
       BACKUP_DIR: /backups
+      UPLOAD_DIR: /data/uploads
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
     volumes:
       - backups:/backups
+      - uploads:/data/uploads:ro
       - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
     entrypoint: ["/bin/sh", "-c"]
     # A failed backup is logged and retried next cycle; the healthcheck below
@@ -103,3 +108,4 @@ services:
 volumes:
   pgdata:
   backups:
+  uploads:

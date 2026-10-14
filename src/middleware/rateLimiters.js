@@ -95,6 +95,15 @@ const resetPasswordLimiter = rateLimit({
     message: { error: 'Too many attempts. Please try again later.' },
 });
 
+// PUT /api/complaints/:id/photo: uploads are the heaviest requests the API takes.
+const photoUploadLimiter = rateLimit({
+    ...common,
+    windowMs: int(process.env.RATE_LIMIT_UPLOAD_WINDOW_MS, 10 * 60 * 1000),
+    limit: int(process.env.RATE_LIMIT_UPLOAD_MAX, 20),
+    keyGenerator: (req) => `upload:${req.user ? req.user.userId : req.ip}`,
+    message: { error: 'Too many photo uploads. Please wait a few minutes and try again.' },
+});
+
 /**
  * The general limiter counts signed-in users per user, and only anonymous
  * traffic per IP. The token is verified (cheap HMAC) rather than merely
@@ -125,4 +134,4 @@ const generalLimiter = rateLimit({
     message: { error: 'Too many requests. Please slow down.' },
 });
 
-module.exports = { loginLimiters, registerLimiter, forgotPasswordLimiters, resetPasswordLimiter, generalLimiter };
+module.exports = { loginLimiters, registerLimiter, forgotPasswordLimiters, resetPasswordLimiter, photoUploadLimiter, generalLimiter };

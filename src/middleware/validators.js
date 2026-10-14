@@ -185,6 +185,9 @@ const complaintIdParam = param('id').trim().notEmpty().isLength({ max: 36 }).wit
 
 const complaintIdParamValidators = [complaintIdParam, handleValidation];
 
+// Photos are stored under the ticket id, so here it must be a real UUID.
+const photoParamValidators = [param('id').isUUID().withMessage('complaint id is invalid.'), handleValidation];
+
 const rejectComplaintValidators = [
     complaintIdParam,
     body('reason')
@@ -403,6 +406,7 @@ module.exports = {
     createComplaintValidators,
     listComplaintsValidators,
     complaintIdParamValidators,
+    photoParamValidators,
     rejectComplaintValidators,
     mergeComplaintValidators,
     assignTechnicianValidators,

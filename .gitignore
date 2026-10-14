@@ -29,3 +29,6 @@ Thumbs.db
 # Temporary database backups
 database/backups/
 .neon
+
+# Ticket photos written at runtime
+uploads/

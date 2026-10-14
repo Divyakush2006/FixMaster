@@ -12,3 +12,4 @@ database/backups
 *.dump
 *.pdf
 *.md
+uploads

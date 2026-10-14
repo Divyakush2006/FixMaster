@@ -226,6 +226,8 @@ export interface Complaint {
   is_room_resident?: boolean;
   can_verify?: boolean;
   can_withdraw?: boolean;
+  /** True for someone who reported this ticket while it is still open: they may add, replace or remove its photo. */
+  can_attach_photo?: boolean;
   /** Detail view only, and only where names may be shown. */
   reporters?: Reporter[];
 }

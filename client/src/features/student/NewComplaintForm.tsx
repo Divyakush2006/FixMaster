@@ -13,7 +13,9 @@ import { Alert } from '../../components/ui/Alert';
 import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/cn';
 import { PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
-import { TicketScope, Priority, CommonAreaItem } from '../../types';
+import { TicketScope, Priority, CommonAreaItem, CreateComplaintPayload } from '../../types';
+import { PhotoPicker } from '../../components/common/PhotoPicker';
+import { preparePhoto } from '../../utils/photo';
 import { blockLabel, PRIORITY_LABEL, ticketRef } from '../../utils/labels';
 
 const TIMESLOTS = ['08:00 AM - 10:00 AM', '10:00 AM - 12:00 PM', '02:00 PM - 04:00 PM', '04:00 PM - 06:00 PM', '06:00 PM - 08:00 PM'];
@@ -58,7 +60,7 @@ export const NewComplaintForm: React.FC = () => {
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Priority>('MEDIUM');
   const [preferredTimeslot, setPreferredTimeslot] = useState('04:00 PM - 06:00 PM');
-  const [photoEvidenceUrl, setPhotoEvidenceUrl] = useState('');
+  const [photo, setPhoto] = useState<File | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
@@ -93,8 +95,24 @@ export const NewComplaintForm: React.FC = () => {
     : PRIORITIES;
 
   const mutation = useMutation({
-    mutationFn: complaintsApi.create,
-    onSuccess: (res) => {
+    mutationFn: async (payload: CreateComplaintPayload) => {
+      const res = await complaintsApi.create(payload);
+      // The photo goes up once the ticket exists. A ticket that someone else
+      // already raised keeps its own photo, so ours is not sent for it.
+      let photoFailed = false;
+      if (photo && !res.joined) {
+        try {
+          await complaintsApi.uploadPhoto(res.complaint.complaint_id, await preparePhoto(photo));
+        } catch {
+          photoFailed = true;
+        }
+      }
+      return { res, photoFailed };
+    },
+    onSuccess: ({ res, photoFailed }) => {
+      if (photoFailed) {
+        showToast('Ticket raised, photo not saved', 'info', 'You can add the photo again from the ticket.');
+      }
       if (res.joined) {
         // One live ticket per room / common area and issue: someone (often a
         // roommate) already reported this, so the student was added to it.
@@ -130,7 +148,6 @@ export const NewComplaintForm: React.FC = () => {
       description: description.trim() || null,
       priority,
       preferred_timeslot: preferredTimeslot || null,
-      photo_evidence_url: photoEvidenceUrl.trim() || null,
     });
   };
 
@@ -337,8 +354,8 @@ export const NewComplaintForm: React.FC = () => {
                   </div>
                 )}
               </Field>
-              <Field label="Photo link" aside="Optional" hint="A link to a photo of the problem (https://…).">
-                {(a) => <Input {...a} type="url" value={photoEvidenceUrl} onChange={(e) => setPhotoEvidenceUrl(e.target.value)} placeholder="https://" />}
+              <Field label="Photo" aside="Optional" hint="A JPEG or PNG showing the problem. Location data is removed.">
+                {() => <PhotoPicker value={photo} onChange={setPhoto} />}
               </Field>
             </Section>
           </CardBody>
