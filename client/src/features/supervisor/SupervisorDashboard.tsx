@@ -277,7 +277,7 @@ export const SupervisorDashboard: React.FC = () => {
             description="Workload, backlog and student satisfaction by block."
             actions={<Switch checked={showEmptyBlocks} onChange={setShowEmptyBlocks} label="Show blocks with no tickets" showLabel />}
           />
-          <TableWrap>
+          <TableWrap tabIndex={0} role="region" aria-label="Figures by block">
             <Table>
               <THead>
                 <tr>
