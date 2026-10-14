@@ -144,6 +144,28 @@ Concurrent actions are made safe in the database rather than hoped for:
 | Two cleaning tickets auto-dispatched at once | They go to different cleaners (workload decisions are serialized per trade) |
 | Two residents confirming at once | One answer is recorded; the other is told who answered |
 
+## Registration and room requests
+
+A new student registers at `/register` with their name, registration number,
+email, mobile number, a confirmed password, and the **block, floor and room**
+they live in. The choices come from the hostel infrastructure the
+administrators have configured (a block added in the admin portal appears at
+once; with none configured the form says so).
+
+The room is a **request, not proof of residence**. The server checks that the
+room exists, is open and matches the chosen block and floor, then records the
+request in the audit log in the same transaction as the account. The student
+can sign in straight away but cannot raise room tickets, and can still report
+common-area faults. The hostel office sees **Room requests** on the allotments
+page and approves (through the normal allotment workflow, which enforces bed
+capacity) or declines with a reason the student sees. Students can send a new
+request after a decline. Public registration only ever creates students.
+
+The database has no pending-allotment state and its structure is fixed, so
+requests live in `audit_log` (`allotment.request` / `allotment.decline`) and a
+pending request is derived from it. Limitation: a request cannot be withdrawn
+or edited, only superseded by a newer one.
+
 ## Architecture
 
 ```mermaid
