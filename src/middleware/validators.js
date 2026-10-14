@@ -4,6 +4,7 @@ const ROLES = ['STUDENT', 'STAFF', 'SUPERVISOR', 'ADMIN'];
 const SPECIALIZATIONS = ['CLEANING', 'ELECTRICIAN', 'CARPENTER', 'AC_TECH', 'PLUMBER'];
 const TICKET_SCOPES = ['ROOM', 'COMMON_AREA'];
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'];
+const SLA_FILTERS = ['ON_TRACK', 'AT_RISK', 'OVERDUE', 'MET', 'BREACHED'];
 const STATUSES = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING_VERIFICATION', 'COMPLETED', 'ESCALATED', 'REJECTED', 'CANCELLED'];
 
 // bcrypt only uses the first 72 BYTES of a password and silently ignores the
@@ -162,6 +163,7 @@ const createComplaintValidators = [
 const listComplaintsValidators = [
     query('status').optional().isIn(STATUSES).withMessage(`status must be one of: ${STATUSES.join(', ')}.`),
     query('block_id').optional().trim().notEmpty(),
+    query('sla').optional().isIn(SLA_FILTERS).withMessage(`sla must be one of: ${SLA_FILTERS.join(', ')}.`),
     query('q').optional().isString().trim().isLength({ max: 100 }).withMessage('q must be at most 100 characters.'),
     query('limit').optional().isInt({ min: 1, max: 500 }).withMessage('limit must be between 1 and 500.').toInt(),
     query('offset').optional().isInt({ min: 0 }).withMessage('offset must be 0 or more.').toInt(),

@@ -14,7 +14,7 @@ import { Avatar } from '../../components/ui/Avatar';
 import { Field, Textarea } from '../../components/ui/Form';
 import { Skeleton } from '../../components/ui/PageLoader';
 import { cn } from '../../components/ui/cn';
-import { StatusBadge, PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
+import { StatusBadge, PriorityBadge, SpecializationBadge, SlaBadge } from '../../components/common/Badges';
 import { ActivityTimeline } from '../../components/common/ActivityTimeline';
 import { Complaint, TimelineEvent } from '../../types';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
@@ -210,6 +210,7 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
           <span className="font-mono text-xs font-medium text-slate-500">{ticketRef(complaint.complaint_id)}</span>
           <StatusBadge status={complaint.status} />
           <PriorityBadge priority={complaint.priority} />
+          <SlaBadge complaint={complaint} />
         </>
       }
       title={complaint.issue_name}

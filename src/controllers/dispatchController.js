@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
+const { slaDueSql, slaStatusSql } = require('../services/slaService');
 
 // Validation of dispatch requests (complaint exists, is in a dispatchable
 // state, staff member exists, is active and has the right trade) lives in the
@@ -68,7 +69,19 @@ exports.autoDispatchCleaning = asyncHandler(async (req, res) => {
 
 // GET /api/dispatch/queue (STAFF) - the caller's live tasks, floor-ordered.
 exports.getStaffQueue = asyncHandler(async (req, res) => {
-    const result = await db.query('SELECT * FROM view_staff_active_queue WHERE staff_user_id = $1', [req.user.userId]);
+    // The existing queue view (floor, then priority) plus each job's deadline.
+    const result = await db.query(
+        `SELECT q.*, ${slaDueSql()} AS sla_due_at, ${slaStatusSql()} AS sla_status
+         FROM view_staff_active_queue q
+         JOIN complaints c ON c.complaint_id = q.complaint_id
+         JOIN complaint_subcategories sub ON sub.subcategory_id = c.subcategory_id
+         JOIN complaint_categories cat ON cat.category_id = sub.category_id
+         WHERE q.staff_user_id = $1
+         ORDER BY q.floor_number ASC,
+                  CASE q.priority WHEN 'EMERGENCY' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 ELSE 4 END ASC,
+                  q.assigned_at ASC`,
+        [req.user.userId]
+    );
     res.json(result.rows);
 });
 

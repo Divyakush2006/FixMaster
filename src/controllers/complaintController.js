@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { recordAudit } = require('../services/auditService');
+const { slaDueSql, slaStatusSql } = require('../services/slaService');
 
 // Ticket model (migrations 007-008): the ROOM or COMMON AREA is the unit of a
 // ticket, not the person. There is at most one live ticket per location and
@@ -26,6 +27,9 @@ const COMPLAINT_FROM = `
  */
 const complaintSelect = (viewer) => `
     SELECT c.*, cat.category_name, sub.issue_name, sub.required_specialization, u.full_name as student_name,
+           cat.default_sla_hours,
+           ${slaDueSql()} AS sla_due_at,
+           ${slaStatusSql()} AS sla_status,
            asg.staff_user_id AS assigned_staff_id, asg.full_name AS assigned_staff_name,
            (SELECT COUNT(*)::int FROM complaint_reporters cr WHERE cr.complaint_id = c.complaint_id) AS reporter_count,
            EXISTS (
@@ -360,13 +364,14 @@ async function joinExistingTicket(client, ticket, { userId, description, ticket_
     return { joined: true, complaint };
 }
 
-// GET /api/complaints - role-scoped list.
+// GET /api/complaints - role-scoped list. Filters: status, block_id, q, sla
+// (ON_TRACK | AT_RISK | OVERDUE | MET | BREACHED).
 //   STUDENT: tickets they reported + their current room's tickets.
 //   STAFF: tickets they have (or had) an assignment on.
 //   SUPERVISOR / ADMIN: all tickets.
 exports.getComplaints = asyncHandler(async (req, res) => {
     const { role, userId } = req.user;
-    const { status, block_id, q } = req.query;
+    const { status, block_id, q, sla } = req.query;
     const limit = req.query.limit || DEFAULT_LIST_LIMIT;
     const offset = req.query.offset || 0;
 
@@ -382,6 +387,10 @@ exports.getComplaints = asyncHandler(async (req, res) => {
             SELECT 1 FROM complaint_assignments ca
             WHERE ca.complaint_id = c.complaint_id AND ca.staff_user_id = $${params.length}
         )`);
+    }
+    if (sla) {
+        params.push(sla);
+        where.push(`${slaStatusSql()} = $${params.length}`);
     }
     if (status) {
         params.push(status);

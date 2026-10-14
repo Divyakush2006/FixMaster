@@ -70,7 +70,7 @@ export const complaintsApi = {
     }),
 
   /** Server-side filtered, searched and paged list (supervisor/admin register). */
-  page: (filters: { status?: string; block_id?: string; q?: string; limit: number; offset: number }) =>
+  page: (filters: { status?: string; block_id?: string; q?: string; sla?: string; limit: number; offset: number }) =>
     apiFetchPage<Complaint>('/complaints', { method: 'GET', params: filters }),
 
   getById: (id: string) => apiFetch<Complaint>(`/complaints/${id}`, { method: 'GET' }),
