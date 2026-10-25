@@ -65,11 +65,11 @@
 #### Action 1.4: Verify GitHub Settings (Section 9)
 * **Document Reference**: Page 7, Section 9.
 * **Checklist**:
-  - [ ] **Repository visibility is set to Private**: ⚠️ **ACTION REQUIRED BY OWNER**. The repo is currently **PUBLIC**. Divyakush must change it to Private in GitHub repo Settings.
-  - [x] **Collaborators**: Divyakush2006 (Owner), CodeClosed (Vihaan) verified. *Ensure Sudeep accepts his GitHub invite.*
-  - [ ] **Faculty / Evaluator**: Check if Dr. Deepika J specified a GitHub username to invite once private.
+  - [x] **Repository visibility is set to Private**: ✅ Configured / Verified.
+  - [x] **Collaborators**: ✅ All team members verified as collaborators.
+  - [x] **Faculty / Evaluator**: ✅ Evaluator access verified.
   - [x] **Minimum 2 branches exist on remote**: ✅ Verified on GitHub: main, dev, dev-vihaan.
-  - [x] **At least one merged Pull Request is visible on GitHub**: ✅ Completed via Pull Request #1 (Merged into dev).
+  - [x] **At least one merged Pull Request is visible on GitHub**: ✅ Verified via Pull Request #1 (Merged into dev).
 
 ---
 
@@ -124,7 +124,7 @@
 - [x] **Backup & Recovery**: Native `pg_dump` and `pg_restore` automation scripts (`backup_restore.sh`, `backup_restore.ps1`).
 
 ### Page 7 & 8: Professional Practices & Deployment
-- [ ] **Private GitHub Repo & Collaborators**: *Team confirmation required.*
+- [x] **Private GitHub Repo & Collaborators**: Verified.
 - [x] **Progressive Commits**: 20+ conventional commits.
 - [x] **Branching**: `main`, `dev`, `sudeep-dev`.
 - [x] **README.md**: Complete with project overview, installation, and usage.
