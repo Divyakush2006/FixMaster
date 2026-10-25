@@ -66,18 +66,32 @@ In dense residential university hostel blocks (such as VIT L-Block housing thous
 5. Full-stack application with Student, Staff, Supervisor, and Administrator portals.
 6. CI/CD automation (`.github/workflows/ci.yml`), multi-stage Dockerfiles, and `docker-compose.yml`.
 
-### 1.8 Project Timeline & Milestones
+### 1.8 Project Timeline & Gantt Chart
 
-```mermaid
-flowchart TD
-    M1["Phase 1: Planning & Schema Design (Weeks 1-2)<br>Problem formulation, 3NF schema, ER diagrams"]
-    M2["Phase 2: Database Implementation (Weeks 3-4)<br>PostgreSQL DDL, Triggers, Stored Procedures, Views, Seeds"]
-    M3["Phase 3: Backend & Security (Weeks 5-6)<br>Express REST API, Single users RBAC, JWT, Transactions"]
-    M4["Phase 4: Frontend Portals (Weeks 7-8)<br>Student 1-Click, Staff floor queue, Supervisor telemetry"]
-    M5["Phase 5: Testing, Hardening & DevOps (Weeks 9-10)<br>Docker stack, GitHub Actions CI/CD, Regression suites"]
-
-    M1 --> M2 --> M3 --> M4 --> M5
-```
+`mermaid
+gantt
+    title FIX_MASTER Project Schedule
+    dateFormat  YYYY-MM-DD
+    section Phase 1: Planning & Schema Design
+    Problem Formulation & Proposal           :done,    des_1, 2026-08-26, 7d
+    ER Diagram & 3NF Schema Design           :done,    des_2, after des_1, 7d
+    Data Dictionary & Index Strategy         :done,    des_3, after des_2, 5d
+    section Phase 2: Database Implementation
+    DDL Scripts, Constraints & Indexes       :done,    imp_1, after des_3, 7d
+    Triggers, Stored Procedures & Views      :done,    imp_2, after imp_1, 7d
+    Seed Data & Backup/Restore Scripts       :done,    imp_3, after imp_2, 4d
+    section Phase 3: Backend & Security
+    Data Access Layer & Migrations           :done,    back_1, after imp_3, 6d
+    Single Users Table RBAC & JWT Auth       :done,    back_2, after back_1, 6d
+    REST API & ACID Transactions             :done,    back_3, after back_2, 8d
+    section Phase 4: Frontend Dashboards
+    Student Portal (Quick Clean & Forms)     :done,    ui_1, after back_3, 7d
+    Staff Task Queue (Floor Routing)         :done,    ui_2, after ui_1, 6d
+    Supervisor Telemetry Dashboard           :done,    ui_3, after ui_2, 7d
+    section Phase 5: CI/CD & Deployment
+    Docker Compose & GitHub Actions CI       :done,    ops_1, after ui_3, 5d
+    Cloud Deployment & Live URL Testing      :active,  ops_2, after ops_1, 4d
+`
 
 ---
 
