@@ -21,9 +21,12 @@ export const AllocationPreview: React.FC<Props> = ({ preview, loading }) => {
 
   if (!preview.selected_staff_user_id) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-        <ShieldAlert className="h-4 w-4 text-amber-600" />
-        <span>{preview.allocation_reasoning}</span>
+      <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-900 shadow-sm">
+        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+        <div>
+          <span className="font-semibold block text-amber-800">Manual Supervisor Dispatch Mode</span>
+          <span className="text-amber-700 leading-relaxed mt-0.5 block">{preview.allocation_reasoning}</span>
+        </div>
       </div>
     );
   }
