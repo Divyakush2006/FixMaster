@@ -12,12 +12,12 @@ import { Field, Input, Select, Textarea } from '../../components/ui/Form';
 import { Alert } from '../../components/ui/Alert';
 import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/cn';
-import { PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
-import { TicketScope, Priority, CommonAreaItem } from '../../types';
-import { blockLabel, PRIORITY_LABEL, ticketRef } from '../../utils/labels';
+import { SpecializationBadge } from '../../components/common/Badges';
+import { TicketScope, Priority, CommonAreaItem, AiTriageResult, AiAllocationPreview } from '../../types';
+import { blockLabel, ticketRef } from '../../utils/labels';
+import { AiComplaintAssistant, EmergencyAlertBanner, AllocationPreview, PriorityBadge } from '../../components/ai';
 
 const TIMESLOTS = ['08:00 AM - 10:00 AM', '10:00 AM - 12:00 PM', '02:00 PM - 04:00 PM', '04:00 PM - 06:00 PM', '06:00 PM - 08:00 PM'];
-const PRIORITIES: Priority[] = ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'];
 
 const Section: React.FC<{ step: number; title: string; description?: string; children: React.ReactNode }> = ({ step, title, description, children }) => (
   <div className="grid grid-cols-1 gap-4 py-6 first:pt-1 last:pb-1 lg:grid-cols-[200px_1fr] lg:gap-8">
@@ -61,6 +61,12 @@ export const NewComplaintForm: React.FC = () => {
   const [photoEvidenceUrl, setPhotoEvidenceUrl] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
+  // AI-Assisted fields
+  const [aiReasoning, setAiReasoning] = useState<string | null>(null);
+  const [aiAdvisory, setAiAdvisory] = useState<string | null>(null);
+  const [aiAllocation, setAiAllocation] = useState<AiAllocationPreview | null>(null);
+  const [isAiDecided, setIsAiDecided] = useState<boolean>(false);
+
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -83,14 +89,25 @@ export const NewComplaintForm: React.FC = () => {
   const selectedSubcategory = subcategories.find((s) => s.subcategory_id === subcategoryId);
   const selectedArea = commonAreas.find((a) => a.area_id === commonAreaId);
 
-  // The issue sets a default priority. A student may lower it, or raise it
-  // by one level (the server enforces the same rule).
+  // The issue sets a default priority. When not AI-decided, default comes from subcategory.
   useEffect(() => {
-    if (selectedSubcategory) setPriority(selectedSubcategory.priority_level);
-  }, [selectedSubcategory]);
-  const allowedPriorities = selectedSubcategory
-    ? PRIORITIES.slice(0, Math.min(PRIORITIES.indexOf(selectedSubcategory.priority_level) + 2, PRIORITIES.length))
-    : PRIORITIES;
+    if (selectedSubcategory && !isAiDecided) setPriority(selectedSubcategory.priority_level);
+  }, [selectedSubcategory, isAiDecided]);
+
+  // If student submitted via AI Express Assistant on the Home page, consume the triage payload
+  useEffect(() => {
+    const pending = sessionStorage.getItem('pendingAiTriage');
+    if (pending && categories.length > 0) {
+      try {
+        const { triage, preview } = JSON.parse(pending);
+        handleApplyAiTriage(triage, preview);
+      } catch (e) {
+        console.warn('Failed to parse pending AI triage:', e);
+      } finally {
+        sessionStorage.removeItem('pendingAiTriage');
+      }
+    }
+  }, [categories]);
 
   const mutation = useMutation({
     mutationFn: complaintsApi.create,
@@ -131,7 +148,23 @@ export const NewComplaintForm: React.FC = () => {
       priority,
       preferred_timeslot: preferredTimeslot || null,
       photo_evidence_url: photoEvidenceUrl.trim() || null,
+      ai_priority_reasoning: aiReasoning,
+      ai_safety_advisory: aiAdvisory,
+      ai_decided: isAiDecided,
     });
+  };
+
+  const handleApplyAiTriage = (triage: AiTriageResult, preview: AiAllocationPreview | null) => {
+    if (triage.ticket_scope) setTicketScope(triage.ticket_scope);
+    if (triage.category_id) setCategoryId(triage.category_id);
+    if (triage.subcategory_id) setSubcategoryId(triage.subcategory_id);
+    if (triage.priority) setPriority(triage.priority);
+    if (triage.standardized_description) setDescription(triage.standardized_description);
+    setAiReasoning(triage.priority_reasoning || null);
+    setAiAdvisory(triage.safety_advisory || null);
+    setAiAllocation(preview);
+    setIsAiDecided(true);
+    showToast('AI Auto-Fill applied', 'success', `Categorized as ${triage.subcategory_name} (${triage.priority})`);
   };
 
   const scopeOption = (value: TicketScope, Icon: React.ElementType, title: string, text: string, disabled?: boolean) => {
@@ -169,12 +202,24 @@ export const NewComplaintForm: React.FC = () => {
           : '—';
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
         breadcrumbs={[{ label: 'Service desk', to: '/student' }, { label: 'Raise a ticket' }]}
         title="Raise a ticket"
         description="Report a maintenance problem in your room or a shared area of the hostel."
       />
+
+      {/* AI One-Input Assistant */}
+      <AiComplaintAssistant
+        studentRoom={allotment?.room_id}
+        onApply={handleApplyAiTriage}
+      />
+
+      {priority === 'EMERGENCY' && (
+        <EmergencyAlertBanner
+          advisory={aiAdvisory || 'Immediate emergency response is being dispatched. Please maintain distance from hazards.'}
+        />
+      )}
 
       <form onSubmit={handleSubmit} noValidate className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[1fr_320px]">
         <Card>
@@ -281,24 +326,25 @@ export const NewComplaintForm: React.FC = () => {
                   )}
                 </Field>
               </div>
-              <Field
-                label="Priority"
-                hint={
-                  selectedSubcategory
-                    ? `Default for this issue: ${PRIORITY_LABEL[selectedSubcategory.priority_level]}. You can raise it by one level if the situation is worse than usual.`
-                    : 'Choose the issue first; its usual priority is filled in for you.'
-                }
-              >
-                {(a) => (
-                  <Select {...a} value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="sm:max-w-xs" disabled={!selectedSubcategory}>
-                    {allowedPriorities.map((p) => (
-                      <option key={p} value={p}>
-                        {PRIORITY_LABEL[p]}
-                      </option>
-                    ))}
-                  </Select>
-                )}
-              </Field>
+              <div className="space-y-3 pt-2">
+                <Field
+                  label="Priority (AI-Assessed)"
+                  hint={
+                    isAiDecided
+                      ? `Determined by FixMaster AI triage. ${aiReasoning ? `Reasoning: ${aiReasoning}` : ''}`
+                      : 'Priority is decided by automated severity assessment according to the campus safety matrix.'
+                  }
+                >
+                  {() => (
+                    <div className="flex flex-col gap-2 pt-1">
+                      <PriorityBadge priority={priority} reasoning={aiReasoning} />
+                    </div>
+                  )}
+                </Field>
+
+                {/* Technician preview */}
+                <AllocationPreview preview={aiAllocation} />
+              </div>
             </Section>
 
             <Section step={3} title="Details" description="Optional, but helps the technician come prepared.">

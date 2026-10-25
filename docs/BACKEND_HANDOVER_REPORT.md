@@ -1,163 +1,126 @@
 # FIX_MASTER — Backend Developer Handover & Architecture Guide
 
-> **To**: Backend Engineering Team  
-> **From**: Database Architecture Team  
-> **Course**: BCSE307L – Database Systems (Dr. Deepika J, VIT Vellore)  
-> **Database Status**: **100% Implemented & Verified** on the project's own PostgreSQL (local and Docker)  
-> **DB Engine**: PostgreSQL 15/16  
+> **To**: Backend Engineering Team | **Course**: BCSE307L – Database Systems  
+> **Database Status**: **100% Implemented & Verified** on PostgreSQL 15/16 (Local & Docker)
 
 ---
 
-## 1. Database Connection & Environment
+## 1. Environment & Database Configuration
 
-The project runs on its own PostgreSQL database: a local PostgreSQL 15
-install for development, or the `db` service in `docker-compose.yml`. The
-Neon database used during early development is not used by this project
-any more, and nothing in the code or configuration points to it. Configure your
-backend `.env` file (git-ignored; copy `.env.example`) as follows:
+FixMaster connects to PostgreSQL using parameterized connections via `pg.Pool` (with automatic TLS for cloud databases like Neon or Supabase). Configure `.env` based on `.env.example`:
 
 ```env
-# Server Configuration
 PORT=5000
 NODE_ENV=development
 
-# Your own PostgreSQL. Never commit a real connection string.
-DATABASE_URL="postgresql://postgres:<your-local-postgres-password>@localhost:5432/fix_master_db"
+# PostgreSQL Connection String (never commit real credentials)
+DATABASE_URL="postgresql://postgres:<password>@localhost:5432/fix_master_db"
 
-# JWT Authentication Secret (generate a new one per environment)
+# JWT Secret (minimum 32 characters in production)
 JWT_SECRET="<generate: node -e \"console.log(require('crypto').randomBytes(48).toString('hex'))\">"
 JWT_EXPIRES_IN="24h"
 ```
 
-A managed PostgreSQL (for example a Neon or Supabase project created under
-the team's own account) works too: put its URL in `DATABASE_URL` and TLS is
-enabled automatically.
-
 ---
 
-## 2. Database Schema & Entity Summary (11 Tables)
+## 2. Database Schema & Entity Summary
 
-All tables are created in 3NF with strict referential constraints and indexes:
+All tables are 3NF-normalized with strict referential constraints, cascades, and indexes:
 
-| Table Name | Description | Key Columns |
+| Table Name | Purpose | Key Columns |
 |---|---|---|
-| **`hostel_blocks`** | Master hostel building registry | `block_id` (PK), `block_name`, `total_floors` |
-| **`rooms`** | Hostel rooms categorized by floor | `room_id` (PK, e.g. `L-843`), `block_id` (FK), `room_number`, `floor_number`, `room_type` |
-| **`common_areas`** | Shared utilities (Water Coolers, Washrooms, Lifts) | `area_id` (PK, e.g. `L-F08-COOLER-01`), `block_id` (FK), `floor_number`, `area_type` |
-| **`users`** | **Unified single table for all roles (Rubric Requirement)** | `user_id` (PK), `reg_or_emp_id` (UK), `full_name`, `email` (UK), `password_hash`, `role`, `specialization`, `is_available` |
+| **`hostel_blocks`** | Hostel block registry | `block_id` (PK), `block_name`, `total_floors` |
+| **`block_floors`** | Floor configuration & room numbering | `(block_id, floor_number)` (PK), `room_prefix` |
+| **`rooms`** | Hostel rooms categorized by floor | `room_id` (PK), `block_id` (FK), `room_number`, `floor_number`, `room_type`, `bed_capacity` |
+| **`common_areas`** | Shared utilities (water coolers, washrooms, lifts) | `area_id` (PK), `block_id` (FK), `floor_number`, `area_type`, `is_operational` |
+| **`users`** | **Unified single table for all roles** | `user_id` (PK), `reg_or_emp_id` (UK), `full_name`, `email` (UK), `role`, `specialization`, `is_available`, `failed_login_count` |
 | **`student_room_allotments`** | Resident to room mapping | `allotment_id` (PK), `student_id` (FK), `room_id` (FK), `is_current` |
 | **`complaint_categories`** | Service domains (Cleaning, Electrical, AC, etc.) | `category_id` (PK), `category_code`, `category_name`, `is_quick_action`, `default_sla_hours` |
-| **`complaint_subcategories`** | 25 Granular issue types | `subcategory_id` (PK), `category_id` (FK), `issue_name`, `priority_level`, `required_specialization` |
-| **`complaints`** | Primary transaction registry | `complaint_id` (PK), `ticket_scope` (`ROOM`/`COMMON_AREA`), `room_id` (FK), `common_area_id` (FK), `status`, `priority` |
-| **`complaint_assignments`** | Technician task queue & dispatch tracking | `assignment_id` (PK), `complaint_id` (FK), `staff_user_id` (FK), `current_state` |
-| **`complaint_feedback`** | Student resolution confirmation & 1–5 star rating | `feedback_id` (PK), `complaint_id` (UK, FK), `student_id` (FK), `is_satisfactorily_resolved`, `rating` |
-| **`complaint_logs`** | Immutable automated audit trail | `log_id` (PK), `complaint_id` (FK), `previous_status`, `new_status`, `action_note`, `timestamp` |
+| **`complaint_subcategories`** | 25 Granular issue classifications | `subcategory_id` (PK), `category_id` (FK), `issue_name`, `priority_level`, `required_specialization` |
+| **`complaints`** | Core work orders / tickets | `complaint_id` (PK), `ticket_scope`, `room_id` (FK), `common_area_id` (FK), `status`, `priority`, AI audit columns |
+| **`complaint_assignments`** | Technician task assignments | `assignment_id` (PK), `complaint_id` (FK), `staff_user_id` (FK), `current_state`, AI allocation columns |
+| **`complaint_feedback`** | Student verification & 1–5 star rating | `feedback_id` (PK), `complaint_id` (FK), `student_id` (FK), `is_satisfactorily_resolved`, `rating` |
+| **`complaint_logs`** | Ticket status audit trail | `log_id` (PK), `complaint_id` (FK), `previous_status`, `new_status`, `action_note`, `timestamp` |
+| **`complaint_reporters`** | Joint reporters on shared room/area issues | `(complaint_id, user_id)` (PK), `reported_at` |
+| **`audit_log`** | Administrative & security event audit | `audit_id` (PK), `occurred_at`, `actor_user_id`, `action`, `target_type`, `target_id`, `details` |
+| **`revoked_tokens`** | Server-side sign-out token blocklist | `jti` (PK), `user_id` (FK), `expires_at`, `revoked_at` |
 
 ---
 
 ## 3. Database Triggers, Stored Procedures & Analytical Views
 
-### 3.1 Pre-Built Stored Procedures (Call directly via SQL or ORM)
-
-1. **`sp_auto_dispatch_cleaning(p_complaint_id VARCHAR)`**:
-   - Finds the least-loaded on-duty cleaning staff (`role='STAFF'`, `specialization='CLEANING'`, `is_available=TRUE`).
-   - Atomically inserts a row into `complaint_assignments` and updates `complaints.status = 'ASSIGNED'`.
-   - *Backend usage*: Call immediately after creating a 1-click room cleaning complaint.
-
+### 3.1 Stored Procedures
+1. **`sp_auto_dispatch_cleaning(p_complaint_id)`**:
+   Selects the least-loaded available cleaner (`role='STAFF'`, `specialization='CLEANING'`, `is_available=TRUE`), creates assignment, and transitions ticket to `ASSIGNED`.
 2. **`sp_confirm_resolution(p_complaint_id, p_student_id, p_is_satisfied, p_rating, p_comments)`**:
-   - Validates that `p_student_id` actually owns the complaint.
-   - Inserts feedback rating record into `complaint_feedback`.
-   - If `p_is_satisfied = TRUE`: transitions status to `COMPLETED` and sets `closed_at = NOW()`.
-   - If `p_is_satisfied = FALSE`: escalates ticket to `ESCALATED` for supervisor review.
-
+   Validates ticket ownership, writes feedback row, closes ticket as `COMPLETED` (if satisfied) or escalates to `ESCALATED` (if unsatisfied).
 3. **`sp_supervisor_assign_task(p_complaint_id, p_staff_user_id, p_supervisor_user_id)`**:
-   - Manually overrides and assigns a technician.
+   Enables supervisor manual dispatch or reassignment, recording supervisor identity.
 
-### 3.2 Pre-Built Analytical Views (Query with standard `SELECT`)
-
-1. **`SELECT * FROM view_staff_active_queue;`**:
-   - Returns tasks sorted by `floor_number ASC` and `priority DESC` for technicians.
-2. **`SELECT * FROM view_block_supervisor_summary;`**:
-   - Returns aggregated block KPIs (Total, Pending, Active, Awaiting Student Verification, Resolved, Avg Rating).
-3. **`SELECT * FROM view_recurring_defects_alert;`**:
-   - Returns recurring failure hotspots ($\ge 2$ complaints within 14 days).
+### 3.2 Pre-Built Analytical Views
+- **`view_staff_active_queue`**: Technician active queue ordered by `floor_number ASC`, `priority DESC`, `assigned_at ASC`.
+- **`view_block_supervisor_summary`**: Aggregated block metrics (total, pending, active, awaiting verification, completed, average rating).
+- **`view_recurring_defects_alert`**: Flags failure hotspots ($\ge 2$ complaints for same facility within 14 days).
 
 ### 3.3 Active Triggers
-- **`trg_complaint_status_audit`**: Automatically writes to `complaint_logs` on any update of `complaints.status`.
+- **`trg_complaint_status_audit`**: Automatically writes status transitions to `complaint_logs`.
 - **`trg_update_complaint_timestamps`**: Automatically maintains `resolved_at` and `closed_at` timestamps.
 
 ---
 
-## 4. Role-Based Access Control (RBAC) & Auth Rules
+## 4. Role-Based Access Control (RBAC) & Authentication
 
-### User Roles (`role` column in `users` table):
-1. **`STUDENT`**: Has room allotment (e.g. Room `L-843`), can raise quick cleaning or technical tickets, and confirm resolution.
-2. **`STAFF`**: Has `specialization` (`CLEANING`, `ELECTRICIAN`, `CARPENTER`, `AC_TECH`, `PLUMBER`), views task queue, marks work done.
-3. **`SUPERVISOR`**: Manages block operations, views analytics, reassigns tickets.
-4. **`ADMIN`**: Full estates access.
-
-### JWT Payload Structure:
-```json
-{
-  "userId": "u009-stud-0843-uuid-000000000009",
-  "regOrEmpId": "21BCE0843",
-  "role": "STUDENT",
-  "specialization": null,
-  "fullName": "Vihaan Sharma",
-  "email": "vihaan.sharma2021@vitstudent.ac.in"
-}
-```
+- **Single Table Identity**: All users authenticate through `users`.
+- **Authentication**: JWT signed with `JWT_SECRET`. Each token contains `userId`, `regOrEmpId`, `role`, and unique token ID `jti`.
+- **Server-Side Revocation**: Sign-out stores `jti` in `revoked_tokens`.
+- **Account Lockout**: 10 failed login attempts lock the account for 15 minutes (`failed_login_count`, `locked_until`).
 
 ---
 
-## 5. REST API Routes Specification
+## 5. REST API Route Catalog
 
 ### 5.1 Authentication (`/api/auth`)
-- `POST /api/auth/login` $
-ightarrow$ Body: `{ regOrEmpId, password }`. Returns `{ token, user }`.
-- `GET /api/auth/profile` $
-ightarrow$ Headers: `Bearer <token>`. Returns user profile + active room allotment.
+- `POST /api/auth/login` → Login with `{ regOrEmpId, password }`. Returns `{ token, user }`.
+- `POST /api/auth/register` → Student registration (role forced to `STUDENT`).
+- `POST /api/auth/logout` → Revokes current token `jti` on server.
 
-### 5.2 Student Endpoints (`/api/complaints`) [Requires `role: 'STUDENT'`]
-- **`POST /api/complaints/quick-clean`** (1-Click Instant Room Cleaning):
-  - Fetches student's current room allotment (`L-843`).
-  - Creates complaint under `CLN_ROOM_SWEEP`.
-  - Executes `sp_auto_dispatch_cleaning(complaintId)`.
-- **`POST /api/complaints/raise`** (Technical Issue Form):
-  - Body: `{ ticketScope: "ROOM"|"COMMON_AREA", roomId, commonAreaId, blockId: "L_BLOCK", subcategoryId: 5, description: "...", preferredTimeslot: "04:00 PM - 06:00 PM" }`.
-- **`GET /api/complaints/student/active`**:
-  - Returns student's active and past complaints with assigned technician name, contact, and state.
-- **`POST /api/complaints/:id/confirm`** (Closed-Loop Resolution):
-  - Body: `{ isSatisfied: true, rating: 5, comments: "Well fixed!" }`.
-  - Calls `sp_confirm_resolution`.
+### 5.2 Complaints (`/api/complaints`)
+- `POST /api/complaints` → Raise ticket (1-click cleaning or technical form).
+- `GET /api/complaints` → List complaints with filters (`status`, `blockId`, `priority`), search, and pagination.
+- `GET /api/complaints/:id` → Detailed complaint history and audit logs.
+- `POST /api/complaints/:id/confirm` → Submit resolution confirmation / rejection.
 
-### 5.3 Staff Endpoints (`/api/staff`) [Requires `role: 'STAFF'`]
-- **`GET /api/staff/queue`**: Returns active assignments sorted by floor order.
-- **`PATCH /api/staff/assignment/:id/status`**: Body: `{ status: "IN_PROGRESS" | "PENDING_VERIFICATION" }`.
-- **`PATCH /api/staff/availability`**: Toggles `isAvailable` (On-Duty / Off-Duty).
+### 5.3 Dispatch & Tasks (`/api/dispatch`)
+- `GET /api/dispatch/tasks` → Active queue for authenticated technician sorted by floor.
+- `PATCH /api/dispatch/tasks/:id` → Staff transitions (`startWork`, `markWorkCompleted`).
+- `POST /api/dispatch/reassign` → Supervisor manual dispatch override (`sp_supervisor_assign_task`).
 
-### 5.4 Supervisor Endpoints (`/api/supervisor`) [Requires `role: 'SUPERVISOR'` or `'ADMIN'`]
-- **`GET /api/supervisor/dashboard`**: Returns block KPI metrics.
-- **`GET /api/supervisor/complaints`**: Query params: `?blockId=L_BLOCK&status=OPEN&page=1&limit=10&search=843`.
-- **`POST /api/supervisor/assign`**: Body: `{ complaintId, staffUserId }`.
-- **`GET /api/supervisor/staff`**: List of all staff and availability.
+### 5.4 Metadata & Infrastructure (`/api/meta`)
+- `GET /api/meta/categories` → All categories and 25 subcategories.
+- `GET /api/meta/blocks` → Hostel blocks, floors, rooms, and common areas.
 
-### 5.5 Master Data Endpoints (`/api/master`) [Public / Authenticated]
-- **`GET /api/master/categories`**: All 6 categories and 25 subcategories.
-- **`GET /api/master/blocks/:blockId`**: Rooms and common areas for dropdowns.
+### 5.5 AI Triage & Health (`/api/ai`)
+- `POST /api/ai/triage` → Natural language classification, safety advisories, and candidate allocation.
+- `GET /api/ai/health` → Live operational status of AI subsystem (`HEALTHY`, `DEGRADED`, `DOWN`).
+- `POST /api/ai/outage/simulate` → Outage drill trigger for supervisor testing.
+
+### 5.6 Admin & Analytics (`/api/admin`, `/api/analytics`)
+- `GET /api/analytics/kpis` → System-wide KPIs and resolution metrics.
+- `GET /api/admin/users` & `POST /api/admin/users` → Privileged user management.
+- `POST /api/admin/allotments` → Manage room allocations and bed capacities.
 
 ---
 
-## 6. Seed Test Credentials (Password: `Password@123` for all)
+## 6. Seed Test Credentials (Default Password: `Password@123`)
 
-| User Role | Username / ID | Name / Notes | Room / Skill |
+| Role | Username / ID | Name | Assignment / Scope |
 |---|---|---|---|
 | **Student** | `21BCE0843` | Vihaan Sharma | Room `L-843` |
 | **Student** | `21BCE1042` | Rahul Varma | Room `L-810` |
-| **Staff (Cleaning)** | `EMP_CLN_01` | Murugan K | Housekeeping |
-| **Staff (Electrician)**| `EMP_ELEC_01` | Suresh Kumar | Electrical |
-| **Staff (Carpenter)** | `EMP_CARP_01` | Govindraj M | Carpentry |
-| **Staff (AC Tech)** | `EMP_AC_01` | Dhanush V | AC & HVAC |
-| **Staff (Plumber)** | `EMP_PLB_01` | Karthik N | Plumbing |
-| **Supervisor** | `SUP_LBLOCK_01` | Mr. R. Sundaram | L-Block Supervisor |
-| **Admin** | `ADMIN_ESTATES_01`| Chief Warden | Estates & Hostels |
+| **Staff (Cleaning)** | `EMP_CLN_01` | Murugan K | Housekeeping Trade |
+| **Staff (Electrician)**| `EMP_ELEC_01` | Suresh Kumar | Electrical Trade |
+| **Staff (Carpenter)** | `EMP_CARP_01` | Govindraj M | Carpentry Trade |
+| **Staff (AC Tech)** | `EMP_AC_01` | Dhanush V | AC & HVAC Trade |
+| **Staff (Plumber)** | `EMP_PLB_01` | Karthik N | Plumbing Trade |
+| **Supervisor** | `SUP_LBLOCK_01` | Mr. R. Sundaram | L-Block Facility Supervisor |
+| **Admin** | `ADMIN_ESTATES_01`| Chief Warden | Estates & Infrastructure Lead |

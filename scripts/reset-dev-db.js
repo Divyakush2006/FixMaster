@@ -24,6 +24,8 @@ async function resetDevDb({ connectionString, log = console.log } = {}) {
         // procedure in one step, including schema_migrations.
         await client.query('DROP SCHEMA public CASCADE');
         await client.query('CREATE SCHEMA public');
+        await client.query('GRANT ALL ON SCHEMA public TO CURRENT_USER');
+        await client.query('GRANT ALL ON SCHEMA public TO public');
     } finally {
         await client.end();
     }
