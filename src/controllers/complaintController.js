@@ -299,13 +299,16 @@ exports.createComplaint = asyncHandler(async (req, res) => {
                 if (floorRes.rows.length > 0) targetFloor = floorRes.rows[0].floor_number;
             }
 
-            // Attempt automated technician allocation inside transaction
-            const allocation = await allocateTechnician({
-                subcategory_id,
-                priority: effectivePriority,
-                floorNumber: targetFloor,
-                client,
-            });
+            // Attempt automated technician allocation inside transaction when requested
+            let allocation = { selected_staff_user_id: null };
+            if (req.body.auto_allocate === true || req.body.ai_allocated === true) {
+                allocation = await allocateTechnician({
+                    subcategory_id,
+                    priority: effectivePriority,
+                    floorNumber: targetFloor,
+                    client,
+                });
+            }
 
             const initialStatus = allocation.selected_staff_user_id ? 'ASSIGNED' : 'OPEN';
 
