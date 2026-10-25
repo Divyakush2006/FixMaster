@@ -84,17 +84,28 @@ function withViewerFlags(row, { role }) {
 const PRIORITY_ORDER = ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'];
 const PRIORITY_LABEL = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', EMERGENCY: 'Emergency' };
 
-function resolvePriority(requested, issueDefault, role) {
-    if (!requested) return issueDefault;
-    if (role !== 'STUDENT') return requested;
-    const ceiling = Math.min(PRIORITY_ORDER.indexOf(issueDefault) + 1, PRIORITY_ORDER.length - 1);
-    if (PRIORITY_ORDER.indexOf(requested) > ceiling) {
-        throw new AppError(
-            400,
-            `For this issue the highest priority you can choose is ${PRIORITY_LABEL[PRIORITY_ORDER[ceiling]]}. A supervisor can raise it further if needed.`
-        );
+function resolvePriority(requested, issueDefault, role, isAiDecided = false) {
+    if (role !== 'STUDENT') return requested || issueDefault;
+
+    // Students cannot decide priority by themselves.
+    // If AI evaluated the ticket, accept the model/rule-based triage priority:
+    if (isAiDecided && requested && PRIORITY_ORDER.includes(requested)) {
+        return requested;
     }
-    return requested;
+
+    // If submitted via manual path, students cannot arbitrarily escalate priority:
+    if (requested) {
+        const ceiling = Math.min(PRIORITY_ORDER.indexOf(issueDefault) + 1, PRIORITY_ORDER.length - 1);
+        if (PRIORITY_ORDER.indexOf(requested) > ceiling) {
+            throw new AppError(
+                400,
+                `For this issue the highest priority you can choose is ${PRIORITY_LABEL[PRIORITY_ORDER[ceiling]]}. A supervisor can raise it further if needed.`
+            );
+        }
+        return requested;
+    }
+
+    return issueDefault;
 }
 
 // When this many people have reported the same common-area fault, its
@@ -214,13 +225,29 @@ async function nameOf(client, userId) {
 const isLiveDuplicateViolation = (err) =>
     err && err.code === '23505' && typeof err.constraint === 'string' && err.constraint.startsWith('uq_live_');
 
+const { enforcePriorityFloor } = require('../services/aiTriageService');
+const { allocateTechnician } = require('../services/aiAllocationService');
+
 // POST /api/complaints (STUDENT, SUPERVISOR, ADMIN)
 //
 // 201 { joined: false, complaint }  a new ticket was created
 // 200 { joined: true,  complaint }  this issue was already open at this
 //                                   location; the caller was added as a reporter
 exports.createComplaint = asyncHandler(async (req, res) => {
-    const { ticket_scope, room_id, common_area_id, block_id, subcategory_id, description, photo_evidence_url, priority, preferred_timeslot } = req.body;
+    const {
+        ticket_scope,
+        room_id,
+        common_area_id,
+        block_id,
+        subcategory_id,
+        description,
+        photo_evidence_url,
+        priority,
+        preferred_timeslot,
+        ai_priority_reasoning,
+        ai_safety_advisory,
+        ai_decided,
+    } = req.body;
     const { userId, role } = req.user;
     const roomId = ticket_scope === 'ROOM' ? room_id : null;
     const areaId = ticket_scope === 'COMMON_AREA' ? common_area_id : null;
@@ -244,7 +271,10 @@ exports.createComplaint = asyncHandler(async (req, res) => {
             if (issue.rows.length === 0) {
                 throw new AppError(400, 'Unknown issue type.');
             }
-            const effectivePriority = resolvePriority(priority, issue.rows[0].priority_level, role);
+
+            // Always enforce safety floor: sparks/gas/floods CANNOT be suppressed below EMERGENCY
+            let effectivePriority = resolvePriority(priority, issue.rows[0].priority_level, role, !!ai_decided);
+            effectivePriority = enforcePriorityFloor(description, effectivePriority);
 
             const existing = await client.query(
                 `SELECT * FROM complaints
@@ -262,12 +292,33 @@ exports.createComplaint = asyncHandler(async (req, res) => {
                 return joinExistingTicket(client, existing.rows[0], { userId, description: typed, ticket_scope });
             }
 
+            // Fetch target floor for allocation proximity
+            let targetFloor = null;
+            if (roomId) {
+                const floorRes = await client.query('SELECT floor_number FROM rooms WHERE room_id = $1', [roomId]);
+                if (floorRes.rows.length > 0) targetFloor = floorRes.rows[0].floor_number;
+            }
+
+            // Attempt automated technician allocation inside transaction when requested
+            let allocation = { selected_staff_user_id: null };
+            if (req.body.auto_allocate === true || req.body.ai_allocated === true) {
+                allocation = await allocateTechnician({
+                    subcategory_id,
+                    priority: effectivePriority,
+                    floorNumber: targetFloor,
+                    client,
+                });
+            }
+
+            const initialStatus = allocation.selected_staff_user_id ? 'ASSIGNED' : 'OPEN';
+
             const inserted = await client.query(
                 `INSERT INTO complaints (
                     ticket_scope, room_id, common_area_id, block_id, raised_by_user_id,
-                    subcategory_id, description, photo_evidence_url, priority, preferred_timeslot
+                    subcategory_id, description, photo_evidence_url, priority, preferred_timeslot,
+                    ai_priority_reasoning, ai_safety_advisory, ai_decided, status
                  )
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                  RETURNING *`,
                 [
                     ticket_scope,
@@ -280,18 +331,61 @@ exports.createComplaint = asyncHandler(async (req, res) => {
                     photo_evidence_url || null,
                     effectivePriority,
                     preferred_timeslot || null,
+                    ai_priority_reasoning || 'Automated triage verification applied.',
+                    ai_safety_advisory || null,
+                    ai_decided !== undefined ? !!ai_decided : true,
+                    initialStatus,
                 ]
             );
             const created = inserted.rows[0];
 
-            // The status-change trigger only fires on UPDATE, so record creation
-            // explicitly - otherwise the audit trail starts at the first dispatch.
+            // If technician was selected, atomically insert assignment record
+            let assignedTech = null;
+            if (allocation.selected_staff_user_id) {
+                const asgRes = await client.query(
+                    `INSERT INTO complaint_assignments (
+                        complaint_id, staff_user_id, assigned_by_user_id, current_state,
+                        ai_allocation_reasoning, ai_allocated
+                     )
+                     VALUES ($1, $2, $3, 'ASSIGNED', $4, $5)
+                     RETURNING *`,
+                    [
+                        created.complaint_id,
+                        allocation.selected_staff_user_id,
+                        userId,
+                        allocation.allocation_reasoning,
+                        allocation.meta ? allocation.meta.source === 'gemini' : false,
+                    ]
+                );
+                assignedTech = {
+                    staff_user_id: allocation.selected_staff_user_id,
+                    staff_name: allocation.staff_name,
+                    specialization: allocation.specialization,
+                    allocation_reasoning: allocation.allocation_reasoning,
+                };
+            }
+
+            // Record creation in complaint logs
             await client.query(
                 `INSERT INTO complaint_logs (complaint_id, changed_by_user_id, previous_status, new_status, action_note)
-                 VALUES ($1, $2, NULL, 'OPEN', 'Complaint raised')`,
-                [created.complaint_id, userId]
+                 VALUES ($1, $2, NULL, $3, $4)`,
+                [
+                    created.complaint_id,
+                    userId,
+                    initialStatus,
+                    allocation.selected_staff_user_id
+                        ? `Auto-dispatched to ${allocation.staff_name} (${allocation.specialization})`
+                        : 'Complaint raised',
+                ]
             );
-            return { joined: false, complaint: created };
+
+            return {
+                joined: false,
+                complaint: {
+                    ...created,
+                    assigned_technician: assignedTech,
+                },
+            };
         }, userId);
     } catch (err) {
         if (isLiveDuplicateViolation(err)) {

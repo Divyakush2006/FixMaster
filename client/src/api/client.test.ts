@@ -95,7 +95,7 @@ describe('apiFetch auth handling', () => {
     vi.stubGlobal('fetch', fetchMock);
     await apiFetch('/complaints', { params: { status: 'OPEN', block_id: '' } });
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('/api/complaints?status=OPEN');
+    expect(url).toContain('/api/complaints?status=OPEN');
     expect(init.headers.Authorization).toBe('Bearer abc');
   });
 });

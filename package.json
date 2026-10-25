@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/Divyakush2006/FixMaster#readme",
   "dependencies": {
+    "@google/genai": "^2.31.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
