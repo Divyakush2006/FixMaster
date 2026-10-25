@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ChevronRight } from 'lucide-react';
 import { complaintsApi, metaApi } from '../../api/endpoints';
@@ -13,6 +14,7 @@ import { Alert } from '../../components/ui/Alert';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
 import { StatusBadge, PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
 import { DispatchDrawer } from './DispatchDrawer';
+import { AiHealthBanner } from '../../components/ai/AiHealthBanner';
 import { Complaint, ComplaintStatus } from '../../types';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
 import { STATUS_LABEL, ticketLocation, ticketRef } from '../../utils/labels';
@@ -25,12 +27,23 @@ const PAGE_SIZE = 25;
  * server (limit/offset + X-Total-Count), so it stays fast at any volume.
  */
 export const AllComplaintsTable: React.FC = () => {
-  const [statusFilter, setStatusFilter] = useState('');
+  const [searchParams] = useSearchParams();
+  const urlStatus = searchParams.get('status') || '';
+  const [statusFilter, setStatusFilter] = useState(urlStatus);
   const [blockFilter, setBlockFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Complaint | null>(null);
   const q = useDebouncedValue(searchQuery.trim(), 300);
+
+  // Sync with URL query parameter when navigating from notification banner
+  useEffect(() => {
+    const s = searchParams.get('status');
+    if (s !== null) {
+      setStatusFilter(s);
+      setPage(1);
+    }
+  }, [searchParams]);
 
   const { data: blocks = [] } = useQuery({ queryKey: ['meta-blocks'], queryFn: metaApi.getBlocks });
 
@@ -67,6 +80,10 @@ export const AllComplaintsTable: React.FC = () => {
         title="All tickets"
         description="Inspect any ticket and dispatch or reassign it to a technician."
       />
+
+      <div className="mb-5">
+        <AiHealthBanner />
+      </div>
 
       <Card>
         <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-3.5 lg:flex-row lg:items-center">

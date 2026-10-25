@@ -92,6 +92,7 @@ app.use('/api/analytics', require('./routes/analyticsRoutes'));
 app.use('/api/meta', require('./routes/metaRoutes'));
 app.use('/api/me', require('./routes/meRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/ai', require('./routes/aiRoutes'));
 
 app.use(notFoundHandler);
 app.use(errorHandler);

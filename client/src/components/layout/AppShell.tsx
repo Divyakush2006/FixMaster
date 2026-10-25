@@ -5,6 +5,7 @@ import { Topbar } from './Topbar';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { PageLoader } from '../ui/PageLoader';
 import { IdleSignOut } from './IdleSignOut';
+import { SupervisorAiNotificationBanner } from '../ai/SupervisorAiNotificationBanner';
 
 export const AppShell: React.FC = () => {
   const location = useLocation();
@@ -28,6 +29,7 @@ export const AppShell: React.FC = () => {
       <Sidebar mobileOpen={navOpen} onCloseMobile={() => setNavOpen(false)} />
       <div className="flex min-h-screen flex-col md:pl-60">
         <Topbar onOpenNav={() => setNavOpen(true)} />
+        <SupervisorAiNotificationBanner />
         <main id="main" className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           {/* Keyed by path: a crash on one page doesn't stick when you navigate away. */}
           <ErrorBoundary key={location.pathname}>

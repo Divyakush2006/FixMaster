@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, BedDouble, CheckCircle2, ClipboardCheck, Clock3, Plus, ShieldCheck, Zap } from 'lucide-react';
 import { metaApi, complaintsApi } from '../../api/endpoints';
@@ -21,6 +21,7 @@ import { TicketsTable } from './TicketsTable';
 import { Complaint, Subcategory } from '../../types';
 import { floorLabel, formatRelativeTime } from '../../utils/formatters';
 import { blockLabel, greeting, isOpenStatus, PRIORITY_LABEL, ROOM_TYPE_LABEL, SPECIALIZATION_LABEL, ticketLocation, ticketRef } from '../../utils/labels';
+import { AiComplaintAssistant } from '../../components/ai';
 
 export const StudentHome: React.FC = () => {
   const [verifyingComplaint, setVerifyingComplaint] = useState<Complaint | null>(null);
@@ -29,6 +30,7 @@ export const StudentHome: React.FC = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   // The student's real room, from the server. Quick actions file against it;
   // without an allotment there is nothing to file against (and the API would
@@ -97,6 +99,17 @@ export const StudentHome: React.FC = () => {
       />
 
       <div className="space-y-6">
+        {/* Compact AI One-Input Assistant on Student Dashboard */}
+        <AiComplaintAssistant
+          compact
+          studentRoom={allotment?.room_id}
+          onApply={(triage, preview) => {
+            sessionStorage.setItem('pendingAiTriage', JSON.stringify({ triage, preview }));
+            showToast('AI Triage Complete', 'success', `Categorized as ${triage.subcategory_name} (${triage.priority})`);
+            navigate('/student/new');
+          }}
+        />
+
         {pendingVerification.length > 0 && (
           <Card className="border-amber-200">
             <CardHeader
