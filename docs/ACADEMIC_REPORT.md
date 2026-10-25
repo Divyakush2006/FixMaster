@@ -46,8 +46,8 @@ In dense residential university hostel blocks (such as VIT L-Block housing thous
 
 | Team Member | Registration No. | Assigned Role | Primary Rubric Responsibilities |
 |---|---|---|---|
-| **Vihaan Varshney (Lead)** | **24BAI0158** | **Database Architect & Lead** | Relational schema design (3NF/BCNF), DDL scripts, Stored Procedures, Triggers, Database migrations, Native Backup/Restore scripts |
-| **Divyakush Punjabi** | **24BCB0126** | **Full-Stack, Security & DevOps Lead** | React Frontend UI, Express REST API, Single `users` table RBAC, JWT Authentication & BCrypt security, Docker & GitHub Actions CI/CD |
+| **Vihaan Varshney** | **24BAI0158** | **Database Architect & Data Engineer** | Relational schema design (3NF/BCNF), DDL scripts, Stored Procedures, Triggers, Database migrations, Native Backup/Restore scripts |
+| **Divyakush Punjabi** | **24BCB0126** | **Full-Stack, Security & DevOps** | React Frontend UI, Express REST API, Single `users` table RBAC, JWT Authentication & BCrypt security, Docker & GitHub Actions CI/CD |
 | **Sudeep Kumar Sahu** | **24BCT0160** | **AI Systems & Test Automation Engineer** | Gemini AI complaint triage & allocation service, System health monitoring & telemetry, Automated test suites & QA verification |
 
 ### 1.6 Technology Stack
