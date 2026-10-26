@@ -485,6 +485,25 @@ const leaveValidators = [
     handleValidation,
 ];
 
+// ---- AI ------------------------------------------------------------------------
+
+const assistantDraftValidators = [
+    body('text')
+        .isString()
+        .withMessage('Describe the problem.')
+        .bail()
+        .trim()
+        .isLength({ min: 3, max: 1000 })
+        .withMessage('Describe the problem in 3 to 1000 characters.'),
+    handleValidation,
+];
+
+const aiDrillValidators = [
+    body('active').isBoolean({ strict: true }).withMessage('active must be true or false.'),
+    body('reason').optional({ values: 'null' }).isString().isLength({ max: 200 }).withMessage('reason must be at most 200 characters.'),
+    handleValidation,
+];
+
 const leaveIdValidators = [param('leave_id').isInt({ min: 1 }).withMessage('leave id is invalid.').toInt(), handleValidation];
 const userIdOnlyValidators = [param('user_id').trim().notEmpty().isLength({ max: 36 }).withMessage('user id is invalid.'), handleValidation];
 
@@ -560,6 +579,8 @@ module.exports = {
     createBlockValidators,
     updateBlockValidators,
     staffPlacementValidators,
+    assistantDraftValidators,
+    aiDrillValidators,
     supervisorBlocksValidators,
     leaveValidators,
     leaveIdValidators,

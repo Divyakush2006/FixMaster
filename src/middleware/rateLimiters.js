@@ -124,6 +124,16 @@ const resendCodeLimiter = rateLimit({
     message: { error: 'Too many code requests from this network. Please try again later.' },
 });
 
+// POST /api/assistant/draft: each use calls a model. A per-day allowance per
+// student is enforced by the AI gateway; this stops bursts.
+const assistantLimiter = rateLimit({
+    ...common,
+    windowMs: 60 * 1000,
+    limit: int(process.env.RATE_LIMIT_ASSISTANT_MAX, 10),
+    keyGenerator: (req) => `assistant:${req.user ? req.user.userId : req.ip}`,
+    message: { error: 'Too many requests to the assistant. Wait a minute, or fill in the form yourself.' },
+});
+
 // PUT /api/complaints/:id/photo: uploads are the heaviest requests the API takes.
 const photoUploadLimiter = rateLimit({
     ...common,
@@ -171,5 +181,6 @@ module.exports = {
     forgotPasswordLimiters,
     resetPasswordLimiter,
     photoUploadLimiter,
+    assistantLimiter,
     generalLimiter,
 };

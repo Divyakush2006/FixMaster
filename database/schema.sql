@@ -8,6 +8,8 @@
 -- Never run this against a database whose data you want to keep; production
 -- schemas are created and upgraded with `npm run db:migrate`.
 DROP TABLE IF EXISTS schema_migrations CASCADE;
+DROP TABLE IF EXISTS ai_calls CASCADE;
+DROP TABLE IF EXISTS app_settings CASCADE;
 DROP TABLE IF EXISTS staff_leave CASCADE;
 DROP TABLE IF EXISTS supervisor_blocks CASCADE;
 DROP TABLE IF EXISTS student_profiles CASCADE;

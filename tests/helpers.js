@@ -50,6 +50,7 @@ process.env.RATE_LIMIT_RESET_IP_MAX = '1000000';
 process.env.RATE_LIMIT_VERIFY_IP_MAX = '1000000';
 process.env.RATE_LIMIT_VERIFY_MAX = '1000000';
 process.env.RATE_LIMIT_RESEND_IP_MAX = '1000000';
+process.env.RATE_LIMIT_ASSISTANT_MAX = '1000000';
 
 const SEED_PASSWORD = 'Password@123';
 
