@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { slaDueSql, slaStatusSql } = require('./slaService');
+const { managedBlocks } = require('./scopeService');
 
 // In-app notifications derived from data the database already keeps: the
 // ticket history (complaint_logs), assignments, and SLA deadlines. No
@@ -60,7 +61,10 @@ function logEvents(audience, scope) {
     );
 }
 
-function feedQuery(role, studentCanSee) {
+// Managers' feeds are limited to their blocks: the block list is bound as $4
+// in every query built from the feed (after user id and the two paging or
+// `since` values), so one SQL text serves both the page and the count.
+function feedQuery(role, studentCanSee, scoped) {
     if (role === 'STUDENT') {
         return logEvents('STUDENT', studentCanSee('$1')).join('\nUNION ALL\n');
     }
@@ -79,7 +83,8 @@ function feedQuery(role, studentCanSee) {
           AND a.assigned_by_user_id IS DISTINCT FROM $1`;
         return [assigned, ...logEvents('STAFF', mine)].join('\nUNION ALL\n');
     }
-    // SUPERVISOR / ADMIN
+    // SUPERVISOR / CHIEF_WARDEN / ADMIN
+    const blockFilter = scoped ? 'c.block_id = ANY($4::varchar[])' : 'TRUE';
     const overdue = `
         SELECT 'sla:' || c.complaint_id AS id, 'ticket.overdue' AS kind, 'Ticket past its deadline' AS title,
                sub.issue_name || ' · ' || ${LOCATION} AS body, c.complaint_id, ${slaDueSql()} AS created_at
@@ -88,8 +93,9 @@ function feedQuery(role, studentCanSee) {
         JOIN complaint_categories cat ON cat.category_id = sub.category_id
         LEFT JOIN common_areas ca ON ca.area_id = c.common_area_id
         WHERE ${slaStatusSql()} = 'OVERDUE'
+          AND ${blockFilter}
           AND ${slaDueSql()} >= NOW() - make_interval(days => ${FEED_DAYS})`;
-    return [...logEvents('MANAGER', 'TRUE'), overdue].join('\nUNION ALL\n');
+    return [...logEvents('MANAGER', blockFilter), overdue].join('\nUNION ALL\n');
 }
 
 /**
@@ -98,12 +104,19 @@ function feedQuery(role, studentCanSee) {
  * @param {(viewer: string) => string} studentCanSee  visibility predicate from the ticket controller
  */
 async function getFeed(user, { limit, offset, since }, studentCanSee) {
-    const inner = feedQuery(user.role, studentCanSee);
+    const isManager = !['STUDENT', 'STAFF'].includes(user.role);
+    const scope = isManager ? await managedBlocks(user) : null;
+    const inner = feedQuery(user.role, studentCanSee, scope !== null);
+    const blocks = scope !== null ? [scope] : [];
     const [items, unread] = await Promise.all([
-        db.query(`SELECT * FROM (${inner}) f ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`, [user.userId, limit, offset]),
-        since
-            ? db.query(`SELECT COUNT(*)::int AS n FROM (${inner}) f WHERE created_at > $2`, [user.userId, since])
-            : db.query(`SELECT COUNT(*)::int AS n FROM (${inner}) f`, [user.userId]),
+        db.query(`SELECT * FROM (${inner}) f ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`, [user.userId, limit, offset, ...blocks]),
+        // $3 is unused here but bound, so the block list stays at $4.
+        db.query(`SELECT COUNT(*)::int AS n FROM (${inner}) f WHERE ($2::timestamptz IS NULL OR created_at > $2) AND $3::int IS NULL`, [
+            user.userId,
+            since,
+            null,
+            ...blocks,
+        ]),
     ]);
     return { items: items.rows, unread: unread.rows[0].n };
 }

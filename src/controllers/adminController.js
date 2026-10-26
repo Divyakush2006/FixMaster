@@ -33,7 +33,11 @@ exports.listUsers = asyncHandler(async (req, res) => {
     const [count, result] = await Promise.all([
         db.query(`SELECT COUNT(*)::int AS total FROM users WHERE ${whereSql}`, params),
         db.query(
-            `SELECT ${PUBLIC_USER_COLUMNS} FROM users WHERE ${whereSql}
+            `SELECT ${PUBLIC_USER_COLUMNS},
+                    CASE WHEN role = 'SUPERVISOR' THEN COALESCE(
+                        (SELECT array_agg(sb.block_id ORDER BY sb.block_id) FROM supervisor_blocks sb WHERE sb.supervisor_user_id = users.user_id),
+                        '{}') END AS managed_blocks
+             FROM users WHERE ${whereSql}
              ORDER BY role, full_name, user_id
              LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
             [...params, limit, offset]
@@ -51,6 +55,7 @@ exports.userSummary = asyncHandler(async (req, res) => {
             COUNT(*) FILTER (WHERE role = 'STUDENT')::int AS student,
             COUNT(*) FILTER (WHERE role = 'STAFF')::int AS staff,
             COUNT(*) FILTER (WHERE role = 'SUPERVISOR')::int AS supervisor,
+            COUNT(*) FILTER (WHERE role = 'CHIEF_WARDEN')::int AS chief_warden,
             COUNT(*) FILTER (WHERE role = 'ADMIN')::int AS admin,
             COUNT(*) FILTER (WHERE locked_until > NOW())::int AS locked,
             COUNT(*) FILTER (WHERE NOT is_active)::int AS deactivated

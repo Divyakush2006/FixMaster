@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const meta = require('../controllers/metaController');
 const { authenticate, authorize } = require('../middleware/auth');
+const { MANAGER_ROLES } = require('../config/roles');
 const { blockIdParamValidators, listStaffValidators } = require('../middleware/validators');
 
 // Public: dropdown data with no sensitive content, needed before login
@@ -13,6 +14,6 @@ router.get('/categories', meta.getCategoriesWithSubcategories);
 
 // Gated: exposes staff identity, availability and live workload - only the
 // people who dispatch work need it.
-router.get('/staff', authenticate, authorize('SUPERVISOR', 'ADMIN'), listStaffValidators, meta.getStaff);
+router.get('/staff', authenticate, authorize(...MANAGER_ROLES), listStaffValidators, meta.getStaff);
 
 module.exports = router;

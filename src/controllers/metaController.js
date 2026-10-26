@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { managedBlocks } = require('../services/scopeService');
 const { asyncHandler } = require('../middleware/errorHandler');
 
 exports.getBlocks = asyncHandler(async (req, res) => {
@@ -34,6 +35,9 @@ exports.getCommonAreasByBlock = asyncHandler(async (req, res) => {
 // unusable from any client.
 exports.getStaff = asyncHandler(async (req, res) => {
     const { specialization } = req.query;
+    // A block-scoped supervisor sees the staff based in their blocks plus the
+    // campus pool (staff with no home block).
+    const scope = await managedBlocks(req.user);
 
     let query = `
         SELECT
@@ -41,6 +45,8 @@ exports.getStaff = asyncHandler(async (req, res) => {
             u.full_name,
             u.specialization,
             u.is_available,
+            u.home_block_id,
+            u.shift,
             (COUNT(ca.assignment_id) FILTER (WHERE ca.current_state IN ('ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS')))::int AS active_task_count
         FROM users u
         LEFT JOIN complaint_assignments ca ON ca.staff_user_id = u.user_id
@@ -50,6 +56,10 @@ exports.getStaff = asyncHandler(async (req, res) => {
     if (specialization) {
         params.push(specialization);
         query += ` AND u.specialization = $${params.length}`;
+    }
+    if (scope !== null) {
+        params.push(scope);
+        query += ` AND (u.home_block_id IS NULL OR u.home_block_id = ANY($${params.length}::varchar[]))`;
     }
     query += ` GROUP BY u.user_id ORDER BY u.full_name ASC`;
 

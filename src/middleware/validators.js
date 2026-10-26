@@ -1,7 +1,7 @@
 const { body, param, query, validationResult } = require('express-validator');
 const { isAllowedStudentEmail, isValidStudentRegNo, studentEmailDomains, PRIVACY_NOTICE_VERSION } = require('../config/identity');
 
-const ROLES = ['STUDENT', 'STAFF', 'SUPERVISOR', 'ADMIN'];
+const { ROLES } = require('../config/roles');
 const SPECIALIZATIONS = ['CLEANING', 'ELECTRICIAN', 'CARPENTER', 'AC_TECH', 'PLUMBER'];
 const TICKET_SCOPES = ['ROOM', 'COMMON_AREA'];
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'];
@@ -440,16 +440,53 @@ const createBlockValidators = [
         .withMessage('block_code must be 1-3 letters or digits, e.g. "A" or "PRP".'),
     body('block_name').trim().notEmpty().withMessage('block_name is required.').bail().isLength({ max: 50 }),
     body('top_floor').optional().isInt({ min: 1, max: 99 }).withMessage('top_floor must be between 1 and 99.').toInt(),
+    body('hostel_type').optional().isIn(['MENS', 'LADIES']).withMessage("hostel_type must be MENS or LADIES."),
     handleValidation,
 ];
 
 const updateBlockValidators = [
     blockIdParam,
     body('block_name').trim().notEmpty().withMessage('block_name is required.').bail().isLength({ max: 50 }),
+    body('hostel_type').optional().isIn(['MENS', 'LADIES']).withMessage("hostel_type must be MENS or LADIES."),
     handleValidation,
 ];
 
 const blockOnlyValidators = [blockIdParam, handleValidation];
+
+// ---- Campus organisation (migration 011) -----------------------------------------
+
+const SHIFTS = ['MORNING', 'EVENING', 'NIGHT'];
+
+const staffPlacementValidators = [
+    param('user_id').trim().notEmpty().isLength({ max: 36 }).withMessage('user id is invalid.'),
+    body('home_block_id').optional({ values: 'null' }).isString().trim().notEmpty().isLength({ max: 10 }).withMessage('home_block_id is invalid.'),
+    body('shift').optional({ values: 'null' }).isIn(SHIFTS).withMessage(`shift must be one of: ${SHIFTS.join(', ')}.`),
+    body().custom((v) => v && (v.home_block_id !== undefined || v.shift !== undefined)).withMessage('Send home_block_id and/or shift.'),
+    handleValidation,
+];
+
+const supervisorBlocksValidators = [
+    param('user_id').trim().notEmpty().isLength({ max: 36 }).withMessage('user id is invalid.'),
+    body('block_ids').isArray({ max: 50 }).withMessage('block_ids must be a list of block ids.'),
+    body('block_ids.*').isString().trim().notEmpty().isLength({ max: 10 }).withMessage('block_ids must be a list of block ids.'),
+    handleValidation,
+];
+
+const leaveValidators = [
+    param('user_id').trim().notEmpty().isLength({ max: 36 }).withMessage('user id is invalid.'),
+    body('starts_on').isISO8601({ strict: true }).withMessage('starts_on must be a date (YYYY-MM-DD).'),
+    body('ends_on')
+        .isISO8601({ strict: true })
+        .withMessage('ends_on must be a date (YYYY-MM-DD).')
+        .bail()
+        .custom((v, { req }) => v >= req.body.starts_on)
+        .withMessage('Leave cannot end before it starts.'),
+    body('reason').optional({ values: 'null' }).isString().isLength({ max: 200 }).withMessage('reason must be at most 200 characters.'),
+    handleValidation,
+];
+
+const leaveIdValidators = [param('leave_id').isInt({ min: 1 }).withMessage('leave id is invalid.').toInt(), handleValidation];
+const userIdOnlyValidators = [param('user_id').trim().notEmpty().isLength({ max: 36 }).withMessage('user id is invalid.'), handleValidation];
 
 const addFloorValidators = [
     blockIdParam,
@@ -522,6 +559,11 @@ module.exports = {
     adminEndAllotmentValidators,
     createBlockValidators,
     updateBlockValidators,
+    staffPlacementValidators,
+    supervisorBlocksValidators,
+    leaveValidators,
+    leaveIdValidators,
+    userIdOnlyValidators,
     blockOnlyValidators,
     addFloorValidators,
     removeFloorValidators,

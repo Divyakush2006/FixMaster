@@ -94,6 +94,7 @@ app.use('/api/analytics', require('./routes/analyticsRoutes'));
 app.use('/api/meta', require('./routes/metaRoutes'));
 app.use('/api/me', require('./routes/meRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
+app.use('/api/residents', require('./routes/residentRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/ai', require('./routes/aiRoutes'));
 

@@ -1,10 +1,13 @@
 const db = require('../config/db');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { slaStatusSql } = require('../services/slaService');
+const { managedBlocks, scopeCondition } = require('../services/scopeService');
 
 // KPI summary across hostel blocks: the existing summary view plus SLA figures
 // computed from category SLA hours and ticket timestamps (slaService).
 exports.getBlockSummary = asyncHandler(async (req, res) => {
+    const params = [];
+    const scoped = scopeCondition(await managedBlocks(req.user), 'v.block_id', params);
     const result = await db.query(`
         SELECT v.*,
                COALESCE(s.overdue_count, 0)::int AS overdue_count,
@@ -29,12 +32,15 @@ exports.getBlockSummary = asyncHandler(async (req, res) => {
             ) t
             GROUP BY block_id
         ) s ON s.block_id = v.block_id
-        ORDER BY v.block_id`);
+        ${scoped ? `WHERE ${scoped}` : ''}
+        ORDER BY v.block_id`, params);
     res.json(result.rows);
 });
 
 // Recurring hotspot / defect alerts.
 exports.getDefectHotspots = asyncHandler(async (req, res) => {
-    const result = await db.query('SELECT * FROM view_recurring_defects_alert');
+    const params = [];
+    const scoped = scopeCondition(await managedBlocks(req.user), 'h.block_id', params);
+    const result = await db.query(`SELECT * FROM view_recurring_defects_alert h ${scoped ? `WHERE ${scoped}` : ''}`, params);
     res.json(result.rows);
 });

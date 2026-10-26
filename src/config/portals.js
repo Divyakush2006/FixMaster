@@ -2,7 +2,7 @@
  * The three sign-in portals and which account roles each one admits.
  *
  *   student - /login, Student tab   -> STUDENT
- *   staff   - /login, Staff tab     -> STAFF (technicians) and SUPERVISOR
+ *   staff   - /login, Staff tab     -> STAFF (technicians), SUPERVISOR and CHIEF_WARDEN
  *   admin   - /admin                -> ADMIN
  *
  * Every account belongs to exactly one portal. A token records the portal it
@@ -11,7 +11,7 @@
  */
 const PORTALS = Object.freeze({
     student: ['STUDENT'],
-    staff: ['STAFF', 'SUPERVISOR'],
+    staff: ['STAFF', 'SUPERVISOR', 'CHIEF_WARDEN'],
     admin: ['ADMIN'],
 });
 

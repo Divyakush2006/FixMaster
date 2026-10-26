@@ -24,6 +24,7 @@ exports.listBlocks = asyncHandler(async (req, res) => {
             b.block_id,
             split_part(b.block_id, '_', 1) AS block_code,
             b.block_name,
+            b.hostel_type,
             b.total_floors,
             (SELECT COUNT(*) FROM block_floors f WHERE f.block_id = b.block_id)::int AS floor_count,
             (SELECT COUNT(*) FROM rooms r WHERE r.block_id = b.block_id)::int AS room_count,
@@ -40,15 +41,15 @@ exports.listBlocks = asyncHandler(async (req, res) => {
 // POST /api/admin/blocks { block_code, block_name, top_floor }
 // The new block gets Ground + floors 1..top_floor automatically (DB trigger).
 exports.createBlock = asyncHandler(async (req, res) => {
-    const { block_code, block_name, top_floor } = req.body;
+    const { block_code, block_name, top_floor, hostel_type } = req.body;
     const blockId = `${block_code}_BLOCK`;
     const block = await db.withTransaction(async (client) => {
         const result = await client.query(
-            `INSERT INTO hostel_blocks (block_id, block_name, total_floors)
-             VALUES ($1, $2, $3)
+            `INSERT INTO hostel_blocks (block_id, block_name, total_floors, hostel_type)
+             VALUES ($1, $2, $3, $4)
              ON CONFLICT (block_id) DO NOTHING
-             RETURNING block_id, block_name, total_floors`,
-            [blockId, block_name, top_floor || 10]
+             RETURNING block_id, block_name, total_floors, hostel_type`,
+            [blockId, block_name, top_floor || 10, hostel_type || 'MENS']
         );
         if (result.rows.length === 0) {
             throw new AppError(409, `Block ${block_code} already exists.`);
@@ -67,20 +68,33 @@ exports.createBlock = asyncHandler(async (req, res) => {
 // PATCH /api/admin/blocks/:block_id { block_name }
 exports.updateBlock = asyncHandler(async (req, res) => {
     const block = await db.withTransaction(async (client) => {
-        const before = await client.query('SELECT block_name FROM hostel_blocks WHERE block_id = $1 FOR UPDATE', [req.params.block_id]);
+        const before = await client.query('SELECT block_name, hostel_type FROM hostel_blocks WHERE block_id = $1 FOR UPDATE', [
+            req.params.block_id,
+        ]);
         if (before.rows.length === 0) {
             throw new AppError(404, 'Block not found.');
         }
         const result = await client.query(
-            'UPDATE hostel_blocks SET block_name = $2 WHERE block_id = $1 RETURNING block_id, block_name, total_floors',
-            [req.params.block_id, req.body.block_name]
+            `UPDATE hostel_blocks SET block_name = $2, hostel_type = COALESCE($3, hostel_type)
+             WHERE block_id = $1 RETURNING block_id, block_name, total_floors, hostel_type`,
+            [req.params.block_id, req.body.block_name, req.body.hostel_type || null]
         );
-        await recordAudit(client, req, {
-            action: 'block.rename',
-            targetType: 'block',
-            targetId: req.params.block_id,
-            details: { from: before.rows[0].block_name, to: req.body.block_name },
-        });
+        if (before.rows[0].block_name !== req.body.block_name) {
+            await recordAudit(client, req, {
+                action: 'block.rename',
+                targetType: 'block',
+                targetId: req.params.block_id,
+                details: { from: before.rows[0].block_name, to: req.body.block_name },
+            });
+        }
+        if (req.body.hostel_type && req.body.hostel_type !== before.rows[0].hostel_type) {
+            await recordAudit(client, req, {
+                action: 'block.set_type',
+                targetType: 'block',
+                targetId: req.params.block_id,
+                details: { from: before.rows[0].hostel_type, to: req.body.hostel_type },
+            });
+        }
         return result.rows[0];
     }, req.user.userId);
     res.json(block);

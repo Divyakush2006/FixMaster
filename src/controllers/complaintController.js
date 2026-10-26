@@ -3,6 +3,8 @@ const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { recordAudit } = require('../services/auditService');
 const { slaDueSql, slaStatusSql } = require('../services/slaService');
 const { photoUrl, sanitizeImage, savePhoto, removePhoto, findPhoto } = require('../services/attachmentService');
+const { managedBlocks, scopeCondition, inScope, assertTicketInScope } = require('../services/scopeService');
+const { MANAGER_ROLES } = require('../config/roles');
 
 // Ticket model (migrations 007-008): the ROOM or COMMON AREA is the unit of a
 // ticket, not the person. There is at most one live ticket per location and
@@ -160,7 +162,12 @@ async function assertValidLocation(client, { ticket_scope, room_id, common_area_
 }
 
 /** Visibility rule shared by the detail, logs and related endpoints. */
-async function assertCanView(complaintId, { role, userId }) {
+async function assertCanView(complaintId, user) {
+    const { role, userId } = user;
+    if (MANAGER_ROLES.includes(role)) {
+        await assertTicketInScope(user, complaintId);
+        return;
+    }
     if (role === 'STUDENT') {
         const visible = await db.query(`SELECT 1 FROM complaints c WHERE c.complaint_id = $1 AND ${studentCanSee('$2')}`, [
             complaintId,
@@ -246,6 +253,9 @@ exports.createComplaint = asyncHandler(async (req, res) => {
             await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`complaint-location:${locationKey}:${subcategory_id}`]);
 
             await assertValidLocation(client, { ticket_scope, room_id, common_area_id, block_id, userId, role });
+            if (MANAGER_ROLES.includes(role) && !inScope(await managedBlocks(req.user, client), block_id)) {
+                throw new AppError(403, 'You can only raise tickets in the blocks you manage.', { code: 'OUT_OF_SCOPE' });
+            }
 
             const issue = await client.query('SELECT priority_level, issue_name FROM complaint_subcategories WHERE subcategory_id = $1', [
                 subcategory_id,
@@ -386,6 +396,9 @@ exports.getComplaints = asyncHandler(async (req, res) => {
     if (role === 'STUDENT') {
         params.push(userId);
         where.push(studentCanSee(`$${params.length}`));
+    } else if (MANAGER_ROLES.includes(role)) {
+        const scoped = scopeCondition(await managedBlocks(req.user), 'c.block_id', params);
+        if (scoped) where.push(scoped);
     } else if (role === 'STAFF') {
         params.push(userId);
         where.push(`EXISTS (
@@ -457,7 +470,7 @@ exports.getComplaintById = asyncHandler(async (req, res) => {
     await assertCanView(req.params.id, req.user);
     const complaint = withViewerFlags(result.rows[0], req.user);
 
-    const showNames = role === 'SUPERVISOR' || role === 'ADMIN' || (role === 'STUDENT' && complaint.ticket_scope === 'ROOM');
+    const showNames = MANAGER_ROLES.includes(role) || (role === 'STUDENT' && complaint.ticket_scope === 'ROOM');
     if (showNames) {
         const reporters = await db.query(
             `SELECT cr.user_id, u.full_name, cr.is_original, cr.reported_at
@@ -567,6 +580,7 @@ exports.getComplaintLogs = asyncHandler(async (req, res) => {
 // GET /api/complaints/:id/related (SUPERVISOR, ADMIN) - other live tickets at
 // the same room or common area: the candidates for a merge.
 exports.getRelatedComplaints = asyncHandler(async (req, res) => {
+    await assertTicketInScope(req.user, req.params.id);
     const base = await db.query('SELECT room_id, common_area_id FROM complaints WHERE complaint_id = $1', [req.params.id]);
     if (base.rows.length === 0) {
         throw new AppError(404, 'Complaint not found.');
@@ -636,6 +650,7 @@ exports.withdrawComplaint = asyncHandler(async (req, res) => {
 exports.rejectComplaint = asyncHandler(async (req, res) => {
     const { userId } = req.user;
     const reason = req.body.reason.trim();
+    await assertTicketInScope(req.user, req.params.id);
     await db.withTransaction(async (client) => {
         const ticket = await lockComplaint(client, req.params.id);
         if (!['OPEN', 'ESCALATED', 'ASSIGNED', 'IN_PROGRESS'].includes(ticket.status)) {
@@ -671,6 +686,8 @@ exports.mergeComplaint = asyncHandler(async (req, res) => {
     if (sourceId === targetId) {
         throw new AppError(400, 'A ticket cannot be merged into itself.');
     }
+    // Only tickets at the same location merge, so the target shares this block.
+    await assertTicketInScope(req.user, sourceId);
     const outcome = await db.withTransaction(async (client) => {
         // Lock both tickets in a fixed (id) order: two supervisors merging A
         // into B and B into A at once must not deadlock.

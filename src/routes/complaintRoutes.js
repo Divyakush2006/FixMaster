@@ -3,6 +3,7 @@ const router = express.Router();
 
 const complaints = require('../controllers/complaintController');
 const { authenticate, authorize } = require('../middleware/auth');
+const { MANAGER_ROLES } = require('../config/roles');
 const { photoUploadLimiter } = require('../middleware/rateLimiters');
 const { MAX_PHOTO_BYTES } = require('../services/attachmentService');
 const {
@@ -14,7 +15,7 @@ const {
     mergeComplaintValidators,
 } = require('../middleware/validators');
 
-router.post('/', authenticate, authorize('STUDENT', 'SUPERVISOR', 'ADMIN'), createComplaintValidators, complaints.createComplaint);
+router.post('/', authenticate, authorize('STUDENT', ...MANAGER_ROLES), createComplaintValidators, complaints.createComplaint);
 router.get('/', authenticate, listComplaintsValidators, complaints.getComplaints);
 router.get('/:id', authenticate, complaintIdParamValidators, complaints.getComplaintById);
 // Photo of the problem. Uploaded as the raw image body (JPEG or PNG, 5 MB), so
@@ -31,11 +32,11 @@ router.put(
 router.delete('/:id/photo', authenticate, authorize('STUDENT'), photoParamValidators, complaints.deletePhoto);
 router.get('/:id/photo', authenticate, photoParamValidators, complaints.getPhoto);
 router.get('/:id/logs', authenticate, complaintIdParamValidators, complaints.getComplaintLogs);
-router.get('/:id/related', authenticate, authorize('SUPERVISOR', 'ADMIN'), complaintIdParamValidators, complaints.getRelatedComplaints);
+router.get('/:id/related', authenticate, authorize(...MANAGER_ROLES), complaintIdParamValidators, complaints.getRelatedComplaints);
 
 // Closing a ticket without the work being done.
 router.post('/:id/withdraw', authenticate, authorize('STUDENT'), complaintIdParamValidators, complaints.withdrawComplaint);
-router.post('/:id/reject', authenticate, authorize('SUPERVISOR', 'ADMIN'), rejectComplaintValidators, complaints.rejectComplaint);
-router.post('/:id/merge', authenticate, authorize('SUPERVISOR', 'ADMIN'), mergeComplaintValidators, complaints.mergeComplaint);
+router.post('/:id/reject', authenticate, authorize(...MANAGER_ROLES), rejectComplaintValidators, complaints.rejectComplaint);
+router.post('/:id/merge', authenticate, authorize(...MANAGER_ROLES), mergeComplaintValidators, complaints.mergeComplaint);
 
 module.exports = router;

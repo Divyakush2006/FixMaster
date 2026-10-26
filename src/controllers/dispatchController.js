@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { slaDueSql, slaStatusSql } = require('../services/slaService');
+const { assertTicketInScope } = require('../services/scopeService');
 
 // Validation of dispatch requests (complaint exists, is in a dispatchable
 // state, staff member exists, is active and has the right trade) lives in the
@@ -23,6 +24,7 @@ exports.assignTechnician = asyncHandler(async (req, res) => {
     const expected = checkExpected ? req.body.expected_assignee_id : null;
     const allowOffDuty = req.body.allow_off_duty === true;
     const supervisorId = req.user.userId;
+    await assertTicketInScope(req.user, complaint_id);
 
     await db.withTransaction(async (client) => {
         await client.query('CALL sp_supervisor_assign_task($1, $2, $3, $4, $5, $6)', [
@@ -44,6 +46,7 @@ exports.assignTechnician = asyncHandler(async (req, res) => {
 exports.autoDispatchCleaning = asyncHandler(async (req, res) => {
     const { complaint_id } = req.body;
     const supervisorId = req.user.userId;
+    await assertTicketInScope(req.user, complaint_id);
 
     const assignedStaffId = await db.withTransaction(async (client) => {
         const call = await client.query('CALL sp_auto_dispatch_cleaning($1, $2)', [complaint_id, null]);
