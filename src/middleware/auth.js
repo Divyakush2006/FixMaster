@@ -34,7 +34,7 @@ async function loadActiveUser(decoded) {
     // or predates server-side sign-out, and is refused.
     if (!decoded || typeof decoded.userId !== 'string' || typeof decoded.jti !== 'string') return null;
     const { rows } = await db.query(
-        `SELECT user_id, role, reg_or_emp_id, is_active, credentials_changed_at,
+        `SELECT user_id, role, reg_or_emp_id, is_active, credentials_changed_at, account_status,
                 EXISTS (SELECT 1 FROM revoked_tokens WHERE jti = $2) AS revoked
          FROM users WHERE user_id = $1`,
         [decoded.userId, decoded.jti]
@@ -51,36 +51,53 @@ async function loadActiveUser(decoded) {
     if (!portal || decoded.portal !== portal || decoded.aud !== audienceFor(portal)) {
         return null;
     }
-    return { userId: user.user_id, role: user.role, regOrEmpId: user.reg_or_emp_id, portal };
+    return { userId: user.user_id, role: user.role, regOrEmpId: user.reg_or_emp_id, portal, accountStatus: user.account_status };
 }
 
 // 401 = "sign in (again)": no token, a bad/expired/revoked one, a token from
 // the wrong portal, or a deactivated account. Clients sign the user out on 401.
 // 403 (authorize below, and ownership checks in controllers) = signed in but
 // not allowed to do this one thing; clients must NOT sign out on 403.
-const authenticate = asyncHandler(async (req, res, next) => {
-    const credentials = credentialsOf(req);
-    const decoded = verifyToken(credentials.token);
-    if (decoded === null) {
-        return res.status(401).json({ error: 'Access denied. No token provided.' });
-    }
-    if (decoded === undefined) {
-        return res.status(401).json({ error: 'Invalid or expired token.' });
-    }
-    const user = await loadActiveUser(decoded);
-    if (!user) {
-        return res.status(401).json({ error: 'Your session is no longer valid. Please sign in again.' });
-    }
-    // A cookie is sent by the browser on its own, so a state-changing request
-    // that rides on one must prove it came from our page (double-submit token).
-    // Checked after the session itself so a missing session is still a 401.
-    if (!credentials.csrfOk) {
-        return res.status(403).json({ error: 'Request blocked: the security token is missing or wrong. Reload the page and try again.', code: 'CSRF' });
-    }
-    req.user = user;
-    req.auth = { jti: decoded.jti, exp: decoded.exp, via: credentials.via };
-    next();
-});
+//
+// A student who has not finished onboarding (migration 010) holds a valid
+// session but may only use the onboarding endpoints - their profile, room
+// request, reference data and sign-out. Every other route refuses with 403
+// PROFILE_INCOMPLETE, so the default is closed: a route opts in to incomplete
+// accounts by using authenticateOnboarding.
+const makeAuthenticate = ({ allowIncompleteProfile }) =>
+    asyncHandler(async (req, res, next) => {
+        const credentials = credentialsOf(req);
+        const decoded = verifyToken(credentials.token);
+        if (decoded === null) {
+            return res.status(401).json({ error: 'Access denied. No token provided.' });
+        }
+        if (decoded === undefined) {
+            return res.status(401).json({ error: 'Invalid or expired token.' });
+        }
+        const user = await loadActiveUser(decoded);
+        if (!user) {
+            return res.status(401).json({ error: 'Your session is no longer valid. Please sign in again.' });
+        }
+        // A cookie is sent by the browser on its own, so a state-changing request
+        // that rides on one must prove it came from our page (double-submit token).
+        // Checked after the session itself so a missing session is still a 401.
+        if (!credentials.csrfOk) {
+            return res.status(403).json({ error: 'Request blocked: the security token is missing or wrong. Reload the page and try again.', code: 'CSRF' });
+        }
+        if (user.accountStatus === 'PENDING_VERIFICATION') {
+            // Sessions are only issued after verification; this is defence in depth.
+            return res.status(403).json({ error: 'Confirm your email address first.', code: 'EMAIL_NOT_VERIFIED' });
+        }
+        if (user.accountStatus !== 'ACTIVE' && !allowIncompleteProfile) {
+            return res.status(403).json({ error: 'Finish your profile to start using FixMaster.', code: 'PROFILE_INCOMPLETE' });
+        }
+        req.user = user;
+        req.auth = { jti: decoded.jti, exp: decoded.exp, via: credentials.via };
+        next();
+    });
+
+const authenticate = makeAuthenticate({ allowIncompleteProfile: false });
+const authenticateOnboarding = makeAuthenticate({ allowIncompleteProfile: true });
 
 const authorize = (...roles) => {
     return (req, res, next) => {
@@ -114,4 +131,4 @@ function signToken(user) {
     );
 }
 
-module.exports = { authenticate, authorize, signToken };
+module.exports = { authenticate, authenticateOnboarding, authorize, signToken };

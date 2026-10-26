@@ -1,4 +1,5 @@
 const { body, param, query, validationResult } = require('express-validator');
+const { isAllowedStudentEmail, isValidStudentRegNo, studentEmailDomains, PRIVACY_NOTICE_VERSION } = require('../config/identity');
 
 const ROLES = ['STUDENT', 'STAFF', 'SUPERVISOR', 'ADMIN'];
 const SPECIALIZATIONS = ['CLEANING', 'ELECTRICIAN', 'CARPENTER', 'AC_TECH', 'PLUMBER'];
@@ -106,7 +107,93 @@ const roomRequestRules = [
     }).withMessage('Choose a block, a floor and a room together.'),
 ];
 
-const registerValidators = [...userProfileRules, ...roomRequestRules, handleValidation];
+// Students prove they belong to the university: their address must be on a
+// student mail domain (and is then verified by an emailed code), and their
+// registration number must have the university's format.
+const studentIdentityRules = (onlyIf) => {
+    // A condition must come first in a chain: .if() only gates what follows it.
+    const field = (name) => (onlyIf ? body(name).if(onlyIf) : body(name));
+    return [
+        field('email')
+            .custom((value) => isAllowedStudentEmail(value))
+            .withMessage(() => `Use your university email address (ending in @${studentEmailDomains().join(' or @')}).`),
+        field('reg_or_emp_id')
+            .custom((value) => isValidStudentRegNo(value))
+            .withMessage('Enter your registration number as printed on your ID card, e.g. 21BCE0843.'),
+    ];
+};
+
+const registerValidators = [...userProfileRules, ...studentIdentityRules(), ...roomRequestRules, handleValidation];
+
+const verifyEmailValidators = [
+    body('reg_or_emp_id').isString().trim().notEmpty().withMessage('reg_or_emp_id is required.').bail().isLength({ max: 30 }).toUpperCase(),
+    body('code').isString().trim().matches(/^\d{6}$/).withMessage('Enter the 6-digit code from the email.'),
+    handleValidation,
+];
+
+const resendCodeValidators = [
+    body('reg_or_emp_id').isString().trim().notEmpty().withMessage('reg_or_emp_id is required.').bail().isLength({ max: 30 }).toUpperCase(),
+    handleValidation,
+];
+
+// ---- Student profile (onboarding) ----------------------------------------------
+
+const GENDERS = ['MALE', 'FEMALE', 'OTHER', 'UNDISCLOSED'];
+const CLEANING_SLOTS = ['MORNING', 'AFTERNOON', 'EVENING', 'ANY'];
+const LANGUAGES = ['en', 'hi', 'ta', 'te'];
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+const PHONE = /^\d{10}$/;
+
+const yearsBetween = (from, to) => (to - from) / (365.25 * 24 * 3600 * 1000);
+
+const profileValidators = [
+    body('school').isString().trim().notEmpty().withMessage('Choose your school.').bail().isLength({ max: 20 }).toUpperCase(),
+    body('programme').isString().trim().notEmpty().withMessage('Enter your programme, e.g. B.Tech CSE.').bail().isLength({ max: 100 }),
+    body('admission_year')
+        .isInt()
+        .withMessage('Enter your year of admission.')
+        .bail()
+        .toInt()
+        .custom((y) => y >= new Date().getFullYear() - 8 && y <= new Date().getFullYear() + 1)
+        .withMessage('Year of admission looks wrong.'),
+    body('expected_graduation_year')
+        .isInt()
+        .withMessage('Enter your expected graduation year.')
+        .bail()
+        .toInt()
+        .custom((y, { req }) => y >= Number(req.body.admission_year) && y <= Number(req.body.admission_year) + 7)
+        .withMessage('Graduation year must be within 7 years after admission.'),
+    body('gender').isIn(GENDERS).withMessage('Choose a gender option.'),
+    body('date_of_birth')
+        .isISO8601({ strict: true })
+        .withMessage('Enter your date of birth.')
+        .bail()
+        .custom((d) => {
+            const age = yearsBetween(new Date(d).getTime(), Date.now());
+            return age >= 15 && age <= 70;
+        })
+        .withMessage('Date of birth looks wrong.'),
+    body('guardian_name').isString().trim().notEmpty().withMessage("Enter a parent or guardian's name.").bail().isLength({ max: 100 }),
+    body('guardian_relation').isString().trim().notEmpty().withMessage('Enter how they are related to you.').bail().isLength({ max: 30 }),
+    body('guardian_phone').isString().trim().matches(PHONE).withMessage("The guardian's phone must be 10 digits."),
+    body('local_guardian_name').optional({ values: 'falsy' }).isString().trim().isLength({ max: 100 }),
+    body('local_guardian_phone').optional({ values: 'falsy' }).isString().trim().matches(PHONE).withMessage("The local guardian's phone must be 10 digits."),
+    body('permanent_city').isString().trim().notEmpty().withMessage('Enter your home city.').bail().isLength({ max: 60 }),
+    body('permanent_state').isString().trim().notEmpty().withMessage('Enter your home state.').bail().isLength({ max: 60 }),
+    body('permanent_pincode').isString().trim().matches(/^[1-9]\d{5}$/).withMessage('Enter a 6-digit PIN code.'),
+    body('preferred_cleaning_slot').optional().isIn(CLEANING_SLOTS).withMessage(`preferred_cleaning_slot must be one of: ${CLEANING_SLOTS.join(', ')}.`),
+    body('preferred_language').optional().isIn(LANGUAGES).withMessage(`preferred_language must be one of: ${LANGUAGES.join(', ')}.`),
+    body('health_consent').optional().isBoolean({ strict: true }).withMessage('health_consent must be true or false.'),
+    body('blood_group').optional({ values: 'falsy' }).isIn(BLOOD_GROUPS).withMessage('Choose a valid blood group.'),
+    body('medical_notes').optional({ values: 'falsy' }).isString().isLength({ max: 500 }).withMessage('Medical notes must be at most 500 characters.'),
+    body().custom((v) => v.health_consent === true || (!v.blood_group && !v.medical_notes))
+        .withMessage('Health details are only kept if you agree to share them with the wardens.'),
+    body('privacy_consent').custom((v) => v === true).withMessage('You need to accept the privacy notice to continue.'),
+    body('privacy_notice_version')
+        .custom((v) => v === PRIVACY_NOTICE_VERSION)
+        .withMessage('The privacy notice has changed. Reload the page and read the current version.'),
+    handleValidation,
+];
 
 const roomRequestValidators = [
     body('block_id').isString().trim().notEmpty().isLength({ max: 10 }).withMessage('block_id is required.'),
@@ -277,6 +364,8 @@ const userIdParam = param('user_id').trim().notEmpty().isLength({ max: 36 }).wit
 const adminCreateUserValidators = [
     ...userProfileRules, // same rules as registration...
     body('role').exists().withMessage('role is required.'), // ...but role is mandatory here
+    // Students are students whoever creates the account: same identity rules.
+    ...studentIdentityRules(body('role').equals('STUDENT')),
     handleValidation,
 ];
 
@@ -400,6 +489,9 @@ module.exports = {
     SPECIALIZATIONS,
     handleValidation,
     registerValidators,
+    verifyEmailValidators,
+    resendCodeValidators,
+    profileValidators,
     loginValidators,
     forgotPasswordValidators,
     resetPasswordValidators,

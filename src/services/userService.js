@@ -7,7 +7,7 @@ const BCRYPT_COST = 12;
 // Columns that are safe to return to any client. password_hash never leaves
 // the database layer.
 const PUBLIC_USER_COLUMNS =
-    'user_id, reg_or_emp_id, full_name, email, phone_number, role, specialization, is_available, is_active, created_at, last_login_at, locked_until';
+    'user_id, reg_or_emp_id, full_name, email, phone_number, role, specialization, is_available, is_active, created_at, last_login_at, locked_until, account_status, email_verified_at';
 
 const hashPassword = (password) => bcrypt.hash(password, BCRYPT_COST);
 
@@ -17,7 +17,7 @@ const hashPassword = (password) => bcrypt.hash(password, BCRYPT_COST);
  * only checks that role and specialization are consistent (the database
  * enforces the same thing via chk_staff_specialization).
  */
-async function createUser({ reg_or_emp_id, full_name, email, phone_number, password, role, specialization }, executor = db) {
+async function createUser({ reg_or_emp_id, full_name, email, phone_number, password, role, specialization, account_status = 'ACTIVE' }, executor = db) {
     const spec = role === 'STAFF' ? specialization || null : null;
     if (role === 'STAFF' && !spec) {
         throw new AppError(400, 'specialization is required for STAFF accounts.');
@@ -38,10 +38,10 @@ async function createUser({ reg_or_emp_id, full_name, email, phone_number, passw
 
     const password_hash = await hashPassword(password);
     const result = await executor.query(
-        `INSERT INTO users (reg_or_emp_id, full_name, email, phone_number, password_hash, role, specialization)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO users (reg_or_emp_id, full_name, email, phone_number, password_hash, role, specialization, account_status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING ${PUBLIC_USER_COLUMNS}`,
-        [reg_or_emp_id, full_name, email, phone_number, password_hash, role, spec]
+        [reg_or_emp_id, full_name, email, phone_number, password_hash, role, spec, account_status]
     );
     return result.rows[0];
 }

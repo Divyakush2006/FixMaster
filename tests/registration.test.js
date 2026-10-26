@@ -6,9 +6,9 @@ const { resetDatabase, startApp, SEED } = require('./helpers');
 // It grants nothing until the hostel office allots the room.
 
 const profile = (n, extra = {}) => ({
-    reg_or_emp_id: `NEW${n}`,
+    reg_or_emp_id: `25BCE7${String(n).padStart(3, '0')}`,
     full_name: `New Student ${n}`,
-    email: `new${n}@example.com`,
+    email: `new${n}@vitstudent.ac.in`,
     phone_number: '9000000001',
     password: 'Welcome@2026x',
     ...extra,
@@ -29,7 +29,7 @@ describe('student registration and room requests', () => {
     });
     after(async () => t && t.close());
 
-    const register = (n, extra) => t.api('/auth/student/register', { method: 'POST', body: profile(n, extra) });
+    const register = (n, extra) => t.registerStudent(profile(n, extra));
 
     it('creates the account and a pending request, but no allotment and no room access', async () => {
         const r = await register(1, { block_id: 'B_BLOCK', floor_number: 2, room_id: 'B-201' });
@@ -40,7 +40,7 @@ describe('student registration and room requests', () => {
         const allot = await t.sql('SELECT COUNT(*)::int AS n FROM student_room_allotments WHERE student_id = $1', [r.data.user.user_id]);
         assert.equal(allot.rows[0].n, 0, 'a self-declared room is not an allotment');
 
-        const token = await t.login('NEW1', 'Welcome@2026x');
+        const token = await t.login('25BCE7001', 'Welcome@2026x');
         const ticket = await t.api('/complaints', {
             method: 'POST',
             token,
@@ -64,7 +64,7 @@ describe('student registration and room requests', () => {
             const r = await register(20, extra);
             assert.equal(r.status, status, JSON.stringify(extra));
         }
-        const left = await t.sql("SELECT COUNT(*)::int AS n FROM users WHERE reg_or_emp_id = 'NEW20'");
+        const left = await t.sql("SELECT COUNT(*)::int AS n FROM users WHERE reg_or_emp_id = '25BCE7020'");
         assert.equal(left.rows[0].n, 0, 'a failed registration creates no account');
 
         await t.sql('UPDATE rooms SET is_active = FALSE WHERE room_id = $1', ['B-202']);
@@ -76,7 +76,7 @@ describe('student registration and room requests', () => {
         assert.equal((await register(2)).status, 201);
         const dupe = await register(2);
         assert.equal(dupe.status, 409);
-        assert.equal((await register(3, { email: 'new2@example.com' })).status, 409, 'email already used');
+        assert.equal((await register(3, { email: 'new2@vitstudent.ac.in' })).status, 409, 'email already used');
         const sneaky = await register(4, { role: 'ADMIN' });
         assert.equal(sneaky.status, 201);
         assert.equal(sneaky.data.user.role, 'STUDENT', 'public registration only ever creates students');
@@ -85,7 +85,7 @@ describe('student registration and room requests', () => {
     it('the office sees the request and approving it through the allotment flow grants access', async () => {
         const list = await t.api('/admin/allotment-requests', { token: admin });
         assert.equal(list.status, 200);
-        const request = list.data.find((r) => r.reg_or_emp_id === 'NEW1');
+        const request = list.data.find((r) => r.reg_or_emp_id === '25BCE7001');
         assert.ok(request);
         assert.equal(request.room_id, 'B-201');
         assert.equal(request.occupied_beds, 0);
@@ -98,9 +98,9 @@ describe('student registration and room requests', () => {
             body: { student_id: request.student_id, room_id: 'B-201', academic_year: '2026-2027' },
         });
         assert.equal(approve.status, 201);
-        assert.ok(!(await t.api('/admin/allotment-requests', { token: admin })).data.some((r) => r.reg_or_emp_id === 'NEW1'));
+        assert.ok(!(await t.api('/admin/allotment-requests', { token: admin })).data.some((r) => r.reg_or_emp_id === '25BCE7001'));
 
-        const token = await t.login('NEW1', 'Welcome@2026x');
+        const token = await t.login('25BCE7001', 'Welcome@2026x');
         assert.equal((await t.api('/me/room-request', { token })).data.request, null);
         const ticket = await t.api('/complaints', {
             method: 'POST',
@@ -111,7 +111,7 @@ describe('student registration and room requests', () => {
     });
 
     it('a student can send, change and repeat requests; declined ones can be re-sent', async () => {
-        const token = await t.login('NEW2', 'Welcome@2026x');
+        const token = await t.login('25BCE7002', 'Welcome@2026x');
         assert.equal((await t.api('/me/room-request', { token })).data.request, null);
 
         const first = await t.api('/me/room-request', { method: 'POST', token, body: { block_id: 'B_BLOCK', floor_number: 2, room_id: 'B-202' } });
@@ -124,7 +124,7 @@ describe('student registration and room requests', () => {
             400
         );
 
-        const id = (await t.sql("SELECT user_id FROM users WHERE reg_or_emp_id = 'NEW2'")).rows[0].user_id;
+        const id = (await t.sql("SELECT user_id FROM users WHERE reg_or_emp_id = '25BCE7002'")).rows[0].user_id;
         assert.equal((await t.api(`/admin/allotment-requests/${id}/decline`, { method: 'POST', token: admin, body: { reason: 'no' } })).status, 400);
         const decline = await t.api(`/admin/allotment-requests/${id}/decline`, {
             method: 'POST',
@@ -150,8 +150,8 @@ describe('student registration and room requests', () => {
     });
 
     it('a student can withdraw a waiting request; it then disappears from the office queue', async () => {
-        const token = await t.login('NEW2', 'Welcome@2026x');
-        const id = (await t.sql("SELECT user_id FROM users WHERE reg_or_emp_id = 'NEW2'")).rows[0].user_id;
+        const token = await t.login('25BCE7002', 'Welcome@2026x');
+        const id = (await t.sql("SELECT user_id FROM users WHERE reg_or_emp_id = '25BCE7002'")).rows[0].user_id;
         const queue = async () => (await t.api('/admin/allotment-requests', { token: admin })).data.map((r) => r.student_id);
         assert.ok((await queue()).includes(id));
 

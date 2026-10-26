@@ -16,9 +16,12 @@ describe('administration: accounts & room allotments', () => {
         (await t.sql('SELECT user_id FROM users WHERE reg_or_emp_id = $1', [regId])).rows[0].user_id;
 
     async function registerStudent(n) {
-        const r = await t.api('/auth/student/register', {
-            method: 'POST',
-            body: { reg_or_emp_id: `ASTU${n}`, full_name: `Admin Test ${n}`, email: `astu${n}@example.com`, phone_number: '9000000000', password: 'Test@12345' },
+        const r = await t.registerStudent({
+            reg_or_emp_id: `25BCE6${String(n).padStart(3, '0')}`,
+            full_name: `Admin Test ${n}`,
+            email: `astu${n}@vitstudent.ac.in`,
+            phone_number: '9000000000',
+            password: 'Test@12345',
         });
         assert.equal(r.status, 201);
         return r.data.user.user_id;
@@ -44,7 +47,7 @@ describe('administration: accounts & room allotments', () => {
 
     it('a newly registered student can file room tickets once a room is allotted', async () => {
         const studentId = await registerStudent(1);
-        const token = await t.login('ASTU1', 'Test@12345');
+        const token = await t.login('25BCE6001', 'Test@12345');
         const ticket = { ticket_scope: 'ROOM', block_id: 'L_BLOCK', room_id: 'L-801', subcategory_id: SEED.sub.roomCleaning };
 
         assert.equal((await t.api('/me/allotment', { token })).status, 404);
@@ -57,7 +60,7 @@ describe('administration: accounts & room allotments', () => {
     });
 
     it('moving a student keeps their history and they can only use the new room', async () => {
-        const studentId = await userId('ASTU1');
+        const studentId = await userId('25BCE6001');
         const r = await t.api('/admin/allotments', { method: 'POST', token: admin, body: { student_id: studentId, room_id: 'L-802', academic_year: '2026-2027' } });
         assert.equal(r.status, 201);
         const { rows } = await t.sql('SELECT room_id, is_current FROM student_room_allotments WHERE student_id = $1 ORDER BY allotment_id', [studentId]);
@@ -79,7 +82,7 @@ describe('administration: accounts & room allotments', () => {
     it('refuses to allot rooms to non-students and ends allotments on request', async () => {
         const staffId = await userId(SEED.plumber);
         assert.equal((await t.api('/admin/allotments', { method: 'POST', token: admin, body: { student_id: staffId, room_id: 'L-840', academic_year: '2026-2027' } })).status, 400);
-        const studentId = await userId('ASTU2');
+        const studentId = await userId('25BCE6002');
         assert.equal((await t.api(`/admin/allotments/${studentId}`, { method: 'DELETE', token: admin })).status, 200);
         assert.equal((await t.api(`/admin/allotments/${studentId}`, { method: 'DELETE', token: admin })).status, 404);
     });
@@ -113,11 +116,11 @@ describe('administration: accounts & room allotments', () => {
     });
 
     it('password reset by an admin revokes the user\'s sessions', async () => {
-        const token = await t.login('ASTU3', 'Test@12345');
+        const token = await t.login('25BCE6003', 'Test@12345');
         await new Promise((r) => setTimeout(r, 1100));
-        const r = await t.api(`/admin/users/${await userId('ASTU3')}/reset-password`, { method: 'POST', token: admin, body: { new_password: 'Reset@12345' } });
+        const r = await t.api(`/admin/users/${await userId('25BCE6003')}/reset-password`, { method: 'POST', token: admin, body: { new_password: 'Reset@12345' } });
         assert.equal(r.status, 200);
         assert.equal((await t.api('/me', { token })).status, 401);
-        assert.equal((await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: 'ASTU3', password: 'Reset@12345' } })).status, 200);
+        assert.equal((await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: '25BCE6003', password: 'Reset@12345' } })).status, 200);
     });
 });

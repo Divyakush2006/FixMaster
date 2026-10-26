@@ -47,6 +47,9 @@ process.env.RATE_LIMIT_AUTH_IP_MAX = '1000000';
 process.env.RATE_LIMIT_ADMIN_AUTH_IP_MAX = '1000000';
 process.env.RATE_LIMIT_FORGOT_IP_MAX = '1000000';
 process.env.RATE_LIMIT_RESET_IP_MAX = '1000000';
+process.env.RATE_LIMIT_VERIFY_IP_MAX = '1000000';
+process.env.RATE_LIMIT_VERIFY_MAX = '1000000';
+process.env.RATE_LIMIT_RESEND_IP_MAX = '1000000';
 
 const SEED_PASSWORD = 'Password@123';
 
@@ -80,11 +83,37 @@ async function resetDatabase() {
     await resetDevDb({ connectionString: TEST_DB_URL, log: () => {} });
 }
 
+/** A complete, valid onboarding profile; override fields per test. */
+function studentProfile(extra = {}) {
+    return {
+        school: 'SCOPE',
+        programme: 'B.Tech Computer Science and Engineering',
+        admission_year: new Date().getFullYear() - 1,
+        expected_graduation_year: new Date().getFullYear() + 3,
+        gender: 'FEMALE',
+        date_of_birth: '2006-04-12',
+        guardian_name: 'R. Iyer',
+        guardian_relation: 'Mother',
+        guardian_phone: '9876500011',
+        permanent_city: 'Coimbatore',
+        permanent_state: 'Tamil Nadu',
+        permanent_pincode: '641001',
+        preferred_cleaning_slot: 'MORNING',
+        preferred_language: 'en',
+        privacy_consent: true,
+        privacy_notice_version: require('../src/config/identity').PRIVACY_NOTICE_VERSION,
+        ...extra,
+    };
+}
+
 /** Starts the app on an ephemeral port. Returns { api, login, sql, close }. */
 async function startApp() {
     const app = require('../src/app');
     const db = require('../src/config/db');
     const { portalForRole } = require('../src/config/portals');
+    // Every email the API sends lands here instead of leaving the machine.
+    const outbox = [];
+    require('../src/services/mailer').setTransportForTests({ sendMail: async (msg) => outbox.push(msg) });
     const server = await new Promise((resolve) => {
         const s = app.listen(0, '127.0.0.1', () => resolve(s));
     });
@@ -118,12 +147,42 @@ async function startApp() {
 
     const sql = (text, params) => db.query(text, params);
 
+    /** The newest verification code emailed to `email`. */
+    function lastCodeFor(email) {
+        const mail = [...outbox].reverse().find((m) => m.to.toLowerCase() === email.toLowerCase() && /verification code/.test(m.subject));
+        if (!mail) throw new Error(`no verification email to ${email}`);
+        return mail.text.match(/code is (\d{6})/)[1];
+    }
+
+    /**
+     * Registers a student the way a person does: sign up, enter the emailed
+     * code (which signs them in), then complete the profile. Stop early with
+     * { verify: false } or { profile: false }. Returns the registration
+     * response plus the session token once there is one.
+     */
+    async function registerStudent(body, { verify = true, profile = true } = {}) {
+        const reg = await api('/auth/student/register', { method: 'POST', body });
+        if (reg.status !== 201 || !verify) return reg;
+        const v = await api('/auth/student/verify-email', {
+            method: 'POST',
+            body: { reg_or_emp_id: body.reg_or_emp_id, code: lastCodeFor(body.email) },
+        });
+        if (v.status !== 200) throw new Error(`verify ${body.reg_or_emp_id} failed: ${v.status} ${JSON.stringify(v.data)}`);
+        reg.token = v.data.token;
+        if (profile) {
+            const p = await api('/me/profile', { method: 'PUT', token: reg.token, body: studentProfile() });
+            if (p.status !== 201) throw new Error(`profile ${body.reg_or_emp_id} failed: ${p.status} ${JSON.stringify(p.data)}`);
+        }
+        return reg;
+    }
+
     async function close() {
+        require('../src/services/mailer').setTransportForTests(null);
         await new Promise((resolve) => server.close(resolve));
         await db.pool.end();
     }
 
-    return { base, api, login, sql, close, clearTokens: () => tokenCache.clear() };
+    return { base, api, login, sql, close, outbox, lastCodeFor, registerStudent, clearTokens: () => tokenCache.clear() };
 }
 
 /** Seed fixtures used across tests. */
@@ -147,4 +206,4 @@ const SEED = {
     sub: { roomCleaning: 1, dusting: 2, trash: 3, tubeLight: 4, socket: 5, switchBoard: 6, fan: 7, mcb: 8, tap: 17, coolerTemp: 21, corridorLight: 25 },
 };
 
-module.exports = { TEST_DB_URL, SEED_PASSWORD, SEED, resetDatabase, startApp, ensureTestDatabase };
+module.exports = { TEST_DB_URL, SEED_PASSWORD, SEED, resetDatabase, startApp, ensureTestDatabase, studentProfile };

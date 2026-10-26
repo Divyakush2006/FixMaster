@@ -95,6 +95,35 @@ const resetPasswordLimiter = rateLimit({
     message: { error: 'Too many attempts. Please try again later.' },
 });
 
+// POST /api/auth/student/verify-email: each code also dies after a few wrong
+// guesses (migration 010); these are ceilings on guessing across codes.
+const verifyEmailLimiters = [
+    rateLimit({
+        ...common,
+        windowMs: int(process.env.RATE_LIMIT_VERIFY_WINDOW_MS, 15 * 60 * 1000),
+        limit: int(process.env.RATE_LIMIT_VERIFY_IP_MAX, 100),
+        keyGenerator: (req) => `verify:ip:${req.ip}`,
+        message: { error: 'Too many attempts from this network. Please try again later.' },
+    }),
+    rateLimit({
+        ...common,
+        windowMs: int(process.env.RATE_LIMIT_VERIFY_WINDOW_MS, 15 * 60 * 1000),
+        limit: int(process.env.RATE_LIMIT_VERIFY_MAX, 10),
+        keyGenerator: (req) => `verify:acct:${loginId(req)}`,
+        message: { error: 'Too many attempts for this account. Ask for a new code and try again later.' },
+    }),
+];
+
+// POST /api/auth/student/resend-code: the code itself can be resent once a
+// minute per account; this stops one network flooding many inboxes.
+const resendCodeLimiter = rateLimit({
+    ...common,
+    windowMs: int(process.env.RATE_LIMIT_VERIFY_WINDOW_MS, 15 * 60 * 1000),
+    limit: int(process.env.RATE_LIMIT_RESEND_IP_MAX, 30),
+    keyGenerator: (req) => `resend:ip:${req.ip}`,
+    message: { error: 'Too many code requests from this network. Please try again later.' },
+});
+
 // PUT /api/complaints/:id/photo: uploads are the heaviest requests the API takes.
 const photoUploadLimiter = rateLimit({
     ...common,
@@ -134,4 +163,13 @@ const generalLimiter = rateLimit({
     message: { error: 'Too many requests. Please slow down.' },
 });
 
-module.exports = { loginLimiters, registerLimiter, forgotPasswordLimiters, resetPasswordLimiter, photoUploadLimiter, generalLimiter };
+module.exports = {
+    loginLimiters,
+    registerLimiter,
+    verifyEmailLimiters,
+    resendCodeLimiter,
+    forgotPasswordLimiters,
+    resetPasswordLimiter,
+    photoUploadLimiter,
+    generalLimiter,
+};

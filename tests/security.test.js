@@ -20,10 +20,7 @@ describe('security and operational controls', () => {
     after(async () => t && t.close());
 
     const register = (id, password) =>
-        t.api('/auth/student/register', {
-            method: 'POST',
-            body: { reg_or_emp_id: id, full_name: 'Policy Check', email: `${id.toLowerCase()}@example.com`, phone_number: '9000000050', password },
-        });
+        t.registerStudent({ reg_or_emp_id: id, full_name: 'Policy Check', email: `${id.toLowerCase()}@vitstudent.ac.in`, phone_number: '9000000050', password });
 
     describe('password policy', () => {
         it('rejects passwords without a letter and a digit, common passwords and ones containing the ID', async () => {
@@ -31,17 +28,17 @@ describe('security and operational controls', () => {
                 ['aaaaaaaa', /letter and one number/],
                 ['12345678', /letter and one number/],
                 ['Password123', /too common/],
-                ['xx24POL001yy', /account ID/],
+                ['xx24POL0001yy', /account ID/],
             ]) {
-                const r = await register('24POL001', pw);
+                const r = await register('24POL0001', pw);
                 assert.equal(r.status, 400, pw);
                 assert.match(r.data.error, pattern, pw);
             }
-            assert.equal((await register('24POL001', 'Corridor7Lamp')).status, 201);
+            assert.equal((await register('24POL0001', 'Corridor7Lamp')).status, 201);
         });
 
         it('applies the same policy to password changes and admin resets', async () => {
-            const token = await t.login('24POL001', 'Corridor7Lamp');
+            const token = await t.login('24POL0001', 'Corridor7Lamp');
             const change = await t.api('/me/password', { method: 'PATCH', token, body: { current_password: 'Corridor7Lamp', new_password: 'abcdefgh' } });
             assert.equal(change.status, 400);
             const admin = await t.login(SEED.admin);

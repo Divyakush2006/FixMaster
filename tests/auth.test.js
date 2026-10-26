@@ -12,9 +12,9 @@ describe('authentication & account security', () => {
     after(async () => t && t.close());
 
     const newStudent = (n, extra = {}) => ({
-        reg_or_emp_id: `TSTU${n}`,
+        reg_or_emp_id: `24BCE9${String(n).padStart(3, '0')}`,
         full_name: `Test Student ${n}`,
-        email: `test.student${n}@example.com`,
+        email: `test.student${n}@vitstudent.ac.in`,
         phone_number: '9000000000',
         password: 'Test@12345',
         ...extra,
@@ -119,10 +119,10 @@ describe('authentication & account security', () => {
     });
 
     it('login IDs are case-insensitive and stored upper-case', async () => {
-        await t.api('/auth/student/register', { method: 'POST', body: newStudent(2, { reg_or_emp_id: 'tstu2' }) });
-        const r = await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: 'TsTu2', password: 'Test@12345' } });
+        await t.registerStudent(newStudent(2, { reg_or_emp_id: '24bce9002' }));
+        const r = await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: '24BcE9002', password: 'Test@12345' } });
         assert.equal(r.status, 200);
-        assert.equal(r.data.user.reg_or_emp_id, 'TSTU2');
+        assert.equal(r.data.user.reg_or_emp_id, '24BCE9002');
     });
 
     it('rejects duplicate IDs and emails regardless of case', async () => {
@@ -136,9 +136,9 @@ describe('authentication & account security', () => {
     });
 
     it('stores the email exactly as typed (lower-cased), without rewriting it', async () => {
-        const r = await t.api('/auth/student/register', { method: 'POST', body: newStudent(5, { email: 'First.Last+hostel@Gmail.com' }) });
+        const r = await t.api('/auth/student/register', { method: 'POST', body: newStudent(5, { email: 'First.Last+hostel@VITSTUDENT.ac.in' }) });
         assert.equal(r.status, 201);
-        assert.equal(r.data.user.email, 'first.last+hostel@gmail.com');
+        assert.equal(r.data.user.email, 'first.last+hostel@vitstudent.ac.in');
     });
 
     it('rejects passwords longer than 72 bytes instead of silently truncating them', async () => {
@@ -193,8 +193,8 @@ describe('authentication & account security', () => {
     });
 
     it('password change revokes every other session and returns a working new token', async () => {
-        await t.api('/auth/student/register', { method: 'POST', body: newStudent(7) });
-        const oldToken = await t.login('TSTU7', 'Test@12345');
+        await t.registerStudent(newStudent(7));
+        const oldToken = await t.login('24BCE9007', 'Test@12345');
         // tokens carry one-second resolution; make sure the change lands in a later second
         await new Promise((r) => setTimeout(r, 1100));
 
@@ -213,19 +213,19 @@ describe('authentication & account security', () => {
         assert.equal(r.status, 200);
         assert.equal((await t.api('/me', { token: oldToken })).status, 401, 'old token must be revoked');
         assert.equal((await t.api('/me', { token: r.data.token })).status, 200, 'returned token must work');
-        assert.equal((await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: 'TSTU7', password: 'Changed@123' } })).status, 200);
+        assert.equal((await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: '24BCE9007', password: 'Changed@123' } })).status, 200);
     });
 
     it('a deactivated account cannot log in and its existing tokens stop working', async () => {
         const admin = await t.login(SEED.admin);
-        await t.api('/auth/student/register', { method: 'POST', body: newStudent(8) });
-        const token = await t.login('TSTU8', 'Test@12345');
-        const { rows } = await t.sql("SELECT user_id FROM users WHERE reg_or_emp_id = 'TSTU8'");
+        await t.registerStudent(newStudent(8));
+        const token = await t.login('24BCE9008', 'Test@12345');
+        const { rows } = await t.sql("SELECT user_id FROM users WHERE reg_or_emp_id = '24BCE9008'");
 
         const r = await t.api(`/admin/users/${rows[0].user_id}`, { method: 'PATCH', token: admin, body: { is_active: false } });
         assert.equal(r.status, 200);
         assert.equal((await t.api('/me', { token })).status, 401);
-        const relogin = await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: 'TSTU8', password: 'Test@12345' } });
+        const relogin = await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: '24BCE9008', password: 'Test@12345' } });
         assert.equal(relogin.status, 403);
     });
 

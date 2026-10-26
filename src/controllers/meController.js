@@ -8,14 +8,40 @@ const { setSessionCookies } = require('../utils/sessionCookies');
 const { countLiveJobs, releaseLiveJobs } = require('../services/taskService');
 const { assertRequestableRoom, recordRoomRequest, requestStatus, WITHDRAW } = require('../services/roomRequestService');
 const { recordAudit } = require('../services/auditService');
+const { getProfile, saveProfile } = require('../services/profileService');
 
-// GET /api/me - full profile of the caller (password_hash never selected).
+// GET /api/me - the caller's account (password_hash never selected), plus
+// whether a student still has onboarding to finish.
 exports.getMe = asyncHandler(async (req, res) => {
-    const result = await db.query(`SELECT ${PUBLIC_USER_COLUMNS} FROM users WHERE user_id = $1`, [req.user.userId]);
+    const result = await db.query(
+        `SELECT ${PUBLIC_USER_COLUMNS},
+                EXISTS (SELECT 1 FROM student_profiles p WHERE p.user_id = users.user_id) AS profile_complete
+         FROM users WHERE user_id = $1`,
+        [req.user.userId]
+    );
     if (result.rows.length === 0) {
         throw new AppError(404, 'User not found.');
     }
     res.json(result.rows[0]);
+});
+
+// GET /api/me/profile (STUDENT) - the resident record, or null before onboarding.
+exports.getMyProfile = asyncHandler(async (req, res) => {
+    res.json({ profile: await getProfile(db, req.user.userId), account_status: req.user.accountStatus });
+});
+
+// PUT /api/me/profile (STUDENT) - completes onboarding the first time; later
+// saves update the record. Validated by profileValidators.
+exports.saveMyProfile = asyncHandler(async (req, res) => {
+    const { profile, activated } = await db.withTransaction(
+        (client) => saveProfile(client, req, req.user.userId, req.body),
+        req.user.userId
+    );
+    res.status(activated ? 201 : 200).json({
+        message: activated ? 'Profile complete. Welcome to FixMaster.' : 'Profile updated.',
+        profile,
+        account_status: 'ACTIVE',
+    });
 });
 
 // GET /api/me/allotment - the student's current room (404 if none).

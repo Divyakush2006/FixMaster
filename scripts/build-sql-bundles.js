@@ -33,6 +33,8 @@ const DEV_ONLY_DROPS = `-- DEVELOPMENT ONLY: everything below starts by DROPPING
 -- Never run this against a database whose data you want to keep; production
 -- schemas are created and upgraded with \`npm run db:migrate\`.
 DROP TABLE IF EXISTS schema_migrations CASCADE;
+DROP TABLE IF EXISTS student_profiles CASCADE;
+DROP TABLE IF EXISTS email_verifications CASCADE;
 DROP TABLE IF EXISTS audit_log CASCADE;
 DROP TABLE IF EXISTS revoked_tokens CASCADE;
 DROP TABLE IF EXISTS complaint_reporters CASCADE;

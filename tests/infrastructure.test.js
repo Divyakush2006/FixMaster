@@ -136,12 +136,15 @@ describe('hostel infrastructure: blocks, floors, room numbering', () => {
     });
 
     it('a student allotted to a new-block room can raise a ticket for it', async () => {
-        const reg = await t.api('/auth/student/register', {
-            method: 'POST',
-            body: { reg_or_emp_id: 'INFRA01', full_name: 'Infra Student', email: 'infra01@example.com', phone_number: '9000000000', password: 'Test@12345' },
+        const reg = await t.registerStudent({
+            reg_or_emp_id: '25BCE5001',
+            full_name: 'Infra Student',
+            email: 'infra01@vitstudent.ac.in',
+            phone_number: '9000000000',
+            password: 'Test@12345',
         });
         await t.api('/admin/allotments', { method: 'POST', token: admin, body: { student_id: reg.data.user.user_id, room_id: 'A-428', academic_year: '2026-2027' } });
-        const token = await t.login('INFRA01', 'Test@12345');
+        const token = await t.login('25BCE5001', 'Test@12345');
         const ticket = await t.api('/complaints', {
             method: 'POST',
             token,
