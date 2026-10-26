@@ -22,6 +22,11 @@ describe('notifications', () => {
     before(async () => {
         await resetDatabase();
         t = await startApp();
+        // Seeded tickets are dated relative to NOW() but allotments start on
+        // CURRENT_DATE, so shortly after midnight a seeded ticket predates the
+        // roommates' move-in and is (correctly) hidden once closed. Move the
+        // allotments back so the outcome does not depend on the time of day.
+        await t.sql("UPDATE student_room_allotments SET assigned_date = CURRENT_DATE - 30 WHERE is_current");
         tokens = {
             vihaan: await t.login(SEED.student),
             karan: await t.login(SEED.roommate1),
