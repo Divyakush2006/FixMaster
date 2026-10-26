@@ -14,7 +14,7 @@ import { Skeleton } from '../../components/ui/PageLoader';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td } from '../../components/ui/Table';
 import { PriorityBadge } from '../../components/common/Badges';
 import type { AskResult } from '../../types';
-import { blockLabel } from '../../utils/labels';
+import { SPECIALIZATION_LABEL, blockLabel } from '../../utils/labels';
 import { formatRelativeTime } from '../../utils/formatters';
 
 const SUGGESTIONS = ['Which tickets are about to miss their deadline?', 'Which rooms keep having the same problem?', 'Which tickets has nobody taken yet?', 'What is being reported most this week?'];
@@ -96,6 +96,8 @@ export const InsightsPage: React.FC = () => {
 
       <AskBox />
 
+      <Watchlist />
+
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader title="Close to missing their deadline" description="Most urgent first." />
@@ -173,6 +175,102 @@ export const InsightsPage: React.FC = () => {
           )}
         </Card>
       </div>
+    </div>
+  );
+};
+
+const GAP_LABEL = { NO_COVER: 'Nobody on duty', POOL_ONLY: 'Campus pool only', STRETCHED: 'Stretched' } as const;
+
+/** What the chief warden scans first: unusual weeks, short staffing, and how blocks compare. */
+const Watchlist: React.FC = () => {
+  const trend = useQuery({ queryKey: ['insights-trend'], queryFn: insightsApi.volumeTrend });
+  const gaps = useQuery({ queryKey: ['insights-gaps'], queryFn: insightsApi.staffingGaps });
+  const compare = useQuery({ queryKey: ['insights-compare'], queryFn: insightsApi.blockComparison });
+  const busyBlocks = trend.data?.rows.blocks ?? [];
+  const busyWeeks = (trend.data?.rows.weeks ?? []).filter((w) => w.unusual && w.z > 0);
+  const short = gaps.data?.rows ?? [];
+  const blocks = compare.data?.rows ?? [];
+
+  return (
+    <div className="mb-6 space-y-4">
+      {busyBlocks.length > 0 && (
+        <Alert tone="warning" title="Busier than usual">
+          <ul className="list-disc pl-5">
+            {busyBlocks.slice(0, 3).map((b) => (
+              <li key={b.block_id}>
+                {blockLabel(b.block_id)}: {b.last_7_days} tickets in the last 7 days, against about {b.usual_week} in a usual week.
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      )}
+      {busyWeeks.length > 0 && (
+        <Alert tone="info" title="An unusually busy week">
+          {busyWeeks.length === 1 ? 'One week' : `${busyWeeks.length} weeks`} in the last two months had far more tickets than the others (the busiest had {Math.max(...busyWeeks.map((w) => w.tickets))}).
+        </Alert>
+      )}
+      {short.length > 0 && (
+        <Card>
+          <CardHeader title="Where staffing is short" description="Open tickets with too few technicians on duty for the trade." />
+          <TableWrap>
+            <Table>
+              <THead>
+                <tr>
+                  <Th>Block</Th>
+                  <Th>Trade</Th>
+                  <Th className="text-right">Open</Th>
+                  <Th className="text-right">On duty</Th>
+                  <Th>Cover</Th>
+                </tr>
+              </THead>
+              <TBody>
+                {short.slice(0, 8).map((g) => (
+                  <Tr key={`${g.block_id}-${g.trade}`}>
+                    <Td>{blockLabel(g.block_id)}</Td>
+                    <Td>{SPECIALIZATION_LABEL[g.trade]}</Td>
+                    <Td className="text-right tabular-nums">{g.open_tickets}</Td>
+                    <Td className="text-right tabular-nums">{g.on_duty}</Td>
+                    <Td>
+                      <Badge tone={g.status === 'NO_COVER' ? 'danger' : 'warning'}>{GAP_LABEL[g.status]}</Badge>
+                    </Td>
+                  </Tr>
+                ))}
+              </TBody>
+            </Table>
+          </TableWrap>
+        </Card>
+      )}
+      {blocks.length > 1 && (
+        <Card>
+          <CardHeader title="Blocks compared" description="Last 30 days, lowest share of deadlines met first." />
+          <TableWrap>
+            <Table>
+              <THead>
+                <tr>
+                  <Th>Block</Th>
+                  <Th className="text-right">Tickets</Th>
+                  <Th className="text-right">Deadlines met</Th>
+                  <Th className="text-right">Overdue now</Th>
+                  <Th className="text-right">Avg. time</Th>
+                  <Th className="text-right">Rating</Th>
+                </tr>
+              </THead>
+              <TBody>
+                {blocks.slice(0, 12).map((b) => (
+                  <Tr key={b.block_id}>
+                    <Td className="font-medium text-slate-900">{blockLabel(b.block_id)}</Td>
+                    <Td className="text-right tabular-nums">{b.tickets}</Td>
+                    <Td className="text-right tabular-nums">{b.compliance_pct === null ? '—' : `${b.compliance_pct}%`}</Td>
+                    <Td className="text-right tabular-nums">{b.overdue_now}</Td>
+                    <Td className="text-right tabular-nums">{b.avg_hours === null ? '—' : `${b.avg_hours} h`}</Td>
+                    <Td className="text-right tabular-nums">{b.avg_rating === null ? '—' : b.avg_rating.toFixed(1)}</Td>
+                  </Tr>
+                ))}
+              </TBody>
+            </Table>
+          </TableWrap>
+        </Card>
+      )}
     </div>
   );
 };

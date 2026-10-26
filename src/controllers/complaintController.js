@@ -62,13 +62,17 @@ const complaintSelect = (viewer) => `
  * after they moved in (a new resident doesn't read the previous occupant's
  * closed history).
  */
-const studentCanSee = (student) => `(
-    EXISTS (SELECT 1 FROM complaint_reporters cr WHERE cr.complaint_id = c.complaint_id AND cr.user_id = ${student})
-    OR (c.ticket_scope = 'ROOM' AND EXISTS (
-        SELECT 1 FROM student_room_allotments a
-        WHERE a.student_id = ${student} AND a.is_current = TRUE AND a.room_id = c.room_id
-          AND (c.status IN ('${LIVE_STATUSES.join("', '")}') OR c.created_at >= a.assigned_date)
-    ))
+// Written as one uncorrelated set (the student's own tickets, then their
+// room's) rather than a test per ticket, so the work depends on how many
+// tickets the student can see, not on how many exist on the campus.
+const studentCanSee = (student) => `c.complaint_id IN (
+    SELECT cr.complaint_id FROM complaint_reporters cr WHERE cr.user_id = ${student}
+    UNION
+    SELECT rc.complaint_id
+    FROM student_room_allotments a
+    JOIN complaints rc ON rc.room_id = a.room_id AND rc.ticket_scope = 'ROOM'
+    WHERE a.student_id = ${student} AND a.is_current = TRUE
+      AND (rc.status IN ('${LIVE_STATUSES.join("', '")}') OR rc.created_at >= a.assigned_date)
 )`;
 
 // Shared with the notification feed so both apply the same residency rule.

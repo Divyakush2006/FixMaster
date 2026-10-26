@@ -701,3 +701,39 @@ export interface AskResult {
   params?: { block_id: string | null; days: number | null };
   rows?: unknown;
 }
+
+export interface BlockComparisonRow {
+  block_id: string;
+  block_name: string;
+  tickets: number;
+  urgent: number;
+  met: number;
+  breached: number;
+  compliance_pct: number | null;
+  overdue_now: number;
+  escalated_now: number;
+  avg_hours: number | null;
+  avg_rating: number | null;
+}
+
+export interface VolumeTrend {
+  weeks: { week_start: string; tickets: number; urgent: number; z: number; unusual: boolean }[];
+  blocks: { block_id: string; last_7_days: number; usual_week: number; z: number }[];
+}
+
+export interface StaffingGap {
+  block_id: string;
+  trade: Specialization;
+  staff: number;
+  on_duty: number;
+  pool_on_duty: number;
+  open_tickets: number;
+  status: 'NO_COVER' | 'POOL_ONLY' | 'STRETCHED';
+}
+
+export interface ReportResult<T> {
+  report: string;
+  title: string;
+  answer: string;
+  rows: T;
+}

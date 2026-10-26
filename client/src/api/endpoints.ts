@@ -55,6 +55,10 @@ import {
   Briefing,
   AskResult,
   ErasureRequest,
+  ReportResult,
+  BlockComparisonRow,
+  VolumeTrend,
+  StaffingGap,
 } from '../types';
 
 // Three separate sign-in portals; each endpoint only accepts its own accounts.
@@ -444,6 +448,14 @@ export const insightsApi = {
   breachRisk: () => apiFetch<BreachRiskTicket[]>('/insights/breach-risk', { method: 'GET' }),
 
   recurring: () => apiFetch<RecurringFault[]>('/insights/recurring', { method: 'GET', params: { days: 30 } }),
+
+  /** Any report in the catalogue, by name (the same ones Ask FixMaster can run). */
+  report: <T>(name: string, params?: { days?: number; block_id?: string }) =>
+    apiFetch<ReportResult<T>>(`/insights/report/${name}`, { method: 'GET', params }),
+
+  blockComparison: () => insightsApi.report<BlockComparisonRow[]>('block_comparison', { days: 30 }),
+  volumeTrend: () => insightsApi.report<VolumeTrend>('volume_trend', { days: 56 }),
+  staffingGaps: () => insightsApi.report<StaffingGap[]>('staffing_gaps'),
 
   briefing: () => apiFetch<Briefing>('/insights/briefing', { method: 'GET' }),
 

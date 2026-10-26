@@ -149,12 +149,4 @@ async function unassigned(scope, { blockId } = {}) {
     return rows;
 }
 
-const REPORTS = {
-    overview: { run: overview, title: 'Campus overview' },
-    breach_risk: { run: breachRisk, title: 'Tickets at risk of missing their deadline' },
-    recurring_faults: { run: recurringFaults, title: 'Places with repeat faults' },
-    category_mix: { run: categoryMix, title: 'What is being reported' },
-    unassigned: { run: unassigned, title: 'Tickets nobody has been sent to' },
-};
-
-module.exports = { REPORTS, REPORT_NAMES: Object.keys(REPORTS), overview, breachRisk, recurringFaults, categoryMix, unassigned, blocksFor };
+module.exports = { overview, breachRisk, recurringFaults, categoryMix, unassigned, blocksFor };

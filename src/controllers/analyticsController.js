@@ -2,12 +2,18 @@ const db = require('../config/db');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { slaStatusSql } = require('../services/slaService');
 const { managedBlocks, scopeCondition } = require('../services/scopeService');
+const cache = require('../services/cache');
 
 // KPI summary across hostel blocks: the existing summary view plus SLA figures
 // computed from category SLA hours and ticket timestamps (slaService).
 exports.getBlockSummary = asyncHandler(async (req, res) => {
+    const scope = await managedBlocks(req.user);
+    res.json(await cache.memo(`kpi:${cache.scopeKey(scope)}`, () => blockSummary(scope)));
+});
+
+async function blockSummary(scope) {
     const params = [];
-    const scoped = scopeCondition(await managedBlocks(req.user), 'v.block_id', params);
+    const scoped = scopeCondition(scope, 'v.block_id', params);
     const result = await db.query(`
         SELECT v.*,
                COALESCE(s.overdue_count, 0)::int AS overdue_count,
@@ -34,13 +40,17 @@ exports.getBlockSummary = asyncHandler(async (req, res) => {
         ) s ON s.block_id = v.block_id
         ${scoped ? `WHERE ${scoped}` : ''}
         ORDER BY v.block_id`, params);
-    res.json(result.rows);
-});
+    return result.rows;
+}
 
 // Recurring hotspot / defect alerts.
 exports.getDefectHotspots = asyncHandler(async (req, res) => {
-    const params = [];
-    const scoped = scopeCondition(await managedBlocks(req.user), 'h.block_id', params);
-    const result = await db.query(`SELECT * FROM view_recurring_defects_alert h ${scoped ? `WHERE ${scoped}` : ''}`, params);
-    res.json(result.rows);
+    const scope = await managedBlocks(req.user);
+    res.json(
+        await cache.memo(`hotspots:${cache.scopeKey(scope)}`, async () => {
+            const params = [];
+            const scoped = scopeCondition(scope, 'h.block_id', params);
+            return (await db.query(`SELECT * FROM view_recurring_defects_alert h ${scoped ? `WHERE ${scoped}` : ''}`, params)).rows;
+        })
+    );
 });

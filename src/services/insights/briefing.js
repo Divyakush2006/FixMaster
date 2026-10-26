@@ -1,6 +1,7 @@
 const db = require('../../config/db');
 const gateway = require('../ai/gateway');
 const reports = require('./reports');
+const more = require('./moreReports');
 
 // The morning briefing: what a supervisor or chief warden should know first.
 //
@@ -35,12 +36,15 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** Everything the briefing is written from. Places and counts only: no people. */
 async function gatherFacts(scope) {
-    const [overview, risk, recurring, mix, waiting] = await Promise.all([
+    const [overview, risk, recurring, mix, waiting, gaps, trend, sentBack] = await Promise.all([
         reports.overview(scope),
         reports.breachRisk(scope, { limit: 8 }),
         reports.recurringFaults(scope, { days: 30, min: 3 }),
         reports.categoryMix(scope, { days: 7 }),
         reports.unassigned(scope),
+        more.staffingGaps(scope),
+        more.volumeTrend(scope),
+        more.escalations(scope),
     ]);
     const worstBlocks = [...overview.blocks]
         .filter((b) => b.overdue + b.emergencies > 0)
@@ -62,6 +66,10 @@ async function gatherFacts(scope) {
         repeat_faults: recurring.slice(0, 5).map((r) => ({ block: r.block_id, location: r.location, category: r.category_name, incidents_30d: r.incidents })),
         top_categories_7d: mix.slice(0, 4).map((m) => ({ category: m.category_name, tickets: m.tickets })),
         longest_unassigned_hours: waiting.length ? Math.max(...waiting.map((w) => w.hours_waiting)) : 0,
+        staffing_gaps: gaps.slice(0, 3).map((g) => ({ block: g.block_id, trade: g.trade, status: g.status, open_tickets: g.open_tickets, on_duty: g.on_duty })),
+        staffing_gap_count: gaps.length,
+        unusual_volume_blocks: trend.blocks.slice(0, 3).map((b) => ({ block: b.block_id, last_7_days: b.last_7_days, usual_week: b.usual_week })),
+        sent_back_tickets: sentBack.length,
     };
 }
 
@@ -84,7 +92,20 @@ function ruleBriefing(facts) {
         highlights.push(`${r.location} (${r.block}) has had ${r.incidents_30d} ${r.category.toLowerCase()} faults in 30 days.`);
     }
 
+    if (facts.staffing_gaps && facts.staffing_gaps[0]) {
+        const g = facts.staffing_gaps[0];
+        highlights.push(`${plural(facts.staffing_gap_count, 'place')} short of technicians; ${g.block} ${g.trade.toLowerCase().replace('_', ' ')} has ${plural(g.open_tickets, 'open ticket')} and ${g.on_duty} on duty.`);
+    }
+    if (facts.unusual_volume_blocks && facts.unusual_volume_blocks[0]) {
+        const u = facts.unusual_volume_blocks[0];
+        highlights.push(`${u.block} raised ${u.last_7_days} tickets in the last 7 days, against about ${u.usual_week} in a usual week.`);
+    }
+    if (facts.sent_back_tickets > 0) highlights.push(`${plural(facts.sent_back_tickets, 'ticket')} sent back by residents and waiting to be redone.`);
+
     if (t.emergencies > 0) actions.push('Confirm a technician is on every emergency ticket.');
+    if (facts.staffing_gaps && facts.staffing_gaps[0] && facts.staffing_gaps[0].status !== 'STRETCHED') {
+        actions.push(`Arrange cover for ${facts.staffing_gaps[0].block} ${facts.staffing_gaps[0].trade.toLowerCase().replace('_', ' ')} work.`);
+    }
     if (t.unassigned > 0) actions.push(`Send technicians to the ${plural(t.unassigned, 'ticket')} nobody has taken yet${facts.longest_unassigned_hours >= 2 ? ` (the longest has waited ${facts.longest_unassigned_hours} hours)` : ''}.`);
     if (t.overdue > 0) actions.push('Review the overdue tickets and reassign any that are stuck.');
     if (facts.repeat_faults[0]) actions.push(`Arrange a proper repair at ${facts.repeat_faults[0].location} instead of another patch.`);

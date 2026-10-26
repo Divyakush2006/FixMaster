@@ -1,10 +1,12 @@
 const db = require('../config/db');
-const { asyncHandler } = require('../middleware/errorHandler');
+const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const reports = require('../services/insights/reports');
+const { CATALOGUE, NAMES } = require('../services/insights/catalogue');
 const { briefingFor } = require('../services/insights/briefing');
 const { ask } = require('../services/insights/ask');
 const { managedBlocks } = require('../services/scopeService');
 const { recordAudit } = require('../services/auditService');
+const cache = require('../services/cache');
 
 // All of these read inside the signed-in manager's block scope
 // (scopeService.managedBlocks), so a supervisor sees only their own blocks and
@@ -12,18 +14,38 @@ const { recordAudit } = require('../services/auditService');
 
 // GET /api/insights/overview?block_id= - totals and one row per block.
 exports.getOverview = asyncHandler(async (req, res) => {
-    res.json(await reports.overview(await managedBlocks(req.user), { blockId: req.query.block_id }));
+    const scope = await managedBlocks(req.user);
+    const opts = { blockId: req.query.block_id };
+    res.json(await cache.memo(`ins:overview:${cache.scopeKey(scope)}:${opts.blockId}`, () => reports.overview(scope, opts)));
 });
 
 // GET /api/insights/breach-risk?block_id=&limit=
 exports.getBreachRisk = asyncHandler(async (req, res) => {
-    res.json(await reports.breachRisk(await managedBlocks(req.user), { blockId: req.query.block_id, limit: req.query.limit }));
+    const scope = await managedBlocks(req.user);
+    const opts = { blockId: req.query.block_id, limit: req.query.limit };
+    res.json(await cache.memo(`ins:risk:${cache.scopeKey(scope)}:${opts.blockId}:${opts.limit}`, () => reports.breachRisk(scope, opts)));
 });
 
 // GET /api/insights/recurring?block_id=&days=
 exports.getRecurring = asyncHandler(async (req, res) => {
-    res.json(await reports.recurringFaults(await managedBlocks(req.user), { blockId: req.query.block_id, days: req.query.days }));
+    const scope = await managedBlocks(req.user);
+    const opts = { blockId: req.query.block_id, days: req.query.days };
+    res.json(await cache.memo(`ins:recurring:${cache.scopeKey(scope)}:${opts.blockId}:${opts.days}`, () => reports.recurringFaults(scope, opts)));
 });
+
+// GET /api/insights/report/:name?block_id=&days= - any report in the catalogue
+// (the same ones "Ask FixMaster" can run), with the same scoping.
+exports.getReport = asyncHandler(async (req, res) => {
+    const entry = CATALOGUE[req.params.name];
+    if (!entry) throw new AppError(404, 'There is no such report.');
+    const scope = await managedBlocks(req.user);
+    const opts = { blockId: req.query.block_id, days: req.query.days };
+    const rows = await cache.memo(`ins:${req.params.name}:${cache.scopeKey(scope)}:${opts.blockId}:${opts.days}`, () => entry.run(scope, opts));
+    res.json({ report: req.params.name, title: entry.title, answer: entry.answer(rows, { blockId: opts.blockId, days: Number(opts.days) || 30 }), rows });
+});
+
+// GET /api/insights/reports - the catalogue, for screens that list what can be asked.
+exports.listReports = (req, res) => res.json(NAMES.map((name) => ({ name, title: CATALOGUE[name].title, about: CATALOGUE[name].about })));
 
 // GET /api/insights/briefing - today's briefing for this manager's scope.
 exports.getBriefing = asyncHandler(async (req, res) => {

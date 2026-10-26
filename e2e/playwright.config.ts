@@ -19,6 +19,8 @@ export default defineConfig({
   use: {
     ...devices['Desktop Chrome'],
     channel: process.env.E2E_CHANNEL || undefined,
+    // Software rendering only: the suite never needs, and never asks for, a GPU.
+    launchOptions: { args: ['--disable-gpu', '--disable-gpu-compositing'] },
     baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:8080',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',

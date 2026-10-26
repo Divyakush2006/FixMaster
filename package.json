@@ -12,6 +12,7 @@
     "db:reset": "node scripts/reset-dev-db.js",
     "db:scale": "node scripts/generate-scale-data.js",
     "load:test": "node scripts/load-test.js",
+    "e2e:local": "node e2e/local-stack.js",
     "db:bundle": "node scripts/build-sql-bundles.js"
   },
   "repository": {

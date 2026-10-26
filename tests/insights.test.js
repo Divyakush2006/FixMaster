@@ -252,4 +252,183 @@ describe('insights', () => {
             assert.ok(!JSON.stringify(rows[0].details).includes('?'), 'the question text is not stored');
         });
     });
+
+    // ---- The wider catalogue --------------------------------------------------------
+    // History is inserted directly so weeks, ratings and absences can be arranged.
+    describe('the report catalogue', () => {
+        let studentId;
+        const insertHistory = async ({ block, room, sub, n, at, hoursToResolve = 3, rating = null, status = 'COMPLETED', priority = 'MEDIUM' }) => {
+            const { rows } = await t.sql(
+                `INSERT INTO complaints (ticket_scope, room_id, block_id, raised_by_user_id, subcategory_id, status, priority, created_at, resolved_at, closed_at, closure_reason)
+                 SELECT 'ROOM', $1::varchar, $2::varchar, $3::varchar, $4::int, $5::varchar, $6::varchar, $7::timestamptz + make_interval(mins => g),
+                        CASE WHEN $5::varchar = 'COMPLETED' THEN $7::timestamptz + make_interval(mins => g) + make_interval(hours => $8::int) END,
+                        CASE WHEN $5::varchar = 'COMPLETED' THEN $7::timestamptz + make_interval(mins => g) + make_interval(hours => $8::int) END,
+                        CASE WHEN $5::varchar = 'COMPLETED' THEN 'CONFIRMED' END
+                 FROM generate_series(1, $9::int) g RETURNING complaint_id, closed_at`,
+                [room, block, studentId, sub, status, priority, at, hoursToResolve, n]
+            );
+            if (rating) {
+                for (const r of rows) {
+                    await t.sql(`INSERT INTO complaint_feedback (complaint_id, student_id, is_satisfactorily_resolved, rating, verified_at) VALUES ($1, $2, TRUE, $3, $4)`, [r.complaint_id, studentId, rating, r.closed_at]);
+                }
+            }
+            return rows;
+        };
+        const weekStart = async (weeksBack) => (await t.sql(`SELECT date_trunc('week', NOW()) - make_interval(weeks => $1) + INTERVAL '2 days 8 hours' AS t`, [weeksBack])).rows[0].t;
+
+        before(async () => {
+            studentId = (await t.sql('SELECT user_id FROM users WHERE reg_or_emp_id = $1', [SEED.student])).rows[0].user_id;
+            await t.sql(`INSERT INTO rooms (room_id, block_id, room_number, floor_number, room_type, bed_capacity) VALUES ('T-101', 'T_BLOCK', '101', 1, 'NON_AC', 3) ON CONFLICT DO NOTHING`);
+            // Eight ordinary weeks in both blocks; one very busy week in L-Block.
+            for (let w = 1; w <= 8; w += 1) {
+                const at = await weekStart(w);
+                await insertHistory({ block: 'T_BLOCK', room: 'T-101', sub: SEED.sub.tubeLight, n: 4, at, rating: 4 });
+                await insertHistory({ block: 'L_BLOCK', room: 'L-810', sub: SEED.sub.tap, n: w === 4 ? 40 : 4, at, hoursToResolve: 30, rating: 5 });
+            }
+            // T-Block suddenly has a rush in the last three days.
+            await insertHistory({ block: 'T_BLOCK', room: 'T-101', sub: SEED.sub.socket, n: 30, at: new Date(Date.now() - 2 * 86400000).toISOString(), priority: 'HIGH' });
+        });
+
+        it('lists the catalogue, and every report runs for a manager and for a block supervisor', async () => {
+            const list = await t.api('/insights/reports', { token: sup });
+            assert.equal(list.status, 200);
+            assert.ok(list.data.length >= 15, `${list.data.length} reports`);
+            const uid = (await t.sql('SELECT user_id FROM users WHERE reg_or_emp_id = $1', [SEED.supervisor])).rows[0].user_id;
+            await t.sql('INSERT INTO supervisor_blocks (supervisor_user_id, block_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [uid, 'L_BLOCK']);
+            try {
+                for (const { name } of list.data) {
+                    for (const token of [admin, sup]) {
+                        const r = await t.api(`/insights/report/${name}`, { token });
+                        assert.equal(r.status, 200, `${name}: ${JSON.stringify(r.data).slice(0, 200)}`);
+                        assert.ok(r.data.answer.length > 0, name);
+                    }
+                }
+                assert.equal((await t.api('/insights/report/not_a_report', { token: admin })).status, 404);
+                assert.equal((await t.api('/insights/report/users; DROP TABLE users', { token: admin })).status, 404);
+                // A block supervisor's comparison contains only their block.
+                const cmp = await t.api('/insights/report/block_comparison', { token: sup });
+                assert.deepEqual(cmp.data.rows.map((b) => b.block_id), ['L_BLOCK']);
+            } finally {
+                await t.sql('DELETE FROM supervisor_blocks WHERE supervisor_user_id = $1', [uid]);
+            }
+        });
+
+        it('compares blocks, worst deadline record first', async () => {
+            const r = await t.api('/insights/report/block_comparison?days=60', { token: admin });
+            const ids = r.data.rows.map((b) => b.block_id);
+            assert.ok(ids.includes('L_BLOCK') && ids.includes('T_BLOCK'));
+            const l = r.data.rows.find((b) => b.block_id === 'L_BLOCK');
+            const tb = r.data.rows.find((b) => b.block_id === 'T_BLOCK');
+            assert.ok(l.compliance_pct < tb.compliance_pct, 'L-Block took 30 hours a job; T-Block 3');
+            assert.ok(r.data.rows.findIndex((b) => b.block_id === 'L_BLOCK') < r.data.rows.findIndex((b) => b.block_id === 'T_BLOCK'));
+            assert.equal(tb.avg_rating, 4);
+        });
+
+        it('reports deadlines met and how long each kind of work takes', async () => {
+            const sla = await t.api('/insights/report/sla_compliance?days=90', { token: admin });
+            assert.ok(sla.data.rows.met > 0 && sla.data.rows.breached > 0);
+            assert.equal(sla.data.rows.compliance_pct, Math.round((1000 * sla.data.rows.met) / (sla.data.rows.met + sla.data.rows.breached)) / 10);
+            const times = await t.api('/insights/report/resolution_times?days=90', { token: admin });
+            const plumbing = times.data.rows.find((x) => /Plumbing/.test(x.category_name));
+            assert.ok(plumbing.avg_hours >= 29, JSON.stringify(plumbing));
+            assert.ok(plumbing.within_deadline_pct < 10, 'plumbing took 30 hours against a 12-hour deadline');
+        });
+
+        it('shows a rating trend by week', async () => {
+            const r = await t.api('/insights/report/rating_trend?days=56', { token: admin });
+            const rated = r.data.rows.filter((w) => w.ratings > 0);
+            assert.ok(rated.length >= 6);
+            assert.ok(rated.every((w) => w.avg_rating >= 4 && w.avg_rating <= 5));
+        });
+
+        it('flags an unusually busy week, and a block with a sudden rush', async () => {
+            const r = await t.api('/insights/report/volume_trend?days=56', { token: admin });
+            // The rush may also fall in the last full week, depending on the day; the 40-ticket week must be flagged either way.
+            const busy = r.data.rows.weeks.filter((w) => w.unusual);
+            assert.ok(busy.some((w) => w.tickets >= 40 && w.z > 2), JSON.stringify(r.data.rows.weeks));
+            assert.ok(r.data.rows.weeks.filter((w) => !w.unusual).length >= 5, 'ordinary weeks are not flagged');
+            assert.deepEqual(r.data.rows.blocks.map((b) => b.block_id), ['T_BLOCK'], JSON.stringify(r.data.rows.blocks));
+            assert.ok(r.data.rows.blocks[0].last_7_days >= 30 && r.data.rows.blocks[0].usual_week <= 5);
+            assert.match(r.data.answer, /T_BLOCK is well above its usual week/);
+        });
+
+        it('finds where staffing is short, and who is off duty with jobs in hand', async () => {
+            await t.sql(`UPDATE users SET is_available = FALSE WHERE role = 'STAFF' AND specialization = 'ELECTRICIAN'`);
+            try {
+                const gaps = await t.api('/insights/report/staffing_gaps', { token: admin });
+                const l = gaps.data.rows.find((g) => g.block_id === 'L_BLOCK' && g.trade === 'ELECTRICIAN');
+                assert.ok(l, JSON.stringify(gaps.data.rows));
+                assert.ok(['NO_COVER', 'POOL_ONLY'].includes(l.status));
+                assert.equal(l.on_duty, 0);
+                const absent = await t.api('/insights/report/staff_absence', { token: admin });
+                assert.ok(absent.data.rows.length >= 1 && absent.data.rows.every((a) => a.reason === 'OFF_DUTY' || a.reason === 'ON_LEAVE'));
+                assert.ok(absent.data.rows.some((a) => a.specialization === 'ELECTRICIAN'));
+            } finally {
+                await t.sql(`UPDATE users SET is_available = TRUE WHERE role = 'STAFF' AND specialization = 'ELECTRICIAN'`);
+            }
+            const ok = await t.api('/insights/report/staffing_gaps', { token: admin });
+            assert.ok(!ok.data.rows.some((g) => g.block_id === 'L_BLOCK' && g.trade === 'ELECTRICIAN' && g.status === 'NO_COVER'));
+        });
+
+        it('lists emergencies and work residents sent back', async () => {
+            const subs = await t.sql(`SELECT subcategory_id FROM complaint_subcategories WHERE priority_level = 'EMERGENCY' LIMIT 1`);
+            const e = await insertHistory({ block: 'T_BLOCK', room: 'T-101', sub: subs.rows[0].subcategory_id, n: 1, at: new Date().toISOString(), status: 'ASSIGNED', priority: 'EMERGENCY' });
+            const em = await t.api('/insights/report/emergencies', { token: admin });
+            assert.ok(em.data.rows.some((x) => x.complaint_id === e[0].complaint_id));
+            assert.match(em.data.answer, /emergency ticket/);
+
+            await t.sql(`UPDATE complaints SET status = 'ESCALATED' WHERE complaint_id = $1`, [e[0].complaint_id]);
+            await t.sql(`INSERT INTO complaint_feedback (complaint_id, student_id, is_satisfactorily_resolved, rating, student_comments) VALUES ($1, $2, FALSE, 1, 'still broken')`, [e[0].complaint_id, studentId]);
+            const esc = await t.api('/insights/report/escalations', { token: admin });
+            const row = esc.data.rows.find((x) => x.complaint_id === e[0].complaint_id);
+            assert.equal(row.times_sent_back, 1);
+        });
+
+        it('shows the busiest floors', async () => {
+            const r = await t.api('/insights/report/busiest_floors?days=5', { token: admin });
+            assert.equal(r.data.rows[0].block_id, 'T_BLOCK');
+            assert.equal(r.data.rows[0].floor_number, 1);
+        });
+
+        it('every number in the briefing matches the dashboards', async () => {
+            const kpi = await t.api('/analytics/kpi', { token: admin });
+            const sum = (key) => kpi.data.reduce((s, b) => s + Number(b[key]), 0);
+            const overview = await t.api('/insights/overview', { token: admin });
+            const open = sum('pending_complaints') + sum('active_in_progress') + sum('awaiting_student_verification') + sum('escalated_count');
+            assert.equal(overview.data.totals.open_tickets, open);
+            assert.equal(overview.data.totals.overdue, sum('overdue_count'));
+            assert.equal(overview.data.totals.at_risk, sum('at_risk_count'));
+
+            useModel(() => {
+                throw new providers.ProviderError('ERROR', 'down');
+            });
+            const briefing = await t.api('/insights/briefing/refresh', { method: 'POST', token: admin });
+            assert.deepEqual(briefing.data.facts.totals, overview.data.totals);
+            assert.ok(briefing.data.narrative.highlights.some((h) => h.startsWith(`${open} ticket`)), JSON.stringify(briefing.data.narrative.highlights));
+            assert.ok(briefing.data.facts.unusual_volume_blocks.some((b) => b.block === 'T_BLOCK'));
+        });
+
+        it('routes plain questions to the right report without a model', async () => {
+            useModel(() => {
+                throw new providers.ProviderError('ERROR', 'down');
+            });
+            const cases = [
+                ['Are we short of technicians anywhere?', 'staffing_gaps'],
+                ['Who is on leave today?', 'staff_absence'],
+                ['Which tickets did residents send back?', 'escalations'],
+                ['Is any week unusually busy?', 'volume_trend'],
+                ['How do the blocks compare?', 'block_comparison'],
+                ['How long does plumbing work take?', 'resolution_times'],
+                ['What share met the deadline last month?', 'sla_compliance'],
+                ['Which tickets are about to miss their deadline?', 'breach_risk'],
+                ['Show me open emergencies', 'emergencies'],
+                ['Which floors have the most tickets?', 'busiest_floors'],
+                ['How are ratings trending?', 'rating_trend'],
+            ];
+            for (const [question, report] of cases) {
+                const r = await t.api('/insights/ask', { method: 'POST', token: admin, body: { question } });
+                assert.equal(r.data.report, report, question);
+            }
+        });
+    });
 });

@@ -7,6 +7,8 @@ const { tagPending } = require('../services/autopilot/feedbackTagger');
 const { normaliseWeights } = require('../services/autopilot/scoring');
 const { assertTicketInScope, managedBlocks, inScope } = require('../services/scopeService');
 const { recordAudit } = require('../services/auditService');
+const cache = require('../services/cache');
+const { scopeKey } = cache;
 
 // GET /api/autopilot/suggestions/:complaint_id (managers, scoped)
 // The ranked shortlist with each person's score breakdown, and everyone left
@@ -81,7 +83,9 @@ exports.saveSetting = asyncHandler(async (req, res) => {
 // GET /api/autopilot/performance?specialization= (managers) - the staff board.
 // Block-scoped supervisors see their blocks' staff and the campus pool.
 exports.getPerformance = asyncHandler(async (req, res) => {
-    res.json(await staffPerformance({ blocks: await managedBlocks(req.user), specialization: req.query.specialization || null }));
+    const blocks = await managedBlocks(req.user);
+    const specialization = req.query.specialization || null;
+    res.json(await cache.memo(`perf:${scopeKey(blocks)}:${specialization}`, () => staffPerformance({ blocks, specialization })));
 });
 
 // GET /api/autopilot/cleaning-plan?block_id=&shift= (managers, scoped)
@@ -94,5 +98,7 @@ exports.getCleaningPlan = asyncHandler(async (req, res) => {
 
 // POST /api/autopilot/tag-feedback (CHIEF_WARDEN, ADMIN) - tag new review comments now.
 exports.tagFeedbackNow = asyncHandler(async (req, res) => {
-    res.json(await tagPending({ limit: 500 }));
+    const result = await tagPending({ limit: 500 });
+    cache.invalidate('perf:'); // the board shows comment themes
+    res.json(result);
 });
