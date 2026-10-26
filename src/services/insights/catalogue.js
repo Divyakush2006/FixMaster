@@ -74,6 +74,60 @@ const CATALOGUE = {
                 ? `Nobody${where(p)} is off duty or on leave today.`
                 : `${plural(rows.length, 'technician')}${where(p)} ${rows.length === 1 ? 'is' : 'are'} off duty or on leave; ${rows.reduce((s, r) => s + r.open_jobs, 0)} open ${rows.reduce((s, r) => s + r.open_jobs, 0) === 1 ? 'job is' : 'jobs are'} still with them.`,
     },
+    staff_flags: {
+        title: 'Technicians who need a conversation',
+        about: 'technicians flagged for low ratings, work often sent back, missed deadlines or long idle spells, with the evidence',
+        keywords: ['flagged', 'low rated', 'poor performance', 'worst technician', 'technician performance', 'underperform', 'who needs coaching'],
+        run: more.staffFlags,
+        answer: (rows, p) =>
+            rows.length === 0
+                ? `No technician${where(p)} is flagged: everyone with enough rated jobs is within the thresholds.`
+                : `${plural(rows.length, 'technician')}${where(p)} ${rows.length === 1 ? 'is' : 'are'} flagged. First: ${rows[0].full_name}, ${rows[0].flags[0].evidence.toLowerCase()}. Flags start a conversation; they are not penalties.`,
+    },
+    technician_workload: {
+        title: 'Technician workload',
+        about: 'how many live jobs each technician has right now, and who is free',
+        keywords: ['workload', 'who is free', 'who is busy', 'busiest technician', 'idle', 'how busy', 'free technicians'],
+        run: more.technicianWorkload,
+        answer: (rows, p) => {
+            if (rows.length === 0) return `No technicians${where(p)}.`;
+            const free = rows.filter((r) => r.is_available && r.live_jobs === 0).length;
+            return `${plural(rows.filter((r) => r.live_jobs > 0).length, 'technician')}${where(p)} ${rows.filter((r) => r.live_jobs > 0).length === 1 ? 'has' : 'have'} live jobs; ${free} on duty with none. Busiest: ${rows[0].full_name} with ${plural(rows[0].live_jobs, 'live job')}.`;
+        },
+    },
+    autopilot_usage: {
+        title: 'How much the autopilot does',
+        about: 'how many assignments were made by the autopilot, accepted from its suggestion, or chosen by hand',
+        usesDays: true,
+        keywords: ['autopilot', 'auto-assign', 'automatically assigned', 'automation', 'by hand', 'manually assigned'],
+        run: more.autopilotUsage,
+        answer: (r, p) =>
+            r.total === 0
+                ? `No assignments were made${where(p)} in the last ${p.days} days.`
+                : `Of ${plural(r.total, 'assignment')}${where(p)} in the last ${p.days} days, ${r.autopilot} were made by the autopilot, ${r.suggestion} accepted its suggestion and ${r.manual} were chosen by hand (${r.hands_on_pct}% by hand).`,
+    },
+    overdue_by_trade: {
+        title: 'Overdue work by trade',
+        about: 'open overdue and at-risk tickets grouped by trade',
+        keywords: ['by trade', 'which trade', 'per trade', 'each trade'],
+        run: more.overdueByTrade,
+        answer: (rows, p) =>
+            rows.length === 0 || rows[0].overdue + rows[0].at_risk === 0
+                ? `No trade${where(p)} has overdue or at-risk work.`
+                : `${rows[0].trade.toLowerCase().replace('_', ' ')} has the most late work${where(p)}: ${rows[0].overdue} overdue and ${rows[0].at_risk} close to the deadline among ${rows[0].open_tickets} open.`,
+    },
+    daily_volume: {
+        title: 'Tickets per day',
+        about: 'how many tickets were raised each day recently',
+        usesDays: true,
+        keywords: ['per day', 'daily', 'each day', 'day by day'],
+        run: more.dailyVolume,
+        answer: (rows, p) => {
+            const total = rows.reduce((s, r) => s + r.tickets, 0);
+            const busiest = [...rows].sort((a, b) => b.tickets - a.tickets)[0];
+            return rows.length === 0 ? `No tickets were raised${where(p)}.` : `${plural(total, 'ticket')} were raised${where(p)} over ${plural(rows.length, 'day')}; the busiest day had ${busiest.tickets}.`;
+        },
+    },
     sla_compliance: {
         title: 'Deadlines met',
         about: 'what share or percentage of finished tickets met their deadline, by block',

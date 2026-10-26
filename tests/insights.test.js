@@ -408,6 +408,67 @@ describe('insights', () => {
             assert.ok(briefing.data.facts.unusual_volume_blocks.some((b) => b.block === 'T_BLOCK'));
         });
 
+        it('flags a technician whose rated jobs are poor, shows workloads, and how much the autopilot dispatches', async () => {
+            const tech = (await t.sql('SELECT user_id FROM users WHERE reg_or_emp_id = $1', [SEED.electrician])).rows[0].user_id;
+            const at = new Date(Date.now() - 10 * 86400000).toISOString();
+            const jobs = await insertHistory({ block: 'L_BLOCK', room: 'L-801', sub: SEED.sub.socket, n: 9, at, rating: 1 });
+            let i = 0;
+            for (const j of jobs) {
+                const source = i < 3 ? 'AUTOPILOT' : i < 5 ? 'SUGGESTION' : 'MANUAL';
+                i += 1;
+                await t.sql(
+                    `INSERT INTO complaint_assignments (complaint_id, staff_user_id, assigned_at, started_at, work_completed_at, current_state, dispatch_source)
+                     VALUES ($1, $2, $3::timestamptz, $3::timestamptz, $4::timestamptz - INTERVAL '5 minutes', 'DONE', $5)`,
+                    [j.complaint_id, tech, at, j.closed_at, source]
+                );
+            }
+            const flags = await t.api('/insights/report/staff_flags', { token: admin });
+            const row = flags.data.rows.find((x) => x.full_name.includes('Suresh'));
+            assert.ok(row, JSON.stringify(flags.data.rows));
+            assert.ok(row.flags.some((f) => f.code === 'LOW_RATING'));
+            assert.match(flags.data.answer, /not penalties/);
+
+            const usage = await t.api('/insights/report/autopilot_usage?days=30', { token: admin });
+            assert.ok(usage.data.rows.total >= 9);
+            assert.ok(usage.data.rows.autopilot >= 3 && usage.data.rows.suggestion >= 2 && usage.data.rows.manual >= 4);
+            assert.equal(usage.data.rows.hands_on_pct, Math.round((1000 * usage.data.rows.manual) / usage.data.rows.total) / 10);
+
+            const load = await t.api('/insights/report/technician_workload', { token: admin });
+            assert.ok(load.data.rows.length >= 5);
+            assert.ok(load.data.rows.every((r, k, all) => k === 0 || all[k - 1].live_jobs >= r.live_jobs), 'busiest first');
+        });
+
+        it('shows overdue work by trade and tickets per day', async () => {
+            const trade = await t.api('/insights/report/overdue_by_trade', { token: admin });
+            assert.ok(trade.data.rows.length >= 1);
+            assert.ok(trade.data.rows.every((r) => ['CLEANING', 'ELECTRICIAN', 'PLUMBER', 'CARPENTER', 'AC_TECH'].includes(r.trade)));
+            assert.ok(trade.data.rows.some((r) => r.overdue > 0), 'the ticket left overdue earlier is counted');
+
+            const daily = await t.api('/insights/report/daily_volume?days=7', { token: admin });
+            assert.equal(daily.data.rows.length, 7);
+            assert.ok(daily.data.rows.reduce((s, r) => s + r.tickets, 0) >= 30, 'the T-Block rush is in the last week');
+            assert.match(daily.data.answer, /busiest day/);
+        });
+
+        it('routes the newer questions too', async () => {
+            useModel(() => {
+                throw new providers.ProviderError('ERROR', 'down');
+            });
+            const cases = [
+                ['Which technicians are flagged?', 'staff_flags'],
+                ['Who is free right now?', 'technician_workload'],
+                ['How much does the autopilot assign?', 'autopilot_usage'],
+                ['Which trade has the most overdue work?', 'overdue_by_trade'],
+                ['Show tickets per day', 'daily_volume'],
+            ];
+            for (const [question, report] of cases) {
+                const r = await t.api('/insights/ask', { method: 'POST', token: admin, body: { question } });
+                assert.equal(r.data.report, report, question);
+            }
+            const names = (await t.api('/insights/reports', { token: admin })).data.length;
+            assert.ok(names >= 20, `${names} reports`);
+        });
+
         it('routes plain questions to the right report without a model', async () => {
             useModel(() => {
                 throw new providers.ProviderError('ERROR', 'down');

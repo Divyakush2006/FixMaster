@@ -286,4 +286,77 @@ async function busiestFloors(scope, { blockId, days = 30 } = {}) {
     return rows;
 }
 
-module.exports = { slaCompliance, blockComparison, volumeTrend, staffingGaps, staffAbsence, escalations, resolutionTimes, ratingTrend, emergencies, busiestFloors };
+/** How much of the dispatching the autopilot does: assignments by how they were made, over the last `days` days. */
+async function autopilotUsage(scope, { blockId, days = 30 } = {}) {
+    const { rows } = await db.query(
+        `SELECT COUNT(*)::int AS total,
+                COUNT(*) FILTER (WHERE a.dispatch_source = 'AUTOPILOT')::int AS autopilot,
+                COUNT(*) FILTER (WHERE a.dispatch_source = 'SUGGESTION')::int AS suggestion,
+                COUNT(*) FILTER (WHERE a.dispatch_source = 'MANUAL')::int AS manual
+         FROM complaint_assignments a JOIN complaints c ON c.complaint_id = a.complaint_id
+         WHERE a.assigned_at >= CURRENT_TIMESTAMP - make_interval(days => $2) AND ($1::varchar[] IS NULL OR c.block_id = ANY($1::varchar[]))`,
+        [blocksFor(scope, blockId), clamp(days, 1, 180, 30)]
+    );
+    const r = rows[0];
+    return { ...r, by_autopilot_pct: r.total ? Math.round((1000 * (r.autopilot + r.suggestion)) / r.total) / 10 : null, hands_on_pct: r.total ? Math.round((1000 * r.manual) / r.total) / 10 : null };
+}
+
+/** Each technician's live jobs now, busiest first, with who is free. */
+async function technicianWorkload(scope, { blockId } = {}) {
+    const { rows } = await db.query(
+        `SELECT u.full_name, u.specialization, u.home_block_id AS block_id, u.is_available,
+                COUNT(a.assignment_id) FILTER (WHERE a.current_state IN ('ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS'))::int AS live_jobs
+         FROM users u
+         LEFT JOIN complaint_assignments a ON a.staff_user_id = u.user_id
+         WHERE u.role = 'STAFF' AND u.is_active AND ($1::varchar[] IS NULL OR u.home_block_id IS NULL OR u.home_block_id = ANY($1::varchar[]))
+         GROUP BY u.user_id, u.full_name, u.specialization, u.home_block_id, u.is_available
+         ORDER BY live_jobs DESC, u.full_name LIMIT 60`,
+        [blocksFor(scope, blockId)]
+    );
+    return rows;
+}
+
+/** Technicians the performance board flags, each with its evidence. */
+async function staffFlags(scope) {
+    const board = await require('../autopilot/performance').staffPerformance({ blocks: scope });
+    return board
+        .filter((r) => r.flags.length > 0)
+        .map((r) => ({ full_name: r.full_name, specialization: r.specialization, block_id: r.home_block_id, rated_jobs: r.rated_jobs, avg_rating: r.avg_rating, flags: r.flags }))
+        .sort((a, b) => b.flags.length - a.flags.length || a.full_name.localeCompare(b.full_name))
+        .slice(0, 30);
+}
+
+/** Open work that is overdue or close to its deadline, by trade. */
+async function overdueByTrade(scope, { blockId } = {}) {
+    const { rows } = await db.query(
+        `SELECT trade, COUNT(*)::int AS open_tickets,
+                COUNT(*) FILTER (WHERE st = 'OVERDUE')::int AS overdue,
+                COUNT(*) FILTER (WHERE st = 'AT_RISK')::int AS at_risk
+         FROM (
+             SELECT sub.required_specialization AS trade, ${slaStatusSql()} AS st
+             FROM complaints c
+             JOIN complaint_subcategories sub ON sub.subcategory_id = c.subcategory_id
+             JOIN complaint_categories cat ON cat.category_id = sub.category_id
+             WHERE c.status IN ${LIVE} AND ($1::varchar[] IS NULL OR c.block_id = ANY($1::varchar[]))
+         ) t
+         GROUP BY trade ORDER BY overdue DESC, at_risk DESC, trade`,
+        [blocksFor(scope, blockId)]
+    );
+    return rows;
+}
+
+/** Tickets raised each day over the last `days` days (up to 60). */
+async function dailyVolume(scope, { blockId, days = 14 } = {}) {
+    const { rows } = await db.query(
+        `SELECT d::date AS day, COUNT(c.complaint_id)::int AS tickets,
+                COUNT(c.complaint_id) FILTER (WHERE c.priority IN ('HIGH', 'EMERGENCY'))::int AS urgent
+         FROM generate_series(CURRENT_DATE - ($2::int - 1), CURRENT_DATE, INTERVAL '1 day') AS d
+         LEFT JOIN complaints c ON c.created_at >= d AND c.created_at < d + INTERVAL '1 day' AND ${NOT_COUNTED}
+              AND ($1::varchar[] IS NULL OR c.block_id = ANY($1::varchar[]))
+         GROUP BY d ORDER BY d`,
+        [blocksFor(scope, blockId), clamp(days, 1, 60, 14)]
+    );
+    return rows;
+}
+
+module.exports = { autopilotUsage, technicianWorkload, staffFlags, overdueByTrade, dailyVolume, slaCompliance, blockComparison, volumeTrend, staffingGaps, staffAbsence, escalations, resolutionTimes, ratingTrend, emergencies, busiestFloors };
