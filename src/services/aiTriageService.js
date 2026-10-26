@@ -88,7 +88,8 @@ function heuristicTriage(rawText, studentRoom, taxonomy) {
         matchedSub = taxonomy.find((t) => textLower.includes(t.issue_name.toLowerCase())) || taxonomy[0];
     }
 
-    const priority = enforcePriorityFloor(rawText, matchedSub ? matchedSub.priority_level : 'MEDIUM');
+    // Priority is the issue type's catalogue value; the text cannot change it.
+    const priority = matchedSub ? matchedSub.priority_level : 'MEDIUM';
 
     let advisory = null;
     if (priority === 'EMERGENCY') {
@@ -109,7 +110,7 @@ function heuristicTriage(rawText, studentRoom, taxonomy) {
         subcategory_id: matchedSub ? matchedSub.subcategory_id : 1,
         subcategory_name: matchedSub ? matchedSub.issue_name : 'General Issue',
         priority,
-        priority_reasoning: 'Assigned via hostel emergency and domain triage decision matrix.',
+        priority_reasoning: 'Set by the issue type.',
         safety_advisory: advisory,
         standardized_description: rawText ? rawText.trim() : 'Complaint reported by student',
     };
@@ -187,8 +188,8 @@ Student Description: """${rawText.replace(/"""/g, '')}"""`;
         const validSub = taxonomy.find((t) => t.subcategory_id === parsed.subcategory_id && t.category_id === parsed.category_id);
         const resolvedSub = validSub || taxonomy.find((t) => t.subcategory_id === parsed.subcategory_id) || taxonomy[0];
 
-        // Apply strict safety net floor rule
-        const finalPriority = enforcePriorityFloor(rawText, parsed.priority || resolvedSub.priority_level);
+        // The model's opinion of priority is ignored: it comes from the issue type.
+        const finalPriority = resolvedSub.priority_level;
 
         recordSuccess('triage');
         return {
@@ -201,7 +202,7 @@ Student Description: """${rawText.replace(/"""/g, '')}"""`;
                 subcategory_id: resolvedSub.subcategory_id,
                 subcategory_name: resolvedSub.issue_name,
                 priority: finalPriority,
-                priority_reasoning: parsed.priority_reasoning || 'Classified by Gemini AI.',
+                priority_reasoning: 'Set by the issue type.',
                 safety_advisory: parsed.safety_advisory || (finalPriority === 'EMERGENCY' ? 'Exercise caution around the area.' : null),
                 standardized_description: parsed.standardized_description || rawText.trim(),
             },
