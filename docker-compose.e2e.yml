@@ -1,0 +1,28 @@
+# Adds a mail catcher so the browser tests can follow the password-reset email.
+# Used only by the end-to-end suite and CI:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build --wait
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml --profile demo run --rm seed
+#   cd e2e && npm ci && npx playwright test
+#
+# Mailpit's inbox (http://localhost:8025) receives everything the API sends and
+# delivers nothing outside this machine.
+services:
+  mailpit:
+    image: axllent/mailpit:v1.21.8
+    ports:
+      - "127.0.0.1:8025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    depends_on:
+      mailpit:
+        condition: service_healthy
+    environment:
+      SMTP_URL: smtp://mailpit:1025
+      MAIL_FROM: "FixMaster <no-reply@fixmaster.test>"
+      APP_URL: ${CORS_ORIGIN:-http://localhost:8080}

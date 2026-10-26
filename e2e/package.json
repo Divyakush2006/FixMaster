@@ -1,0 +1,16 @@
+{
+  "name": "fixmaster-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Browser end-to-end and accessibility tests, run against the Docker stack.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.0"
+  }
+}
