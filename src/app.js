@@ -60,6 +60,17 @@ app.set('trust proxy', trustProxySetting(process.env.TRUST_PROXY));
 
 app.use(requestLogger);
 app.use(require('./services/metrics').middleware);
+// Dashboards reuse figures for a few seconds (services/cache.js), but never hide a
+// change made through this server: any successful write forgets them, so a
+// supervisor who assigns a ticket sees the new counts on the next screen.
+app.use((req, res, next) => {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+        res.on('finish', () => {
+            if (res.statusCode < 400) require('./services/cache').invalidate();
+        });
+    }
+    next();
+});
 app.use(helmet());
 app.use(
     cors({
