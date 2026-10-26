@@ -31,6 +31,9 @@ const SupervisorDashboard = named(() => import('./features/supervisor/Supervisor
 const AllComplaintsTable = named(() => import('./features/supervisor/AllComplaintsTable'), 'AllComplaintsTable');
 const HotspotsTable = named(() => import('./features/supervisor/HotspotsTable'), 'HotspotsTable');
 const EscalatedQueue = named(() => import('./features/supervisor/EscalatedQueue'), 'EscalatedQueue');
+const AutopilotSettingsPage = named(() => import('./features/autopilot/AutopilotSettingsPage'), 'AutopilotSettingsPage');
+const StaffPerformancePage = named(() => import('./features/autopilot/StaffPerformancePage'), 'StaffPerformancePage');
+const CleaningPlanPage = named(() => import('./features/autopilot/CleaningPlanPage'), 'CleaningPlanPage');
 const AccountPage = named(() => import('./features/account/AccountPage'), 'AccountPage');
 const UsersPage = named(() => import('./features/admin/UsersPage'), 'UsersPage');
 const AllotmentsPage = named(() => import('./features/admin/AllotmentsPage'), 'AllotmentsPage');
@@ -98,6 +101,9 @@ export const App: React.FC = () => {
                       <Route path="/supervisor/all-complaints" element={guard(MANAGER_ROLES, <AllComplaintsTable />)} />
                       <Route path="/supervisor/hotspots" element={guard(MANAGER_ROLES, <HotspotsTable />)} />
                       <Route path="/supervisor/escalated" element={guard(MANAGER_ROLES, <EscalatedQueue />)} />
+                      <Route path="/supervisor/autopilot" element={guard(MANAGER_ROLES, <AutopilotSettingsPage />)} />
+                      <Route path="/supervisor/staff" element={guard(MANAGER_ROLES, <StaffPerformancePage />)} />
+                      <Route path="/supervisor/cleaning" element={guard(MANAGER_ROLES, <CleaningPlanPage />)} />
 
                       {/* Administration (signed in through /admin) */}
                       <Route path="/admin/dashboard" element={guard(['ADMIN'], <SupervisorDashboard />)} />

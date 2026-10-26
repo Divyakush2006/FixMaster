@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Ban, GitMerge, Sparkles, UserCheck, Users } from 'lucide-react';
+import { Ban, GitMerge, UserCheck, Users } from 'lucide-react';
 import { complaintsApi, dispatchApi, metaApi } from '../../api/endpoints';
 import { apiErrorCode } from '../../api/client';
 import { useToast } from '../../components/ui/Toast';
@@ -17,6 +17,7 @@ import { cn } from '../../components/ui/cn';
 import { StatusBadge, PriorityBadge, SpecializationBadge, SlaBadge } from '../../components/common/Badges';
 import { ActivityTimeline } from '../../components/common/ActivityTimeline';
 import { Complaint, TimelineEvent } from '../../types';
+import { AutopilotPanel } from '../autopilot/AutopilotPanel';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
 import { isNoteEntry, logDescription, noteTitle, reconstructTimeline } from '../../utils/timeline';
 import { SCOPE_LABEL, SPECIALIZATION_LABEL, STATUS_LABEL, ticketLocation, ticketRef } from '../../utils/labels';
@@ -52,7 +53,6 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
   });
   const complaint: Complaint = detail ? { ...listed, ...detail } : listed;
 
-  const isCleaning = complaint.required_specialization === 'CLEANING';
   // The database (re)assigns tickets in these states (migrations 006, 008).
   // ASSIGNED / IN_PROGRESS means handing live work to another technician.
   const isReassign = complaint.status === 'ASSIGNED' || complaint.status === 'IN_PROGRESS';
@@ -137,18 +137,6 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
     }
     manualAssignMutation.mutate(false);
   };
-
-  // The backend reports `assigned` honestly: 200 with assigned=false means no
-  // cleaner was free, which is not a failure.
-  const autoDispatchMutation = useMutation({
-    mutationFn: () => dispatchApi.autoDispatchCleaning(complaint.complaint_id),
-    onSuccess: (data) => {
-      showToast(data.assigned ? 'Auto-dispatched' : 'No housekeeping staff available', data.assigned ? 'success' : 'info', data.message);
-      refreshAll();
-      if (data.assigned) onClose();
-    },
-    onError: (err: Error) => showToast('Auto-dispatch failed', 'error', err.message),
-  });
 
   const rejectMutation = useMutation({
     mutationFn: () => complaintsApi.reject(complaint.complaint_id, reason.trim()),
@@ -296,21 +284,21 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
                   current technician is unavailable.
                 </Alert>
               )}
-              {isCleaning && !isReassign && (
-                <div className="flex flex-col gap-3 rounded-lg border border-brand-200 bg-brand-50/50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-[13px] font-semibold text-slate-900">Auto-dispatch</p>
-                    <p className="mt-0.5 text-xs text-slate-600">Assigns the least-loaded housekeeping staff member who is on duty.</p>
-                  </div>
-                  <Button variant="secondary" icon={Sparkles} loading={autoDispatchMutation.isPending} onClick={() => autoDispatchMutation.mutate()}>
-                    Auto-dispatch
-                  </Button>
-                </div>
+              {!isReassign && (
+                <AutopilotPanel
+                  complaintId={complaint.complaint_id}
+                  onPick={setSelectedStaffId}
+                  onAssigned={(name) => {
+                    showToast('Technician assigned', 'success', `${name}, the autopilot's top suggestion.`);
+                    refreshAll();
+                    onClose();
+                  }}
+                />
               )}
 
               <div>
                 <p className="mb-2 text-[13px] font-medium text-slate-700">
-                  {isCleaning && !isReassign ? 'Or choose' : 'Choose'} {tradeWithArticle} technician
+                  {!isReassign ? 'Or choose' : 'Choose'} {tradeWithArticle} technician
                 </p>
                 {isLoadingStaff ? (
                   <div className="space-y-2">

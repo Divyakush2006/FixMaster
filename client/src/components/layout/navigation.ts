@@ -11,6 +11,9 @@ import {
   BedDouble,
   UserCircle2,
   ScrollText,
+  Sparkles,
+  Gauge,
+  SlidersHorizontal,
   LucideIcon,
 } from 'lucide-react';
 import { Role } from '../../types';
@@ -49,6 +52,15 @@ const operations = (home: string): NavSection => ({
   ],
 });
 
+const autopilot: NavSection = {
+  heading: 'Autopilot',
+  items: [
+    { label: 'Dispatch settings', to: '/supervisor/autopilot', icon: SlidersHorizontal },
+    { label: 'Staff performance', to: '/supervisor/staff', icon: Gauge },
+    { label: 'Cleaning plan', to: '/supervisor/cleaning', icon: Sparkles },
+  ],
+};
+
 const account: NavSection = {
   heading: 'Account',
   items: [{ label: 'My account', to: '/account', icon: UserCircle2 }],
@@ -72,10 +84,11 @@ export function navigationFor(role: Role): NavSection[] {
       return [{ heading: 'Workspace', items: [{ label: 'My work queue', to: '/staff', icon: ClipboardList, end: true }] }, account];
     case 'SUPERVISOR':
     case 'CHIEF_WARDEN':
-      return [operations('/supervisor'), account];
+      return [operations('/supervisor'), autopilot, account];
     case 'ADMIN':
       return [
         operations('/admin/dashboard'),
+        autopilot,
         {
           heading: 'Administration',
           items: [

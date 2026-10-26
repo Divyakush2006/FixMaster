@@ -529,3 +529,90 @@ export interface AiHealthStatus {
   routes: Record<string, { provider: string; model: string }[]>;
 }
 
+
+// ---- Autopilot -----------------------------------------------------------------
+
+export type AutopilotMode = 'OFF' | 'SUGGEST' | 'AUTO';
+export type ScoreComponent = 'quality' | 'load' | 'idle' | 'proximity' | 'reliability' | 'roomHistory';
+
+export interface AutopilotCandidate {
+  user_id: string;
+  full_name: string;
+  score: number;
+  components: Record<ScoreComponent, number>;
+  weights: Record<ScoreComponent, number>;
+  live_jobs: number;
+  rated_jobs: number;
+  home_block_id: string | null;
+}
+
+export type ExclusionReason = 'OFF_DUTY' | 'ON_LEAVE' | 'OFF_SHIFT' | 'OTHER_BLOCK' | 'AT_CAPACITY' | 'BAD_EXPERIENCE_HERE' | 'BLOCK_STAFF_AVAILABLE';
+
+export interface AutopilotSuggestions {
+  ticket: { complaint_id: string; status: ComplaintStatus; block_id: string; specialization: Specialization };
+  settings: { mode: AutopilotMode; live_job_cap: number; weights: Record<ScoreComponent, number>; inherited: boolean };
+  shift: StaffShift;
+  recovery: boolean;
+  candidates: AutopilotCandidate[];
+  excluded: { user_id: string; full_name: string; reason: ExclusionReason }[];
+}
+
+export interface AutopilotDispatchResult {
+  assigned: boolean;
+  staff_user_id?: string;
+  staff_name?: string;
+  score?: number;
+  recovery?: boolean;
+  reason?: string;
+}
+
+export interface AutopilotSetting {
+  block_id: string | null;
+  specialization: Specialization;
+  mode: AutopilotMode;
+  live_job_cap: number;
+  weights: Record<ScoreComponent, number>;
+  updated_at?: string;
+  updated_by?: string | null;
+}
+
+export interface AutopilotSettingsResponse {
+  defaults: { mode: AutopilotMode; live_job_cap: number; weights: Record<ScoreComponent, number> };
+  settings: AutopilotSetting[];
+  can_edit_campus_default: boolean;
+}
+
+export type PerformanceFlagCode = 'LOW_RATING' | 'HIGH_REWORK' | 'MISSED_SLA' | 'LONG_IDLE';
+
+export interface StaffPerformanceRow {
+  user_id: string;
+  full_name: string;
+  reg_or_emp_id: string;
+  specialization: Specialization;
+  home_block_id: string | null;
+  shift: StaffShift | null;
+  is_available: boolean;
+  rated_jobs: number;
+  avg_rating: number | null;
+  smoothed_rating: number | null;
+  verification_rounds: number;
+  sent_back: number;
+  rework_rate: number;
+  completed: number;
+  on_time: number;
+  on_time_rate: number | null;
+  avg_minutes: number | null;
+  live_jobs: number;
+  last_assigned_at: string | null;
+  comment_tags: Record<string, number>;
+  flags: { code: PerformanceFlagCode; evidence: string }[];
+}
+
+export interface CleaningPlan {
+  block_id: string;
+  shift: StaffShift;
+  total_rooms: number;
+  cleaners: { user_id: string; full_name: string; floors: number[]; rooms: number; slots: { MORNING: number; AFTERNOON: number; EVENING: number } }[];
+  unassigned_floors: number[];
+  uses_campus_pool: boolean;
+}

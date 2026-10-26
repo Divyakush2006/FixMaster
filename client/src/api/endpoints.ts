@@ -41,6 +41,14 @@ import {
   StaffLeave,
   AssistantResponse,
   AiHealthStatus,
+  AutopilotSuggestions,
+  AutopilotDispatchResult,
+  AutopilotSettingsResponse,
+  AutopilotSetting,
+  AutopilotMode,
+  ScoreComponent,
+  StaffPerformanceRow,
+  CleaningPlan,
 } from '../types';
 
 // Three separate sign-in portals; each endpoint only accepts its own accounts.
@@ -385,3 +393,25 @@ export const aiApi = {
 };
 
 
+
+export const autopilotApi = {
+  /** Ranked shortlist with score breakdowns, and who was left out and why. */
+  suggestions: (complaintId: string) => apiFetch<AutopilotSuggestions>(`/autopilot/suggestions/${complaintId}`, { method: 'GET' }),
+
+  /** Assigns the top suggestion (recorded as the manager accepting it). */
+  dispatch: (complaint_id: string) =>
+    apiFetch<AutopilotDispatchResult>('/autopilot/dispatch', { method: 'POST', body: JSON.stringify({ complaint_id }) }),
+
+  settings: () => apiFetch<AutopilotSettingsResponse>('/autopilot/settings', { method: 'GET' }),
+
+  saveSetting: (data: { block_id: string | null; specialization: Specialization; mode: AutopilotMode; live_job_cap?: number; weights?: Partial<Record<ScoreComponent, number>> | null }) =>
+    apiFetch<AutopilotSetting>('/autopilot/settings', { method: 'PUT', body: JSON.stringify(data) }),
+
+  performance: (specialization?: Specialization) =>
+    apiFetch<StaffPerformanceRow[]>('/autopilot/performance', { method: 'GET', params: { specialization } }),
+
+  cleaningPlan: (blockId: string, shift?: string) =>
+    apiFetch<CleaningPlan>('/autopilot/cleaning-plan', { method: 'GET', params: { block_id: blockId, shift } }),
+
+  tagFeedback: () => apiFetch<{ tagged: number; source: string | null }>('/autopilot/tag-feedback', { method: 'POST' }),
+};
