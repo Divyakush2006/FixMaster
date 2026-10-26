@@ -14,7 +14,7 @@ const { getProfile, saveProfile } = require('../services/profileService');
 // whether a student still has onboarding to finish.
 exports.getMe = asyncHandler(async (req, res) => {
     const result = await db.query(
-        `SELECT ${PUBLIC_USER_COLUMNS},
+        `SELECT ${PUBLIC_USER_COLUMNS}, erasure_requested_at,
                 EXISTS (SELECT 1 FROM student_profiles p WHERE p.user_id = users.user_id) AS profile_complete,
                 CASE WHEN role = 'SUPERVISOR' THEN COALESCE(
                     (SELECT array_agg(sb.block_id ORDER BY sb.block_id) FROM supervisor_blocks sb WHERE sb.supervisor_user_id = users.user_id),

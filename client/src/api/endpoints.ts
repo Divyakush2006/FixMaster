@@ -54,6 +54,7 @@ import {
   RecurringFault,
   Briefing,
   AskResult,
+  ErasureRequest,
 } from '../types';
 
 // Three separate sign-in portals; each endpoint only accepts its own accounts.
@@ -264,6 +265,18 @@ export const meApi = {
       body: JSON.stringify({ current_password, new_password }),
     }),
 
+  /** Everything held about the caller, as an object to save as a file. */
+  exportData: () => apiFetch<Record<string, unknown>>('/me/data-export', { method: 'GET' }),
+
+  /** Students: ask for personal data to be erased (the password is asked for again). */
+  requestErasure: (password: string) =>
+    apiFetch<{ message: string; erasure_requested_at: string; blockers: string[] }>('/me/erasure-request', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }),
+
+  cancelErasure: () => apiFetch<void>('/me/erasure-request', { method: 'DELETE' }),
+
   /**
    * Going off duty with open jobs fails with code OPEN_JOBS unless
    * `releaseOpenJobs` says whether to keep them (false) or hand them back (true).
@@ -281,6 +294,10 @@ export const adminApi = {
     apiFetchPage<User>('/admin/users', { method: 'GET', params: filters }),
 
   userSummary: () => apiFetch<UserSummary>('/admin/users/summary', { method: 'GET' }),
+
+  erasureRequests: () => apiFetch<ErasureRequest[]>('/admin/erasure-requests', { method: 'GET' }),
+
+  eraseUser: (userId: string) => apiFetch<{ message: string }>(`/admin/users/${userId}/erase`, { method: 'POST' }),
 
   /** Type-ahead lookup of active students (allotment picker). */
   searchStudents: (q: string) =>

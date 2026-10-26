@@ -39,6 +39,7 @@ const AccountPage = named(() => import('./features/account/AccountPage'), 'Accou
 const UsersPage = named(() => import('./features/admin/UsersPage'), 'UsersPage');
 const AllotmentsPage = named(() => import('./features/admin/AllotmentsPage'), 'AllotmentsPage');
 const InfrastructurePage = named(() => import('./features/admin/InfrastructurePage'), 'InfrastructurePage');
+const PrivacyRequestsPage = named(() => import('./features/admin/PrivacyRequestsPage'), 'PrivacyRequestsPage');
 const AuditLogPage = named(() => import('./features/admin/AuditLogPage'), 'AuditLogPage');
 const NotFoundPage = named(() => import('./features/NotFoundPage'), 'NotFoundPage');
 
@@ -112,7 +113,8 @@ export const App: React.FC = () => {
                       <Route path="/admin/users" element={guard(['ADMIN'], <UsersPage />)} />
                       <Route path="/admin/allotments" element={guard(['ADMIN'], <AllotmentsPage />)} />
                       <Route path="/admin/infrastructure" element={guard(['ADMIN'], <InfrastructurePage />)} />
-                      <Route path="/admin/audit" element={guard(['ADMIN'], <AuditLogPage />)} />
+                      <Route path="/admin/privacy" element={guard(['ADMIN'], <PrivacyRequestsPage />)} />
+                      <Route path="/admin/audit"element={guard(['ADMIN'], <AuditLogPage />)} />
 
                       {/* Unknown address: a 404 page when signed in, the sign-in page otherwise. */}
                       <Route path="*" element={guard(undefined, <NotFoundPage />)} />

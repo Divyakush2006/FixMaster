@@ -3,6 +3,7 @@ const router = express.Router();
 const admin = require('../controllers/adminController');
 const infra = require('../controllers/infrastructureController');
 const org = require('../controllers/organisationController');
+const privacy = require('../controllers/privacyController');
 const { authenticate, authorize } = require('../middleware/auth');
 const v = require('../middleware/validators');
 
@@ -22,6 +23,10 @@ router.post('/users/:user_id/leave', v.leaveValidators, org.addLeave);
 router.delete('/leave/:leave_id', v.leaveIdValidators, org.deleteLeave);
 
 router.get('/audit', v.adminAuditValidators, admin.listAudit);
+
+// Data-subject rights: residents' erasure requests, and carrying them out.
+router.get('/erasure-requests', privacy.listErasureRequests);
+router.post('/users/:user_id/erase', v.userIdOnlyValidators, privacy.eraseUser);
 
 router.get('/allotment-requests', admin.listAllotmentRequests);
 router.post('/allotment-requests/:student_id/decline', v.declineRoomRequestValidators, admin.declineAllotmentRequest);

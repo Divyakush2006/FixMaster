@@ -143,6 +143,16 @@ const photoUploadLimiter = rateLimit({
     message: { error: 'Too many photo uploads. Please wait a few minutes and try again.' },
 });
 
+// GET /api/me/data-export and POST /api/me/erasure-request: bulk reads and a
+// consequential request, so a few per hour per person is plenty.
+const privacyLimiter = rateLimit({
+    ...common,
+    windowMs: int(process.env.RATE_LIMIT_PRIVACY_WINDOW_MS, 60 * 60 * 1000),
+    limit: int(process.env.RATE_LIMIT_PRIVACY_MAX, 10),
+    keyGenerator: (req) => `privacy:${req.user ? req.user.userId : req.ip}`,
+    message: { error: 'Too many data requests. Please try again in a while.' },
+});
+
 /**
  * The general limiter counts signed-in users per user, and only anonymous
  * traffic per IP. The token is verified (cheap HMAC) rather than merely
@@ -182,5 +192,6 @@ module.exports = {
     resetPasswordLimiter,
     photoUploadLimiter,
     assistantLimiter,
+    privacyLimiter,
     generalLimiter,
 };

@@ -504,6 +504,8 @@ const aiDrillValidators = [
     handleValidation,
 ];
 
+const erasureRequestValidators = [body('password').isString().notEmpty().isLength({ max: 200 }).withMessage('Enter your password to confirm.'), handleValidation];
+
 // ---- Insights --------------------------------------------------------------------
 
 const insightsQueryValidators = [
@@ -637,6 +639,7 @@ module.exports = {
     aiDrillValidators,
     insightsQueryValidators,
     insightsAskValidators,
+    erasureRequestValidators,
     supervisorBlocksValidators,
     leaveValidators,
     leaveIdValidators,

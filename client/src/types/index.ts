@@ -71,6 +71,18 @@ export interface User {
   shift?: StaffShift | null;
   /** Supervisors (admin user list): blocks they manage; empty = every block. */
   managed_blocks?: string[] | null;
+  /** When this person asked for their data to be erased; null when they have not. */
+  erasure_requested_at?: string | null;
+}
+
+export interface ErasureRequest {
+  user_id: string;
+  reg_or_emp_id: string;
+  full_name: string;
+  email: string;
+  erasure_requested_at: string;
+  /** What stops the erasure right now (room still allotted, open tickets). */
+  blockers: string[];
 }
 
 export type StaffShift = 'MORNING' | 'EVENING' | 'NIGHT';

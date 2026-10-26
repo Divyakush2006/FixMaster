@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { IdCard, KeyRound } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Download, IdCard, KeyRound, ShieldCheck } from 'lucide-react';
 import { meApi } from '../../api/endpoints';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/ui/Toast';
@@ -14,6 +14,120 @@ import { Skeleton } from '../../components/ui/PageLoader';
 import { RoleBadge, SpecializationBadge } from '../../components/common/Badges';
 import { formatDateTime } from '../../utils/formatters';
 import { PASSWORD_HINT, passwordProblem } from '../../utils/password';
+
+/**
+ * Data-subject rights: a copy of everything held about the signed-in person,
+ * and (for residents) a request to have their data erased. Erasure is carried
+ * out by the hostel office once the room is vacated and no ticket is open.
+ */
+const YourDataCard: React.FC<{ role?: string; requestedAt: string | null }> = ({ role, requestedAt }) => {
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const [asking, setAsking] = useState(false);
+  const [password, setPassword] = useState('');
+  const [blockers, setBlockers] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['me'] });
+
+  const download = useMutation({
+    mutationFn: meApi.exportData,
+    onSuccess: (data) => {
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `fixmaster-my-data-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+    onError: (err: Error) => showToast('Could not prepare your data', 'error', err.message),
+  });
+
+  const request = useMutation({
+    mutationFn: () => meApi.requestErasure(password),
+    onSuccess: (r) => {
+      setBlockers(r.blockers);
+      setAsking(false);
+      setPassword('');
+      setError(null);
+      refresh();
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const cancel = useMutation({ mutationFn: meApi.cancelErasure, onSuccess: () => { setBlockers([]); refresh(); } });
+
+  return (
+    <Card>
+      <CardHeader
+        icon={
+          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+            <ShieldCheck className="h-4 w-4" />
+          </span>
+        }
+        title="Your data"
+        description="You can see everything we hold about you, and ask for it to be erased."
+        actions={
+          <Button variant="secondary" size="sm" icon={Download} loading={download.isPending} onClick={() => download.mutate()}>
+            Download my data
+          </Button>
+        }
+      />
+      {role === 'STUDENT' && (
+        <CardBody className="space-y-3">
+          {requestedAt ? (
+            <Alert
+              tone="info"
+              title="Erasure requested"
+              action={
+                <Button variant="secondary" size="sm" loading={cancel.isPending} onClick={() => cancel.mutate()}>
+                  Cancel request
+                </Button>
+              }
+            >
+              The hostel office erases your data once you have vacated your room and have no open tickets.
+              {blockers.length > 0 && (
+                <ul className="mt-1 list-disc pl-5">
+                  {blockers.map((b) => (
+                    <li key={b}>{b}</li>
+                  ))}
+                </ul>
+              )}
+            </Alert>
+          ) : asking ? (
+            <form
+              className="space-y-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setError(null);
+                request.mutate();
+              }}
+            >
+              <p className="text-[13px] text-slate-700">
+                Your profile, contact details and comments are removed. Tickets and ratings stay, without your name, so the service record is not lost. This cannot be undone.
+              </p>
+              {error && <Alert tone="danger">{error}</Alert>}
+              <Field label="Enter your password to confirm" required>
+                {(a) => <PasswordInput {...a} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />}
+              </Field>
+              <div className="flex gap-2">
+                <Button type="submit" variant="danger" loading={request.isPending} disabled={!password}>
+                  Request erasure
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => { setAsking(false); setError(null); setPassword(''); }}>
+                  Not now
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <Button variant="secondary" size="sm" onClick={() => setAsking(true)}>
+              Ask for my data to be erased
+            </Button>
+          )}
+        </CardBody>
+      )}
+    </Card>
+  );
+};
 
 export const AccountPage: React.FC = () => {
   const { renewSession } = useAuth();
@@ -114,6 +228,8 @@ export const AccountPage: React.FC = () => {
             />
           </Card>
         )}
+
+        <YourDataCard role={me?.role} requestedAt={me?.erasure_requested_at ?? null} />
 
         <Card>
           <form onSubmit={handleSubmit} noValidate>
