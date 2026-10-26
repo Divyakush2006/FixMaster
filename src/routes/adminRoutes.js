@@ -26,6 +26,7 @@ router.get('/audit', v.adminAuditValidators, admin.listAudit);
 
 // Data-subject rights: residents' erasure requests, and carrying them out.
 router.get('/erasure-requests', privacy.listErasureRequests);
+router.get('/retention-policy', privacy.getRetentionPolicy);
 router.post('/users/:user_id/erase', v.userIdOnlyValidators, privacy.eraseUser);
 
 router.get('/allotment-requests', admin.listAllotmentRequests);

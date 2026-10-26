@@ -50,6 +50,11 @@ exports.listErasureRequests = asyncHandler(async (req, res) => {
     res.json(out);
 });
 
+// GET /api/admin/retention-policy (ADMIN) - how many days each kind of record is kept (0 = kept).
+exports.getRetentionPolicy = asyncHandler(async (req, res) => {
+    res.json(require('../services/retentionService').currentPolicy());
+});
+
 // POST /api/admin/users/:user_id/erase (ADMIN) - removes the person's data.
 exports.eraseUser = asyncHandler(async (req, res) => {
     const { photoComplaintIds } = await db.withTransaction((client) => privacy.eraseStudent(client, req, req.params.user_id), req.user.userId);

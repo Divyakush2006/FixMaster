@@ -2,6 +2,7 @@ const app = require('./app');
 const db = require('./config/db');
 const { startVerificationSweeper } = require('./services/verificationSweeper');
 const { startFeedbackTagger } = require('./services/autopilot/feedbackTagger');
+const { startRetentionSweeper } = require('./services/retentionService');
 
 const PORT = parseInt(process.env.PORT, 10) || 5000;
 const SHUTDOWN_GRACE_MS = 10000;
@@ -14,6 +15,8 @@ const server = app.listen(PORT, () => {
 const stopSweeper = startVerificationSweeper();
 // Background job: themes in residents' review comments (see feedbackTagger.js).
 const stopTagger = startFeedbackTagger();
+// Background job: removes data past its retention period (see retentionService.js).
+const stopRetention = startRetentionSweeper();
 
 // Graceful shutdown: on SIGTERM (container stop, deploy, scale-down) stop
 // accepting new connections, let in-flight requests finish, then close the
@@ -32,6 +35,7 @@ function shutdown(signal, exitCode = 0) {
 
     stopSweeper();
     stopTagger();
+    stopRetention();
     server.close(async () => {
         try {
             await db.pool.end();

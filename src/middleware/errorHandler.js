@@ -1,3 +1,5 @@
+const { notifyError } = require('../services/alerts');
+
 /**
  * A known, expected failure (bad input, missing resource, access denied)
  * whose message is safe to show the client. Anything thrown that is NOT an
@@ -80,11 +82,13 @@ function errorHandler(err, req, res, next) {
         if (PG_ERROR_MAP[err.code]) {
             console.error(`[db:${err.code}] ${req.method} ${req.originalUrl}:`, err.message);
             const mapped = PG_ERROR_MAP[err.code];
+            if (mapped.status >= 500) notifyError(req, err, mapped.status);
             return res.status(mapped.status).json(body(mapped.message, mapped.code));
         }
     }
 
     console.error(`Unhandled error on ${req.method} ${req.originalUrl}:`, err);
+    notifyError(req, err, 500);
     return res.status(500).json({ error: 'An unexpected error occurred. Please try again.' });
 }
 

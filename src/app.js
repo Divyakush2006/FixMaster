@@ -59,6 +59,7 @@ const app = express();
 app.set('trust proxy', trustProxySetting(process.env.TRUST_PROXY));
 
 app.use(requestLogger);
+app.use(require('./services/metrics').middleware);
 app.use(helmet());
 app.use(
     cors({
@@ -83,6 +84,21 @@ app.get('/api/health', async (req, res) => {
         console.error('Health check: database unreachable:', err.message);
         res.status(503).json({ status: 'error', message: 'Database connection error' });
     }
+});
+
+// Metrics for the monitoring system (Prometheus text format). Kept outside the
+// rate limiter - a scraper polls on a fixed schedule - and behind a bearer
+// token: METRICS_TOKEN must be set to expose it in production; without one it
+// answers only requests from the same machine.
+app.get('/api/metrics', async (req, res) => {
+    const token = process.env.METRICS_TOKEN;
+    const given = (req.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+    const sameMachine = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+    const allowed = token
+        ? given.length === token.length && require('crypto').timingSafeEqual(Buffer.from(given), Buffer.from(token))
+        : !isProduction && sameMachine;
+    if (!allowed) return res.status(token ? 401 : 404).json({ error: token ? 'Unauthorized.' : `Cannot GET ${req.originalUrl}` });
+    res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8').set('Cache-Control', 'no-store').send(await require('./services/metrics').render());
 });
 
 app.use('/api', generalLimiter);

@@ -35,10 +35,10 @@ async function postJson(url, headers, body, signal) {
 }
 
 /** Groq and OpenRouter both speak the OpenAI chat-completions dialect. */
-const openAiCompatible = (baseUrl, extraHeaders = {}) => async (provider, { model, system, user, maxTokens, signal }) => {
+const openAiCompatible = (base, extraHeaders = {}) => async (provider, { model, system, user, maxTokens, signal }) => {
     const key = apiKey(provider);
     const payload = await postJson(
-        `${baseUrl}/chat/completions`,
+        `${typeof base === 'function' ? base() : base}/chat/completions`,
         { ...(key ? { Authorization: `Bearer ${key}` } : {}), ...extraHeaders },
         {
             model,
@@ -58,8 +58,9 @@ const openAiCompatible = (baseUrl, extraHeaders = {}) => async (provider, { mode
 };
 
 async function gemini(provider, { model, system, user, maxTokens, signal }) {
+    const base = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '');
     const payload = await postJson(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        `${base}/models/${encodeURIComponent(model)}:generateContent`,
         { 'x-goog-api-key': apiKey(provider) },
         {
             systemInstruction: { parts: [{ text: system }] },
@@ -110,7 +111,7 @@ async function ollama(provider, { model, system, user, maxTokens, signal }) {
 // LM Studio). Whether it uses a GPU is decided when that server is started:
 // start it CPU-only (e.g. llama-server -ngl 0, or CUDA_VISIBLE_DEVICES=-1).
 const localOpenAi = async (provider, request) =>
-    openAiCompatible((process.env.LOCAL_AI_BASE_URL || '').replace(/\/+$/, ''))(provider, request);
+    openAiCompatible(() => (process.env.LOCAL_AI_BASE_URL || '').replace(/\/+$/, ''))(provider, request);
 
 // ---- Test double -----------------------------------------------------------------
 // The suite never calls a real provider. A test installs a responder that
@@ -128,9 +129,14 @@ async function fake(provider, request) {
     return { text: typeof answer === 'string' ? answer : JSON.stringify(answer), inputTokens: 100, outputTokens: 50 };
 }
 
+// Each hosted provider's address can be overridden (GROQ_BASE_URL,
+// OPENROUTER_BASE_URL, GEMINI_BASE_URL): to go through a company gateway or
+// proxy, and so the adapters can be tested against a stand-in server.
+const baseUrl = (envName, fallback) => () => (process.env[envName] || fallback).replace(/\/+$/, '');
+
 const ADAPTERS = {
-    groq: openAiCompatible('https://api.groq.com/openai/v1'),
-    openrouter: openAiCompatible('https://openrouter.ai/api/v1', { 'HTTP-Referer': 'https://github.com/Divyakush2006/FixMaster', 'X-Title': 'FixMaster' }),
+    groq: openAiCompatible(baseUrl('GROQ_BASE_URL', 'https://api.groq.com/openai/v1')),
+    openrouter: openAiCompatible(baseUrl('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'), { 'HTTP-Referer': 'https://github.com/Divyakush2006/FixMaster', 'X-Title': 'FixMaster' }),
     gemini,
     ollama,
     local: localOpenAi,
