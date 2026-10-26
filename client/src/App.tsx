@@ -9,6 +9,7 @@ import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AppShell } from './components/layout/AppShell';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { PageLoader } from './components/ui/PageLoader';
+import { MANAGER_ROLES } from './utils/roles';
 
 // Every page is its own chunk: a student never downloads the supervisor
 // dashboard's charting library, and the first paint only needs the login page.
@@ -93,10 +94,10 @@ export const App: React.FC = () => {
                       <Route path="/staff" element={guard(['STAFF'], <StaffQueue />)} />
 
                       {/* Supervisor / Admin Portal */}
-                      <Route path="/supervisor" element={guard(['SUPERVISOR', 'ADMIN'], <SupervisorDashboard />)} />
-                      <Route path="/supervisor/all-complaints" element={guard(['SUPERVISOR', 'ADMIN'], <AllComplaintsTable />)} />
-                      <Route path="/supervisor/hotspots" element={guard(['SUPERVISOR', 'ADMIN'], <HotspotsTable />)} />
-                      <Route path="/supervisor/escalated" element={guard(['SUPERVISOR', 'ADMIN'], <EscalatedQueue />)} />
+                      <Route path="/supervisor" element={guard(MANAGER_ROLES, <SupervisorDashboard />)} />
+                      <Route path="/supervisor/all-complaints" element={guard(MANAGER_ROLES, <AllComplaintsTable />)} />
+                      <Route path="/supervisor/hotspots" element={guard(MANAGER_ROLES, <HotspotsTable />)} />
+                      <Route path="/supervisor/escalated" element={guard(MANAGER_ROLES, <EscalatedQueue />)} />
 
                       {/* Administration (signed in through /admin) */}
                       <Route path="/admin/dashboard" element={guard(['ADMIN'], <SupervisorDashboard />)} />

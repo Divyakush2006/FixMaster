@@ -35,6 +35,7 @@ export const WORKSPACE_NAME: Record<Role, string> = {
   STUDENT: 'Student Services',
   STAFF: 'Technician Workspace',
   SUPERVISOR: 'Operations Console',
+  CHIEF_WARDEN: 'Campus Console',
   ADMIN: 'Administration Console',
 };
 
@@ -70,6 +71,7 @@ export function navigationFor(role: Role): NavSection[] {
     case 'STAFF':
       return [{ heading: 'Workspace', items: [{ label: 'My work queue', to: '/staff', icon: ClipboardList, end: true }] }, account];
     case 'SUPERVISOR':
+    case 'CHIEF_WARDEN':
       return [operations('/supervisor'), account];
     case 'ADMIN':
       return [

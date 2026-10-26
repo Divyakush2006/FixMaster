@@ -7,6 +7,7 @@ import { navigationFor } from './navigation';
 import { BrandMark } from './BrandMark';
 import { cn } from '../ui/cn';
 import { X } from 'lucide-react';
+import { isManager } from '../../utils/roles';
 
 interface SidebarProps {
   /** Mobile drawer state; on desktop the sidebar is always visible. */
@@ -16,7 +17,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) => {
   const { user } = useAuth();
-  const canSeeEscalations = user?.role === 'SUPERVISOR' || user?.role === 'ADMIN';
+  const canSeeEscalations = isManager(user?.role);
 
   // Same query (and cache entry) as the Escalations page.
   const { data: escalated = [] } = useQuery({

@@ -36,6 +36,9 @@ import {
   StudentProfile,
   StudentProfileInput,
   AccountStatus,
+  HostelType,
+  StaffShift,
+  StaffLeave,
 } from '../types';
 
 // Three separate sign-in portals; each endpoint only accepts its own accounts.
@@ -309,14 +312,36 @@ export const adminApi = {
   // ---- Infrastructure: blocks -> floors -> rooms ----
   listBlocks: () => apiFetch<AdminBlock[]>('/admin/blocks', { method: 'GET' }),
 
-  createBlock: (block_code: string, block_name: string, top_floor: number) =>
+  createBlock: (block_code: string, block_name: string, top_floor: number, hostel_type: HostelType = 'MENS') =>
     apiFetch<AdminBlock>('/admin/blocks', {
       method: 'POST',
-      body: JSON.stringify({ block_code, block_name, top_floor }),
+      body: JSON.stringify({ block_code, block_name, top_floor, hostel_type }),
     }),
 
-  renameBlock: (blockId: string, block_name: string) =>
-    apiFetch<AdminBlock>(`/admin/blocks/${blockId}`, { method: 'PATCH', body: JSON.stringify({ block_name }) }),
+  renameBlock: (blockId: string, block_name: string, hostel_type?: HostelType) =>
+    apiFetch<AdminBlock>(`/admin/blocks/${blockId}`, { method: 'PATCH', body: JSON.stringify({ block_name, hostel_type }) }),
+
+  // ---- Campus organisation ----
+  /** Staff: home block (null = campus pool) and shift. Send only what changes. */
+  setPlacement: (userId: string, changes: { home_block_id?: string | null; shift?: StaffShift | null }) =>
+    apiFetch<{ user_id: string; home_block_id: string | null; shift: StaffShift | null }>(`/admin/users/${userId}/placement`, {
+      method: 'PATCH',
+      body: JSON.stringify(changes),
+    }),
+
+  /** Supervisors: replaces their blocks; an empty list means every block. */
+  setSupervisorBlocks: (userId: string, block_ids: string[]) =>
+    apiFetch<{ block_ids: string[]; campus_wide: boolean }>(`/admin/users/${userId}/blocks`, {
+      method: 'PUT',
+      body: JSON.stringify({ block_ids }),
+    }),
+
+  listLeave: (userId: string) => apiFetch<StaffLeave[]>(`/admin/users/${userId}/leave`, { method: 'GET' }),
+
+  addLeave: (userId: string, data: { starts_on: string; ends_on: string; reason?: string }) =>
+    apiFetch<StaffLeave>(`/admin/users/${userId}/leave`, { method: 'POST', body: JSON.stringify(data) }),
+
+  deleteLeave: (leaveId: number) => apiFetch<void>(`/admin/leave/${leaveId}`, { method: 'DELETE' }),
 
   listFloors: (blockId: string) => apiFetch<BlockFloor[]>(`/admin/blocks/${blockId}/floors`, { method: 'GET' }),
 

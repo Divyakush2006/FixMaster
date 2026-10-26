@@ -13,6 +13,7 @@ import { Role } from '../../types';
 export const IDLE_LIMIT_MINUTES: Record<Role, number> = {
   ADMIN: 30,
   SUPERVISOR: 60,
+  CHIEF_WARDEN: 60,
   STUDENT: 120,
   STAFF: 240,
 };

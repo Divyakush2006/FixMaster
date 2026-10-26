@@ -8,12 +8,13 @@ import { WORKSPACE_NAME } from './navigation';
 import { NotificationBell } from './NotificationBell';
 import { UserMenu } from './UserMenu';
 import type { AiHealthStatus } from '../../types';
+import { isManager } from '../../utils/roles';
 
 export const Topbar: React.FC<{ onOpenNav: () => void }> = ({ onOpenNav }) => {
   const { user } = useAuth();
   if (!user) return null;
 
-  const isSupervisorOrAdmin = user.role === 'SUPERVISOR' || user.role === 'ADMIN';
+  const isSupervisorOrAdmin = isManager(user.role);
 
   const { data: health } = useQuery<AiHealthStatus>({
     queryKey: ['ai-health'],

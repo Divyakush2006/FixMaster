@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, LockOpen, Power, UserPlus } from 'lucide-react';
+import { KeyRound, LockOpen, MapPin, Power, UserPlus } from 'lucide-react';
 import { adminApi } from '../../api/endpoints';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/ui/Toast';
@@ -24,11 +24,12 @@ import { CreateUserPayload, Role, Specialization, User } from '../../types';
 import { ROLE_LABEL, SPECIALIZATION_LABEL } from '../../utils/labels';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
 import { PASSWORD_HINT, passwordProblem } from '../../utils/password';
+import { OrganiseUserModal, placementSummary } from './OrganiseUserModal';
 
 const isLocked = (u: User) => !!u.locked_until && new Date(u.locked_until).getTime() > Date.now();
 
-const ROLES: Role[] = ['STUDENT', 'STAFF', 'SUPERVISOR', 'ADMIN'];
-const CREATABLE_ROLES: Role[] = ['STAFF', 'SUPERVISOR', 'ADMIN', 'STUDENT'];
+const ROLES: Role[] = ['STUDENT', 'STAFF', 'SUPERVISOR', 'CHIEF_WARDEN', 'ADMIN'];
+const CREATABLE_ROLES: Role[] = ['STAFF', 'SUPERVISOR', 'CHIEF_WARDEN', 'ADMIN', 'STUDENT'];
 const SPECIALIZATIONS: Specialization[] = ['CLEANING', 'ELECTRICIAN', 'CARPENTER', 'AC_TECH', 'PLUMBER'];
 
 type RoleTab = Role | 'ALL';
@@ -46,6 +47,7 @@ export const UsersPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const [resetting, setResetting] = useState<User | null>(null);
+  const [organising, setOrganising] = useState<User | null>(null);
   const q = useDebouncedValue(search.trim(), 300);
 
   // Search, filters and paging run on the server, so the page stays fast
@@ -68,7 +70,16 @@ export const UsersPage: React.FC = () => {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const countFor = (tab: RoleTab) =>
-    summary ? { ALL: summary.all, STUDENT: summary.student, STAFF: summary.staff, SUPERVISOR: summary.supervisor, ADMIN: summary.admin }[tab] : undefined;
+    summary
+      ? {
+          ALL: summary.all,
+          STUDENT: summary.student,
+          STAFF: summary.staff,
+          SUPERVISOR: summary.supervisor,
+          CHIEF_WARDEN: summary.chief_warden,
+          ADMIN: summary.admin,
+        }[tab]
+      : undefined;
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['admin-users'] });
@@ -123,7 +134,7 @@ export const UsersPage: React.FC = () => {
       <PageHeader
         breadcrumbs={[{ label: 'Administration' }, { label: 'Users & access' }]}
         title="Users & access"
-        description="Create staff, supervisor and administrator accounts, deactivate leavers, unlock accounts and reset passwords."
+        description="Create staff, supervisor, chief warden and administrator accounts, place staff and supervisors in blocks, deactivate leavers, unlock accounts and reset passwords."
         actions={
           <Button icon={UserPlus} onClick={() => setCreating(true)}>
             New account
@@ -228,13 +239,14 @@ export const UsersPage: React.FC = () => {
                     <Th>ID</Th>
                     <Th>Role</Th>
                     <Th>Trade</Th>
+                    <Th>Placement</Th>
                     <Th>Status</Th>
                     <Th>Last sign-in</Th>
                     <Th className="text-right">Actions</Th>
                   </tr>
                 </THead>
                 {isLoading ? (
-                  <TableSkeleton columns={7} />
+                  <TableSkeleton columns={8} />
                 ) : (
                   <TBody>
                     {users.map((u) => (
@@ -256,6 +268,7 @@ export const UsersPage: React.FC = () => {
                           <RoleBadge role={u.role} />
                         </Td>
                         <Td>{u.specialization ? <SpecializationBadge specialization={u.specialization} /> : <span className="text-slate-500">—</span>}</Td>
+                        <Td className="whitespace-nowrap text-[13px] text-slate-600">{placementSummary(u) ?? <span className="text-slate-500">—</span>}</Td>
                         <Td>
                           <div className="flex flex-wrap gap-1.5">
                             {u.is_active ? (
@@ -282,6 +295,11 @@ export const UsersPage: React.FC = () => {
                             {isLocked(u) && (
                               <Button size="sm" variant="secondary" icon={LockOpen} disabled={unlock.isPending} onClick={() => unlock.mutate(u)}>
                                 Unlock
+                              </Button>
+                            )}
+                            {(u.role === 'STAFF' || u.role === 'SUPERVISOR') && (
+                              <Button size="sm" variant="secondary" icon={MapPin} onClick={() => setOrganising(u)}>
+                                {u.role === 'STAFF' ? 'Placement' : 'Blocks'}
                               </Button>
                             )}
                             <Button size="sm" variant="secondary" icon={KeyRound} onClick={() => setResetting(u)}>
@@ -314,6 +332,7 @@ export const UsersPage: React.FC = () => {
 
       {creating && <CreateUserModal onClose={() => setCreating(false)} />}
       {resetting && <ResetPasswordModal user={resetting} onClose={() => setResetting(null)} />}
+      {organising && <OrganiseUserModal user={organising} onClose={() => setOrganising(null)} onSaved={refresh} />}
     </div>
   );
 };

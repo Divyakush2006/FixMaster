@@ -64,6 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       case 'STAFF':
         return '/staff';
       case 'SUPERVISOR':
+      case 'CHIEF_WARDEN':
         return '/supervisor';
       case 'ADMIN':
         return '/admin/dashboard';

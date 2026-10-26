@@ -81,6 +81,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   STUDENT: 'Student',
   STAFF: 'Technician',
   SUPERVISOR: 'Supervisor',
+  CHIEF_WARDEN: 'Chief warden',
   ADMIN: 'Administrator',
 };
 

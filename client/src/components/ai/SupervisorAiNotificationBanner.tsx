@@ -6,13 +6,14 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../ui/Toast';
 import { aiApi } from '../../api/endpoints';
 import type { AiHealthStatus } from '../../types';
+import { isManager } from '../../utils/roles';
 
 export const SupervisorAiNotificationBanner: React.FC = () => {
   const { user } = useAuth();
   const { showToast } = useToast();
   const prevStatusRef = useRef<string | null>(null);
 
-  const isSupervisorOrAdmin = user?.role === 'SUPERVISOR' || user?.role === 'ADMIN';
+  const isSupervisorOrAdmin = isManager(user?.role);
 
   const { data: health } = useQuery<AiHealthStatus>({
     queryKey: ['ai-health'],

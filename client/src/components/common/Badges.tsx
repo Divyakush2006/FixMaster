@@ -85,6 +85,7 @@ const ROLE_TONE: Record<Role, Tone> = {
   STUDENT: 'brand',
   STAFF: 'success',
   SUPERVISOR: 'orange',
+  CHIEF_WARDEN: 'violet',
   ADMIN: 'violet',
 };
 

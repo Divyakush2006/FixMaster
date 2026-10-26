@@ -17,7 +17,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Skeleton } from '../../components/ui/PageLoader';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td } from '../../components/ui/Table';
 import { cn } from '../../components/ui/cn';
-import { AdminBlock, AdminRoom, RoomType } from '../../types';
+import { AdminBlock, AdminRoom, HostelType, RoomType } from '../../types';
 import { floorCode, floorLabel, roomNumberFor } from '../../utils/formatters';
 import { ROOM_TYPE_LABEL } from '../../utils/labels';
 
@@ -207,7 +207,7 @@ export const InfrastructurePage: React.FC = () => {
                   <div>
                     <div className="flex items-center gap-1.5">
                       <h2 className="text-lg font-semibold text-slate-900">{block.block_name}</h2>
-                      <IconButton icon={Pencil} label="Rename block" size="sm" onClick={() => setRenaming(true)} />
+                      <IconButton icon={Pencil} label="Edit block" size="sm" onClick={() => setRenaming(true)} />
                     </div>
                     <p className="font-mono text-xs text-slate-500">{block.block_id}</p>
                   </div>
@@ -542,10 +542,11 @@ const AddBlockModal: React.FC<{ onClose: () => void; onCreated: (blockId: string
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [topFloor, setTopFloor] = useState(10);
+  const [hostelType, setHostelType] = useState<HostelType>('MENS');
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => adminApi.createBlock(code.trim().toUpperCase(), name.trim(), topFloor),
+    mutationFn: () => adminApi.createBlock(code.trim().toUpperCase(), name.trim(), topFloor, hostelType),
     onSuccess: (b) => {
       showToast('Block created', 'success', `${b.block_name} with ground floor and floors 1–${topFloor}.`);
       onCreated(b.block_id);
@@ -590,9 +591,19 @@ const AddBlockModal: React.FC<{ onClose: () => void; onCreated: (blockId: string
             {(a) => <Input {...a} value={name} onChange={(e) => setName(e.target.value)} maxLength={50} />}
           </Field>
         </div>
-        <Field label="Top floor" required hint="Floors can be added or removed later.">
-          {(a) => <Input {...a} type="number" min={1} max={99} value={topFloor} onChange={(e) => setTopFloor(Number(e.target.value))} className="w-32" />}
-        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Top floor" required hint="Floors can be added or removed later.">
+            {(a) => <Input {...a} type="number" min={1} max={99} value={topFloor} onChange={(e) => setTopFloor(Number(e.target.value))} className="w-32" />}
+          </Field>
+          <Field label="Hostel">
+            {(a) => (
+              <Select {...a} value={hostelType} onChange={(e) => setHostelType(e.target.value as HostelType)}>
+                <option value="MENS">Men's hostel</option>
+                <option value="LADIES">Ladies' hostel</option>
+              </Select>
+            )}
+          </Field>
+        </div>
         <button type="submit" className="hidden" aria-hidden tabIndex={-1} />
       </form>
     </Modal>
@@ -602,13 +613,14 @@ const AddBlockModal: React.FC<{ onClose: () => void; onCreated: (blockId: string
 const RenameBlockModal: React.FC<{ block: AdminBlock; onClose: () => void; onRenamed: () => void }> = ({ block, onClose, onRenamed }) => {
   const { showToast } = useToast();
   const [name, setName] = useState(block.block_name);
+  const [hostelType, setHostelType] = useState<HostelType>(block.hostel_type ?? 'MENS');
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => adminApi.renameBlock(block.block_id, name.trim()),
+    mutationFn: () => adminApi.renameBlock(block.block_id, name.trim(), hostelType),
     onSuccess: () => {
       onRenamed();
-      showToast('Block renamed', 'success');
+      showToast('Block updated', 'success');
       onClose();
     },
     onError: (err: Error) => setError(err.message || 'Could not rename the block.'),
@@ -618,7 +630,7 @@ const RenameBlockModal: React.FC<{ block: AdminBlock; onClose: () => void; onRen
     e?.preventDefault();
     setError(null);
     if (!name.trim()) return setError('Enter a block name.');
-    if (name.trim() === block.block_name) return onClose();
+    if (name.trim() === block.block_name && hostelType === block.hostel_type) return onClose();
     mutation.mutate();
   };
 
@@ -626,7 +638,7 @@ const RenameBlockModal: React.FC<{ block: AdminBlock; onClose: () => void; onRen
     <Modal
       isOpen
       onClose={onClose}
-      title="Rename block"
+      title="Edit block"
       subtitle={`Code ${block.block_code} · ${block.block_id}`}
       footer={
         <>
@@ -643,6 +655,14 @@ const RenameBlockModal: React.FC<{ block: AdminBlock; onClose: () => void; onRen
         {error && <Alert tone="danger">{error}</Alert>}
         <Field label="Block name" required>
           {(a) => <Input {...a} value={name} onChange={(e) => setName(e.target.value)} maxLength={50} />}
+        </Field>
+        <Field label="Hostel">
+          {(a) => (
+            <Select {...a} value={hostelType} onChange={(e) => setHostelType(e.target.value as HostelType)}>
+              <option value="MENS">Men's hostel</option>
+              <option value="LADIES">Ladies' hostel</option>
+            </Select>
+          )}
         </Field>
       </form>
     </Modal>

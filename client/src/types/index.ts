@@ -1,4 +1,4 @@
-export type Role = 'STUDENT' | 'STAFF' | 'SUPERVISOR' | 'ADMIN';
+export type Role = 'STUDENT' | 'STAFF' | 'SUPERVISOR' | 'CHIEF_WARDEN' | 'ADMIN';
 
 export type ComplaintStatus =
   | 'OPEN'
@@ -66,6 +66,22 @@ export interface User {
   email_verified_at?: string | null;
   /** GET /me only: whether a student has saved their resident profile. */
   profile_complete?: boolean;
+  /** Staff: the block they are based in (null = campus pool) and their shift. */
+  home_block_id?: string | null;
+  shift?: StaffShift | null;
+  /** Supervisors (admin user list): blocks they manage; empty = every block. */
+  managed_blocks?: string[] | null;
+}
+
+export type StaffShift = 'MORNING' | 'EVENING' | 'NIGHT';
+export type HostelType = 'MENS' | 'LADIES';
+
+export interface StaffLeave {
+  leave_id: number;
+  staff_user_id: string;
+  starts_on: string;
+  ends_on: string;
+  reason: string | null;
 }
 
 export type AccountStatus = 'PENDING_VERIFICATION' | 'PENDING_PROFILE' | 'ACTIVE';
@@ -167,6 +183,7 @@ export interface AdminBlock {
   block_id: string;
   block_code: string;
   block_name: string;
+  hostel_type: HostelType;
   total_floors: number;
   floor_count: number;
   room_count: number;
@@ -409,6 +426,7 @@ export interface HostelBlock {
   block_id: string;
   block_name: string;
   total_floors?: number;
+  hostel_type?: HostelType;
 }
 
 export interface Room {
@@ -480,6 +498,7 @@ export interface UserSummary {
   student: number;
   staff: number;
   supervisor: number;
+  chief_warden: number;
   admin: number;
   locked: number;
   deactivated: number;
