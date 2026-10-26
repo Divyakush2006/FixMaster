@@ -39,6 +39,8 @@ import {
   HostelType,
   StaffShift,
   StaffLeave,
+  AssistantResponse,
+  AiHealthStatus,
 } from '../types';
 
 // Three separate sign-in portals; each endpoint only accepts its own accounts.
@@ -371,21 +373,15 @@ export const adminApi = {
 };
 
 export const aiApi = {
-  parseAndTriage: (data: { raw_text: string; photo_url?: string | null; student_allotment_room?: string | null }) =>
-    apiFetch<{ success: boolean; data: import('../types').AiTriageResult; meta: { source: string } }>('/ai/parse-and-triage', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+  /** Ticket drafts from a student's own words. Nothing is created until the student submits a draft. */
+  draftTickets: (text: string) => apiFetch<AssistantResponse>('/assistant/draft', { method: 'POST', body: JSON.stringify({ text }) }),
 
-  previewAllocation: (data: { category_id?: number | null; subcategory_id?: number | null; priority?: string; floor_number?: number | null }) =>
-    apiFetch<{ success: boolean; data: import('../types').AiAllocationPreview; meta: { source: string } }>('/ai/allocate-technician', {
-      method: 'POST',
-      body: JSON.stringify({ ...data, preview: true }),
-    }),
+  /** Managers: AI provider health. */
+  getHealth: () => apiFetch<AiHealthStatus>('/ai/health', { method: 'GET' }),
 
-  /** Supervisor/Admin: poll AI service health status. */
-  getHealth: () =>
-    apiFetch<import('../types').AiHealthStatus>('/ai/health', { method: 'GET' }),
+  /** Chief wardens and administrators: switch every AI feature off (or back on) campus-wide. */
+  setDrill: (active: boolean, reason?: string) =>
+    apiFetch<AiHealthStatus>('/ai/drill', { method: 'POST', body: JSON.stringify({ active, reason }) }),
 };
 
 

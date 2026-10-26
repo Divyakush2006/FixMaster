@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Building2, DoorOpen } from 'lucide-react';
 import { metaApi, complaintsApi } from '../../api/endpoints';
@@ -13,7 +13,8 @@ import { Alert } from '../../components/ui/Alert';
 import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/cn';
 import { PriorityBadge, SpecializationBadge } from '../../components/common/Badges';
-import { TicketScope, Priority, CommonAreaItem, CreateComplaintPayload } from '../../types';
+import { TicketScope, Priority, CommonAreaItem, CreateComplaintPayload, AssistantDraft } from '../../types';
+import { RequestAssistant } from '../../components/ai';
 import { PhotoPicker } from '../../components/common/PhotoPicker';
 import { preparePhoto } from '../../utils/photo';
 import { blockLabel, PRIORITY_LABEL, ticketRef } from '../../utils/labels';
@@ -68,6 +69,37 @@ export const NewComplaintForm: React.FC = () => {
   const navigate = useNavigate();
 
   const { data: blocks = [] } = useQuery({ queryKey: ['meta-blocks'], queryFn: metaApi.getBlocks });
+  const location = useLocation();
+  const formRef = useRef<HTMLDivElement>(null);
+  const [draftNote, setDraftNote] = useState<string | null>(null);
+
+  // A draft from the request assistant fills the form; the student reviews
+  // it and sends it like any other request. Priority follows the issue type
+  // (the effect below), exactly as when the issue is picked by hand.
+  const applyDraft = (d: AssistantDraft) => {
+    setTicketScope(d.ticket_scope);
+    if (d.ticket_scope === 'COMMON_AREA') {
+      if (d.block_id) setBlockId(d.block_id);
+      setCommonAreaId(d.common_area_id ?? '');
+    }
+    setCategoryId(d.category_id);
+    setSubcategoryId(d.subcategory_id);
+    setDescription(d.description);
+    setFormError(null);
+    setDraftNote(d.review_hint ?? 'Filled in from your description. Check each step, then send.');
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // Arriving from the student home page with a draft already chosen.
+  const routedDraft = (location.state as { draft?: AssistantDraft } | null)?.draft;
+  const appliedRoutedDraft = useRef(false);
+  useEffect(() => {
+    if (routedDraft && !appliedRoutedDraft.current && !isLoadingAllotment) {
+      appliedRoutedDraft.current = true;
+      applyDraft(routedDraft);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routedDraft, isLoadingAllotment]);
 
   const { data: commonAreas = [], isLoading: isLoadingCommonAreas } = useQuery({
     queryKey: ['meta-common-areas', blockId],
@@ -192,6 +224,18 @@ export const NewComplaintForm: React.FC = () => {
         title="Raise a ticket"
         description="Report a maintenance problem in your room or a shared area of the hostel."
       />
+
+      <div className="mb-6">
+        <RequestAssistant onUse={applyDraft} />
+      </div>
+
+      <div ref={formRef} className="scroll-mt-20">
+        {draftNote && (
+          <Alert tone="info" className="mb-4">
+            {draftNote}
+          </Alert>
+        )}
+      </div>
 
       <form onSubmit={handleSubmit} noValidate className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[1fr_320px]">
         <Card>

@@ -21,7 +21,7 @@ import { TicketsTable } from './TicketsTable';
 import { Complaint, Subcategory } from '../../types';
 import { floorLabel, formatRelativeTime } from '../../utils/formatters';
 import { blockLabel, greeting, isOpenStatus, PRIORITY_LABEL, ROOM_TYPE_LABEL, SPECIALIZATION_LABEL, ticketLocation, ticketRef } from '../../utils/labels';
-import { AiComplaintAssistant } from '../../components/ai';
+import { RequestAssistant } from '../../components/ai';
 
 export const StudentHome: React.FC = () => {
   const [verifyingComplaint, setVerifyingComplaint] = useState<Complaint | null>(null);
@@ -99,16 +99,8 @@ export const StudentHome: React.FC = () => {
       />
 
       <div className="space-y-6">
-        {/* Compact AI One-Input Assistant on Student Dashboard */}
-        <AiComplaintAssistant
-          compact
-          studentRoom={allotment?.room_id}
-          onApply={(triage, preview) => {
-            sessionStorage.setItem('pendingAiTriage', JSON.stringify({ triage, preview }));
-            showToast('AI Triage Complete', 'success', `Categorized as ${triage.subcategory_name} (${triage.priority})`);
-            navigate('/student/new');
-          }}
-        />
+        {/* Describe-it-in-your-own-words: drafts open in the request form for review. */}
+        <RequestAssistant compact onUse={(draft) => navigate('/student/new', { state: { draft } })} />
 
         {pendingVerification.length > 0 && (
           <Card className="border-amber-200">

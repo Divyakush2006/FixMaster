@@ -271,28 +271,33 @@ export interface CreateComplaintPayload {
   ai_decided?: boolean;
 }
 
-export interface AiTriageResult {
+/** One ticket draft from the request assistant. Priority is the issue's catalogue value, shown for information. */
+export interface AssistantDraft {
   ticket_scope: TicketScope;
-  room_id?: string | null;
+  block_id: string | null;
+  room_id: string | null;
+  common_area_id: string | null;
+  common_area_name: string | null;
   category_id: number;
   category_name: string;
   subcategory_id: number;
-  subcategory_name: string;
+  issue_name: string;
+  required_specialization: Specialization;
   priority: Priority;
-  priority_reasoning: string;
-  safety_advisory?: string | null;
-  standardized_description: string;
+  description: string;
+  confidence: number | null;
+  safety_advice: string | null;
+  /** What the student still has to do: ROOM_ALLOTMENT, CHOOSE_AREA. */
+  needs: ('ROOM_ALLOTMENT' | 'CHOOSE_AREA')[];
+  existing_ticket: { complaint_id: string; status: ComplaintStatus } | null;
+  review_hint: string | null;
 }
 
-export interface AiAllocationPreview {
-  selected_staff_user_id: string | null;
-  staff_name: string | null;
-  specialization: Specialization;
-  allocation_reasoning: string;
-  meta?: {
-    source: string;
-    candidates_count: number;
-  };
+export interface AssistantResponse {
+  source: 'ai' | 'rules';
+  drafts: AssistantDraft[];
+  clarification: string | null;
+  notice: string | null;
 }
 
 export interface Complaint {
@@ -504,14 +509,23 @@ export interface UserSummary {
   deactivated: number;
 }
 
+export interface AiProviderHealth {
+  provider: string;
+  configured: boolean;
+  breaker_open: boolean;
+  used_today: number;
+  daily_limit: number;
+  ok_last_hour: number;
+  failed_last_hour: number;
+  last_ok_at: string | null;
+  last_error: string | null;
+}
+
 export interface AiHealthStatus {
   status: 'HEALTHY' | 'DEGRADED' | 'DOWN' | 'DISABLED';
-  gemini_enabled: boolean;
-  recent_calls: number;
-  fallback_count: number;
-  fallback_rate: number;
-  last_fallback_at: string | null;
-  last_success_at: string | null;
-  message: string;
+  /** Set while a chief warden or administrator is running an outage drill. */
+  drill: { active: boolean; reason: string | null; since: string | null } | null;
+  providers: AiProviderHealth[];
+  routes: Record<string, { provider: string; model: string }[]>;
 }
 
