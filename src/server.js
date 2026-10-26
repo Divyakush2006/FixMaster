@@ -1,6 +1,7 @@
 const app = require('./app');
 const db = require('./config/db');
 const { startVerificationSweeper } = require('./services/verificationSweeper');
+const { startFeedbackTagger } = require('./services/autopilot/feedbackTagger');
 
 const PORT = parseInt(process.env.PORT, 10) || 5000;
 const SHUTDOWN_GRACE_MS = 10000;
@@ -11,6 +12,8 @@ const server = app.listen(PORT, () => {
 
 // Background job: close tickets nobody verified (see verificationSweeper.js).
 const stopSweeper = startVerificationSweeper();
+// Background job: themes in residents' review comments (see feedbackTagger.js).
+const stopTagger = startFeedbackTagger();
 
 // Graceful shutdown: on SIGTERM (container stop, deploy, scale-down) stop
 // accepting new connections, let in-flight requests finish, then close the
@@ -28,6 +31,7 @@ function shutdown(signal, exitCode = 0) {
     forceExit.unref();
 
     stopSweeper();
+    stopTagger();
     server.close(async () => {
         try {
             await db.pool.end();

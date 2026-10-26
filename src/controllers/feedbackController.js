@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { autoDispatchIfEnabled } = require('../services/autopilot');
 
 // POST /api/feedback - closed-loop verification by whoever raised the ticket.
 //
@@ -22,7 +23,12 @@ exports.submitResolutionFeedback = asyncHandler(async (req, res) => {
         ]);
     }, userId);
 
+    // Work sent back goes to someone else at once where the autopilot is on
+    // AUTO; the technician the residents were unhappy with is excluded.
+    const redispatch = is_satisfied ? null : await autoDispatchIfEnabled(complaint_id);
+
     res.status(200).json({
+        autopilot: redispatch,
         message: is_satisfied
             ? 'Complaint closed and marked COMPLETED.'
             : 'Complaint ESCALATED for re-inspection.',

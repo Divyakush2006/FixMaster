@@ -504,6 +504,41 @@ const aiDrillValidators = [
     handleValidation,
 ];
 
+// ---- Autopilot -------------------------------------------------------------------
+
+const WEIGHT_KEYS = ['quality', 'load', 'idle', 'proximity', 'reliability', 'roomHistory'];
+
+const autopilotTicketParamValidators = [param('complaint_id').trim().notEmpty().isLength({ max: 36 }).withMessage('complaint id is invalid.'), handleValidation];
+const autopilotDispatchValidators = [body('complaint_id').isString().trim().notEmpty().isLength({ max: 36 }).withMessage('complaint_id is required.'), handleValidation];
+
+const autopilotSettingValidators = [
+    body('block_id').optional({ values: 'null' }).isString().trim().notEmpty().isLength({ max: 10 }).withMessage('block_id is invalid.'),
+    body('specialization').isIn(SPECIALIZATIONS).withMessage(`specialization must be one of: ${SPECIALIZATIONS.join(', ')}.`),
+    body('mode').isIn(['OFF', 'SUGGEST', 'AUTO']).withMessage('mode must be OFF, SUGGEST or AUTO.'),
+    body('live_job_cap').optional().isInt({ min: 1, max: 50 }).withMessage('live_job_cap must be 1-50.').toInt(),
+    body('weights')
+        .optional({ values: 'null' })
+        .custom(
+            (w) =>
+                w && typeof w === 'object' && !Array.isArray(w) &&
+                Object.keys(w).every((k) => WEIGHT_KEYS.includes(k) && Number.isFinite(w[k]) && w[k] >= 0 && w[k] <= 100) &&
+                Object.values(w).some((x) => x > 0)
+        )
+        .withMessage(`weights must map some of ${WEIGHT_KEYS.join(', ')} to numbers 0-100, not all zero.`),
+    handleValidation,
+];
+
+const autopilotPerformanceValidators = [
+    query('specialization').optional().isIn(SPECIALIZATIONS).withMessage(`specialization must be one of: ${SPECIALIZATIONS.join(', ')}.`),
+    handleValidation,
+];
+
+const cleaningPlanValidators = [
+    query('block_id').isString().trim().notEmpty().isLength({ max: 10 }).withMessage('block_id is required.'),
+    query('shift').optional().isIn(['MORNING', 'EVENING', 'NIGHT']).withMessage('shift must be MORNING, EVENING or NIGHT.'),
+    handleValidation,
+];
+
 const leaveIdValidators = [param('leave_id').isInt({ min: 1 }).withMessage('leave id is invalid.').toInt(), handleValidation];
 const userIdOnlyValidators = [param('user_id').trim().notEmpty().isLength({ max: 36 }).withMessage('user id is invalid.'), handleValidation];
 
@@ -580,6 +615,11 @@ module.exports = {
     updateBlockValidators,
     staffPlacementValidators,
     assistantDraftValidators,
+    autopilotTicketParamValidators,
+    autopilotDispatchValidators,
+    autopilotSettingValidators,
+    autopilotPerformanceValidators,
+    cleaningPlanValidators,
     aiDrillValidators,
     supervisorBlocksValidators,
     leaveValidators,

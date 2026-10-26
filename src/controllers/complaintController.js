@@ -5,6 +5,7 @@ const { slaDueSql, slaStatusSql } = require('../services/slaService');
 const { photoUrl, sanitizeImage, savePhoto, removePhoto, findPhoto } = require('../services/attachmentService');
 const { managedBlocks, scopeCondition, inScope, assertTicketInScope } = require('../services/scopeService');
 const { MANAGER_ROLES } = require('../config/roles');
+const { autoDispatchIfEnabled } = require('../services/autopilot');
 
 // Ticket model (migrations 007-008): the ROOM or COMMON AREA is the unit of a
 // ticket, not the person. There is at most one live ticket per location and
@@ -331,7 +332,11 @@ exports.createComplaint = asyncHandler(async (req, res) => {
             complaint: outcome.complaint,
         });
     }
-    res.status(201).json({ joined: false, message: 'Complaint registered', complaint: outcome.complaint });
+    // Blocks and trades on AUTO are dispatched straight away, after the ticket
+    // is committed (never inside its transaction). The answer reports it.
+    const dispatched = await autoDispatchIfEnabled(outcome.complaint.complaint_id);
+    const complaint = dispatched && dispatched.assigned ? { ...outcome.complaint, status: 'ASSIGNED', assigned_staff_name: dispatched.staff_name } : outcome.complaint;
+    res.status(201).json({ joined: false, message: 'Complaint registered', complaint, autopilot: dispatched });
 });
 
 /** Adds the caller as a reporter of an existing live ticket (inside the create transaction). */
