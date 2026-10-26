@@ -49,6 +49,11 @@ import {
   ScoreComponent,
   StaffPerformanceRow,
   CleaningPlan,
+  InsightsOverview,
+  BreachRiskTicket,
+  RecurringFault,
+  Briefing,
+  AskResult,
 } from '../types';
 
 // Three separate sign-in portals; each endpoint only accepts its own accounts.
@@ -414,4 +419,18 @@ export const autopilotApi = {
     apiFetch<CleaningPlan>('/autopilot/cleaning-plan', { method: 'GET', params: { block_id: blockId, shift } }),
 
   tagFeedback: () => apiFetch<{ tagged: number; source: string | null }>('/autopilot/tag-feedback', { method: 'POST' }),
+};
+
+export const insightsApi = {
+  overview: (blockId?: string) => apiFetch<InsightsOverview>('/insights/overview', { method: 'GET', params: { block_id: blockId } }),
+
+  breachRisk: () => apiFetch<BreachRiskTicket[]>('/insights/breach-risk', { method: 'GET' }),
+
+  recurring: () => apiFetch<RecurringFault[]>('/insights/recurring', { method: 'GET', params: { days: 30 } }),
+
+  briefing: () => apiFetch<Briefing>('/insights/briefing', { method: 'GET' }),
+
+  refreshBriefing: () => apiFetch<Briefing>('/insights/briefing/refresh', { method: 'POST' }),
+
+  ask: (question: string) => apiFetch<AskResult>('/insights/ask', { method: 'POST', body: JSON.stringify({ question }) }),
 };

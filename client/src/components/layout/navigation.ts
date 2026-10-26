@@ -12,6 +12,7 @@ import {
   UserCircle2,
   ScrollText,
   Sparkles,
+  Newspaper,
   Gauge,
   SlidersHorizontal,
   LucideIcon,
@@ -49,6 +50,7 @@ const operations = (home: string): NavSection => ({
     { label: 'All tickets', to: '/supervisor/all-complaints', icon: Inbox },
     { label: 'Escalations', to: '/supervisor/escalated', icon: AlertTriangle, badge: 'escalations' },
     { label: 'Recurring issues', to: '/supervisor/hotspots', icon: Repeat },
+    { label: 'Daily briefing', to: '/supervisor/insights', icon: Newspaper },
   ],
 });
 

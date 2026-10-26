@@ -616,3 +616,76 @@ export interface CleaningPlan {
   unassigned_floors: number[];
   uses_campus_pool: boolean;
 }
+
+// ---- Insights --------------------------------------------------------------------
+
+export interface InsightsTotals {
+  blocks: number;
+  open_tickets: number;
+  unassigned: number;
+  overdue: number;
+  at_risk: number;
+  emergencies: number;
+  raised_24h: number;
+}
+
+export interface InsightsBlockRow {
+  block_id: string;
+  block_name: string;
+  open_tickets: number;
+  unassigned: number;
+  overdue: number;
+  at_risk: number;
+  emergencies: number;
+  raised_24h: number;
+  avg_rating_30d: number | null;
+}
+
+export interface InsightsOverview {
+  totals: InsightsTotals;
+  blocks: InsightsBlockRow[];
+}
+
+export interface BreachRiskTicket {
+  complaint_id: string;
+  block_id: string;
+  priority: Priority;
+  status: string;
+  category_name: string;
+  issue_name: string;
+  location: string | null;
+  sla_status: 'OVERDUE' | 'AT_RISK';
+  due_at: string;
+  hours_left: number;
+  assigned_to: string | null;
+}
+
+export interface RecurringFault {
+  block_id: string;
+  ticket_scope: 'ROOM' | 'COMMON_AREA';
+  location: string | null;
+  category_name: string;
+  incidents: number;
+  most_recent: string;
+}
+
+export interface Briefing {
+  narrative: { headline: string; highlights: string[]; actions: string[] };
+  facts: { totals: InsightsTotals };
+  source: 'AI' | 'RULES';
+  model: string | null;
+  generated_at: string;
+  cached: boolean;
+}
+
+export type InsightReport = 'overview' | 'breach_risk' | 'recurring_faults' | 'category_mix' | 'unassigned';
+
+export interface AskResult {
+  answered: boolean;
+  answer: string;
+  source: 'AI' | 'RULES';
+  report?: InsightReport;
+  title?: string;
+  params?: { block_id: string | null; days: number | null };
+  rows?: unknown;
+}
