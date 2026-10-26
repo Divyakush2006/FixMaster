@@ -504,6 +504,20 @@ const aiDrillValidators = [
     handleValidation,
 ];
 
+// ---- Insights --------------------------------------------------------------------
+
+const insightsQueryValidators = [
+    query('block_id').optional().isString().trim().notEmpty().isLength({ max: 10 }).withMessage('block_id is invalid.'),
+    query('days').optional().isInt({ min: 1, max: 90 }).withMessage('days must be 1-90.'),
+    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('limit must be 1-100.'),
+    handleValidation,
+];
+
+const insightsAskValidators = [
+    body('question').isString().trim().isLength({ min: 3, max: 300 }).withMessage('Ask in 3 to 300 characters.'),
+    handleValidation,
+];
+
 // ---- Autopilot -------------------------------------------------------------------
 
 const WEIGHT_KEYS = ['quality', 'load', 'idle', 'proximity', 'reliability', 'roomHistory'];
@@ -621,6 +635,8 @@ module.exports = {
     autopilotPerformanceValidators,
     cleaningPlanValidators,
     aiDrillValidators,
+    insightsQueryValidators,
+    insightsAskValidators,
     supervisorBlocksValidators,
     leaveValidators,
     leaveIdValidators,

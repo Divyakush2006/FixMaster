@@ -99,6 +99,7 @@ app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/ai', require('./routes/aiRoutes'));
 app.use('/api/assistant', require('./routes/assistantRoutes'));
 app.use('/api/autopilot', require('./routes/autopilotRoutes'));
+app.use('/api/insights', require('./routes/insightsRoutes'));
 
 app.use(notFoundHandler);
 app.use(errorHandler);

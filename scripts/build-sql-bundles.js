@@ -33,6 +33,7 @@ const DEV_ONLY_DROPS = `-- DEVELOPMENT ONLY: everything below starts by DROPPING
 -- Never run this against a database whose data you want to keep; production
 -- schemas are created and upgraded with \`npm run db:migrate\`.
 DROP TABLE IF EXISTS schema_migrations CASCADE;
+DROP TABLE IF EXISTS ai_briefings CASCADE;
 DROP TABLE IF EXISTS feedback_tags CASCADE;
 DROP TABLE IF EXISTS autopilot_settings CASCADE;
 DROP TABLE IF EXISTS ai_calls CASCADE;
