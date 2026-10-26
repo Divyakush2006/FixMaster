@@ -30,8 +30,50 @@ export async function signOut(page: Page) {
   await expect(page).toHaveURL(/\/(login|admin)(\?|$)/);
 }
 
-/** A reg number unique to this run, so re-runs and parallel files never collide. */
-export const uniqueReg = (prefix = '26E2E') => `${prefix}${Date.now().toString().slice(-7)}${Math.floor(Math.random() * 90 + 10)}`;
+/**
+ * A registration number in the VIT format (21BCE0843) that is unique to this
+ * run, so re-runs and parallel files never collide: three random letters and
+ * four digits give 175 million combinations.
+ */
+export const uniqueReg = () => {
+  const letters = Array.from({ length: 3 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');
+  return `26${letters}${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
+};
+
+/** A new student's university address. */
+export const studentEmail = (regNo: string) => `${regNo.toLowerCase()}@vitstudent.ac.in`;
+
+/** Reads the 6-digit sign-up code from Mailpit and enters it; lands on onboarding. */
+export async function confirmEmailCode(page: Page, regNo: string) {
+  await expect(page).toHaveURL(/\/verify-email/);
+  const mail = await waitForMail(studentEmail(regNo), /verification code/i);
+  const code = mail.Text.match(/code is (\d{6})/)![1];
+  await page.getByLabel('Verification code').fill(code);
+  await page.getByRole('button', { name: 'Confirm and continue' }).click();
+  await expect(page).toHaveURL(/\/onboarding$/);
+}
+
+/** Fills the six-step resident profile with valid details and finishes it. */
+export async function completeOnboarding(page: Page) {
+  await page.getByLabel('School').fill('SCOPE');
+  await page.getByLabel('Programme').fill('B.Tech Computer Science');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByLabel('Gender').selectOption('FEMALE');
+  await page.getByLabel('Date of birth').fill('2006-04-12');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByLabel('Parent or guardian').fill('R. Iyer');
+  await page.getByLabel('Relation').selectOption('Mother');
+  await page.getByLabel('Their phone').fill('9876500011');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByLabel('City').fill('Coimbatore');
+  await page.getByLabel('State or UT').selectOption('Tamil Nadu');
+  await page.getByLabel('PIN code').fill('641001');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByLabel(/I have read the privacy notice/).check();
+  await page.getByRole('button', { name: 'Finish and continue' }).click();
+  await expect(page).toHaveURL(/\/student$/);
+}
 
 /** Plays the hostel office: approves the room request of a registration number. */
 export async function approveRoomRequest(page: Page, regNo: string) {

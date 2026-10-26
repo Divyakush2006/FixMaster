@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const register = vi.fn();
@@ -16,6 +16,7 @@ vi.mock('../../context/AuthContext', () => ({
 vi.mock('../../components/ui/Toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../api/endpoints', () => ({
   metaApi: { getBlocks: () => getBlocks(), getRoomsByBlock: (id: string) => getRoomsByBlock(id) },
+  authApi: { capabilities: async () => ({ password_reset: true, student_signup: true, student_email_domains: ['vitstudent.ac.in'] }) },
 }));
 
 import { RegisterScreen } from './RegisterScreen';
@@ -37,7 +38,10 @@ function setup() {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <RegisterScreen />
+        <Routes>
+          <Route path="/" element={<RegisterScreen />} />
+          <Route path="/verify-email" element={<p>Code entry page</p>} />
+        </Routes>
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -119,9 +123,24 @@ describe('RegisterScreen', () => {
     expect(register).not.toHaveBeenCalled();
   });
 
-  it('submits the chosen block, floor and room once, then signs in', async () => {
-    register.mockResolvedValue({ user: { role: 'STUDENT' }, roomRequest: { room_id: 'X-101' } });
-    login.mockResolvedValue({ role: 'STUDENT' });
+  it('refuses addresses outside the university domain before calling the API', async () => {
+    const user = userEvent.setup();
+    setup();
+    await screen.findByRole('option', { name: 'X Block' });
+    await user.type(screen.getByLabelText(/^email/i), 'asha@gmail.com');
+    await user.type(screen.getByLabelText(/registration number/i), 'ASHA01');
+    await user.click(screen.getByRole('button', { name: /create account/i }));
+    expect(await screen.findByText(/use your university email address/i)).toBeTruthy();
+    expect(screen.getByText(/as printed on your id card/i)).toBeTruthy();
+    expect(register).not.toHaveBeenCalled();
+  });
+
+  it('submits the chosen block, floor and room once, then asks for the emailed code', async () => {
+    register.mockResolvedValue({
+      user: { role: 'STUDENT', reg_or_emp_id: '24BCE0001' },
+      room_request: { room_id: 'X-101' },
+      verification: { email: 'as***@vitstudent.ac.in', expires_in_minutes: 15 },
+    });
     const user = userEvent.setup();
     setup();
     await screen.findByRole('option', { name: 'X Block' });
@@ -132,7 +151,8 @@ describe('RegisterScreen', () => {
     await user.selectOptions(select(/^room/i), 'X-101');
     await user.dblClick(screen.getByRole('button', { name: /create account/i }));
 
-    await waitFor(() => expect(login).toHaveBeenCalledWith('student', '24BCE0001', 'Corridor7Lamp'));
+    expect(await screen.findByText('Code entry page')).toBeTruthy();
+    expect(login).not.toHaveBeenCalled();
     expect(register).toHaveBeenCalledTimes(1);
     expect(register).toHaveBeenCalledWith(expect.objectContaining({ block_id: 'X_BLOCK', floor_number: 1, room_id: 'X-101' }));
   });

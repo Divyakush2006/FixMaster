@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { ADMIN, approveRoomRequest, signIn, signOut, uniqueReg } from '../helpers';
+import { ADMIN, approveRoomRequest, completeOnboarding, confirmEmailCode, signIn, signOut, studentEmail, uniqueReg } from '../helpers';
 
 const NEW_PASSWORD = 'Corridor7Lamp!';
 
@@ -7,7 +7,7 @@ async function register(page: Page, regNo: string, room: { block: string; floor:
   await page.goto('/register');
   await page.getByLabel('Registration number').fill(regNo);
   await page.getByLabel('Full name').fill('E2E Newcomer');
-  await page.getByLabel('Email', { exact: true }).fill(`${regNo.toLowerCase()}@e2e.test`);
+  await page.getByLabel('Email', { exact: true }).fill(studentEmail(regNo));
   await page.getByLabel('Mobile number').fill('9876543210');
   if (room) {
     await page.getByLabel('Block').selectOption({ label: room.block });
@@ -17,6 +17,9 @@ async function register(page: Page, regNo: string, room: { block: string; floor:
   await page.getByLabel('Password', { exact: true }).fill(NEW_PASSWORD);
   await page.getByLabel('Confirm password').fill(NEW_PASSWORD);
   await page.getByRole('button', { name: 'Create account' }).click();
+  // Confirm the university mailbox, then the resident profile.
+  await confirmEmailCode(page, regNo);
+  await completeOnboarding(page);
 }
 
 test.describe('registration, room requests and allotment', () => {
@@ -24,7 +27,7 @@ test.describe('registration, room requests and allotment', () => {
     const regNo = uniqueReg();
     await register(page, regNo, { block: 'L-Block (Ladies/Mens Hostel)', floor: 'Floor 1', room: 'L-101' });
 
-    // Registered and signed straight in: the request is pending and grants nothing yet.
+    // Registered, verified and onboarded: the request is pending and grants nothing yet.
     await expect(page).toHaveURL(/\/student$/);
     await expect(page.getByText(/waiting for the hostel office to confirm room L-101/i)).toBeVisible();
     await page.goto('/student/new');
@@ -62,11 +65,34 @@ test.describe('registration, room requests and allotment', () => {
     await expect(page.getByRole('row').filter({ hasText: regNo })).toHaveCount(0);
   });
 
+  test('sign-in sends an unconfirmed student back to the code screen', async ({ page }) => {
+    const regNo = uniqueReg();
+    await page.goto('/register');
+    await page.getByLabel('Registration number').fill(regNo);
+    await page.getByLabel('Full name').fill('E2E Unconfirmed');
+    await page.getByLabel('Email', { exact: true }).fill(studentEmail(regNo));
+    await page.getByLabel('Mobile number').fill('9876543210');
+    await page.getByLabel('Block').selectOption({ label: 'L-Block (Ladies/Mens Hostel)' });
+    await page.getByLabel('Floor').selectOption({ label: 'Floor 3' });
+    await page.getByLabel('Room').selectOption({ label: 'L-305' });
+    await page.getByLabel('Password', { exact: true }).fill(NEW_PASSWORD);
+    await page.getByLabel('Confirm password').fill(NEW_PASSWORD);
+    await page.getByRole('button', { name: 'Create account' }).click();
+    await expect(page).toHaveURL(/\/verify-email/);
+
+    await page.goto('/login');
+    await page.getByLabel(/registration number/i).fill(regNo);
+    await page.getByRole('textbox', { name: 'Password' }).fill(NEW_PASSWORD);
+    await page.getByRole('button', { name: /sign in as student/i }).click();
+    await confirmEmailCode(page, regNo);
+    await completeOnboarding(page);
+  });
+
   test('registration without a room works, and the form refuses a weak or mismatched password', async ({ page }) => {
     await page.goto('/register');
     await page.getByLabel('Registration number').fill(uniqueReg());
     await page.getByLabel('Full name').fill('Weak Pass');
-    await page.getByLabel('Email', { exact: true }).fill(`weak${Date.now()}@e2e.test`);
+    await page.getByLabel('Email', { exact: true }).fill(`weak${Date.now()}@vitstudent.ac.in`);
     await page.getByLabel('Mobile number').fill('9876543210');
     await page.getByLabel('Password', { exact: true }).fill('short');
     await page.getByLabel('Confirm password').fill('short');

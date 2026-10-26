@@ -115,6 +115,11 @@ async function request<T>(endpoint: string, options: RequestOptions): Promise<{ 
         window.location.href = `${signInPage}?expired=1`;
       }
     }
+    // A student who has not finished onboarding can only use the onboarding
+    // screens; any other request sends them back there.
+    if (response.status === 403 && body?.code === 'PROFILE_INCOMPLETE' && signedIn && window.location.pathname !== '/onboarding') {
+      window.location.href = '/onboarding';
+    }
     throw new ApiError(mapApiError(body), response.status, body);
   }
 

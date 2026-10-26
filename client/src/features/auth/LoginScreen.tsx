@@ -80,6 +80,11 @@ export const LoginScreen: React.FC = () => {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Sign-in failed.';
       setErrorMsg(message);
+      // A new student who never entered their email code is sent back to do so.
+      if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
+        navigate('/verify-email', { state: { regNo: regOrEmpId.trim().toUpperCase(), email: err.details?.email } });
+        return;
+      }
       // The API names the right tab (only after the password checked out).
       if (err instanceof ApiError && err.status === 403) {
         if (/Staff tab/.test(message)) setSuggestedPortal('staff');

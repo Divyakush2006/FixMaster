@@ -55,6 +55,12 @@ export function saveSession(user: User, expiresAt: string): void {
   touchActivity();
 }
 
+/** Updates the stored profile of the signed-in person (e.g. after onboarding). */
+export function updateStoredUser(patch: Partial<User>): void {
+  const current = getStoredUser();
+  if (current) localStorage.setItem(USER_KEY, JSON.stringify({ ...current, ...patch }));
+}
+
 /** After a password change the server re-issues the cookie with a new end time. */
 export function updateSessionExpiry(expiresAt: string): void {
   localStorage.setItem(EXPIRES_KEY, expiresAt);

@@ -7,9 +7,15 @@ import { PageLoader } from '../ui/PageLoader';
 interface ProtectedRouteProps {
   children: React.ReactNode;
   allowedRoles?: Role[];
+  /** The onboarding page itself: reachable before the profile is complete. */
+  allowIncompleteProfile?: boolean;
 }
 
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }) => {
+/** True when a signed-in student still has to finish onboarding. */
+export const needsOnboarding = (user: { role: Role; account_status?: string } | null) =>
+  !!user && user.role === 'STUDENT' && !!user.account_status && user.account_status !== 'ACTIVE';
+
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles, allowIncompleteProfile }) => {
   const { isAuthenticated, isLoading, user, getHomeRouteForRole } = useAuth();
   const location = useLocation();
 
@@ -20,6 +26,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
     // sign-in, everything else to the student/staff page.
     const signIn = location.pathname.startsWith('/admin') ? '/admin' : '/login';
     return <Navigate to={signIn} state={{ from: location }} replace />;
+  }
+
+  if (needsOnboarding(user) && !allowIncompleteProfile) {
+    return <Navigate to="/onboarding" replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {

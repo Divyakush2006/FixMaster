@@ -1,5 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { authApi } from '../../api/endpoints';
 import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/ui/Toast';
@@ -12,6 +14,11 @@ import { AuthHeading, AuthLayout } from './AuthLayout';
 import { PASSWORD_HINT, passwordProblem, passwordStrength } from '../../utils/password';
 
 const STRENGTH_BAR = ['', 'bg-rose-500', 'bg-amber-500', 'bg-emerald-500'];
+
+// The server is the authority on both rules; checking here only saves a round trip.
+const REG_NO = /^\d{2}[A-Z]{3}\d{4}$/;
+const DEFAULT_DOMAINS = ['vitstudent.ac.in'];
+const domainOf = (email: string) => email.slice(email.lastIndexOf('@') + 1).toLowerCase();
 
 // This screen only ever registers STUDENT accounts (POST /auth/student/register).
 // Staff, supervisor and admin accounts are created by an administrator.
@@ -36,18 +43,24 @@ export const RegisterScreen: React.FC = () => {
   // State updates are asynchronous: a fast double-click would pass an isLoading check twice.
   const submitting = useRef(false);
 
-  const { register, login, getHomeRouteForRole } = useAuth();
+  const { register } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const { data: caps } = useQuery({ queryKey: ['auth-capabilities'], queryFn: authApi.capabilities, staleTime: 5 * 60_000 });
+  const domains = caps?.student_email_domains?.length ? caps.student_email_domains : DEFAULT_DOMAINS;
+  const signupOff = caps?.student_signup === false;
 
   const strength = passwordStrength(password);
 
   const validate = () => {
     const errs: Record<string, string> = {};
     if (!regOrEmpId.trim()) errs.regOrEmpId = 'Enter your registration number.';
+    else if (!REG_NO.test(regOrEmpId.trim().toUpperCase())) errs.regOrEmpId = 'Enter it as printed on your ID card, e.g. 21BCE0843.';
     if (!fullName.trim()) errs.fullName = 'Enter your full name.';
     if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      errs.email = 'Enter a valid email address, e.g. name@vitstudent.ac.in.';
+      errs.email = `Enter your university email, e.g. name@${domains[0]}.`;
+    } else if (!domains.includes(domainOf(email.trim()))) {
+      errs.email = `Use your university email address (ending in @${domains.join(' or @')}).`;
     }
     if (!phone.trim() || !/^\d{10}$/.test(phone.trim())) {
       errs.phone = 'Enter a 10-digit mobile number.';
@@ -72,8 +85,8 @@ export const RegisterScreen: React.FC = () => {
     setServerError(null);
 
     try {
-      const { roomRequest } = await register({
-        reg_or_emp_id: regOrEmpId.trim(),
+      const res = await register({
+        reg_or_emp_id: regOrEmpId.trim().toUpperCase(),
         full_name: fullName.trim(),
         email: email.trim(),
         phone_number: phone.trim(),
@@ -83,14 +96,12 @@ export const RegisterScreen: React.FC = () => {
         room_id: room.roomId,
       });
 
-      // Sign straight in; the student home explains the pending room request.
-      const user = await login('student', regOrEmpId.trim(), password);
-      showToast(
-        'Your account is ready',
-        'success',
-        roomRequest ? `Your request for room ${roomRequest.room_id} is with the hostel office.` : 'You are now signed in.'
-      );
-      navigate(getHomeRouteForRole(user.role), { replace: true });
+      // Next: prove the mailbox is theirs. The code screen signs them in.
+      showToast('Check your email', 'success', `We sent a 6-digit code to ${res.verification.email}.`);
+      navigate('/verify-email', {
+        replace: true,
+        state: { regNo: res.user.reg_or_emp_id, email: res.verification.email, minutes: res.verification.expires_in_minutes },
+      });
     } catch (err) {
       submitting.current = false; // a failed attempt may be retried; a successful one is not repeated
       const msg = err instanceof Error ? err.message : 'Registration failed.';
@@ -119,8 +130,13 @@ export const RegisterScreen: React.FC = () => {
         <ArrowLeft className="h-4 w-4" aria-hidden />
         Back to sign in
       </Link>
-      <AuthHeading title="Create your student account" subtitle="All fields are required." />
+      <AuthHeading title="Create your student account" subtitle={`Use your @${domains[0]} address. We will email you a code to confirm it.`} />
 
+      {signupOff && (
+        <Alert tone="warning" className="mb-4">
+          Online sign-up is not available right now. Please contact the hostel office.
+        </Alert>
+      )}
       {serverError && (
         <Alert tone="danger" className="mb-4">
           {serverError}
@@ -138,7 +154,7 @@ export const RegisterScreen: React.FC = () => {
           </Field>
           <Field label="Email" required error={errors.email}>
             {(a) => (
-              <Input {...a} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@vitstudent.ac.in" autoComplete="email" />
+              <Input {...a} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={`name@${domains[0]}`} autoComplete="email" />
             )}
           </Field>
           <Field label="Mobile number" required error={errors.phone}>
@@ -180,7 +196,7 @@ export const RegisterScreen: React.FC = () => {
           {(a) => <PasswordInput {...a} value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />}
         </Field>
 
-        <Button type="submit" size="lg" block loading={isLoading} disabled={!hasInfrastructure}>
+        <Button type="submit" size="lg" block loading={isLoading} disabled={!hasInfrastructure || signupOff}>
           Create account
         </Button>
 

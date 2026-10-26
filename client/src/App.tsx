@@ -17,6 +17,8 @@ const named = <T extends Record<string, React.ComponentType<any>>>(loader: () =>
 
 const LoginScreen = named(() => import('./features/auth/LoginScreen'), 'LoginScreen');
 const RegisterScreen = named(() => import('./features/auth/RegisterScreen'), 'RegisterScreen');
+const VerifyEmailScreen = named(() => import('./features/auth/VerifyEmailScreen'), 'VerifyEmailScreen');
+const OnboardingPage = named(() => import('./features/onboarding/OnboardingPage'), 'OnboardingPage');
 const ForgotPasswordScreen = named(() => import('./features/auth/PasswordResetScreens'), 'ForgotPasswordScreen');
 const ResetPasswordScreen = named(() => import('./features/auth/PasswordResetScreens'), 'ResetPasswordScreen');
 const AdminLoginScreen = named(() => import('./features/auth/AdminLoginScreen'), 'AdminLoginScreen');
@@ -60,6 +62,17 @@ export const App: React.FC = () => {
                         separate administrator sign-in. */}
                     <Route path="/login" element={<LoginScreen />} />
                     <Route path="/register" element={<RegisterScreen />} />
+                    <Route path="/verify-email" element={<VerifyEmailScreen />} />
+
+                    {/* A new student's resident profile: its own page, before the app opens up. */}
+                    <Route
+                      path="/onboarding"
+                      element={
+                        <ProtectedRoute allowedRoles={['STUDENT']} allowIncompleteProfile>
+                          <OnboardingPage />
+                        </ProtectedRoute>
+                      }
+                    />
                     <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
                     <Route path="/reset-password" element={<ResetPasswordScreen />} />
                     <Route path="/admin" element={<AdminLoginScreen />} />

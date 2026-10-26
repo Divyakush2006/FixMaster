@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { KeyRound } from 'lucide-react';
+import { IdCard, KeyRound } from 'lucide-react';
 import { meApi } from '../../api/endpoints';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/ui/Toast';
@@ -8,7 +8,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { Card, CardBody, CardFooter, CardHeader, DetailList } from '../../components/ui/Card';
 import { Alert } from '../../components/ui/Alert';
 import { Avatar } from '../../components/ui/Avatar';
-import { Button } from '../../components/ui/Button';
+import { Button, ButtonLink } from '../../components/ui/Button';
 import { Field, PasswordInput } from '../../components/ui/Form';
 import { Skeleton } from '../../components/ui/PageLoader';
 import { RoleBadge, SpecializationBadge } from '../../components/common/Badges';
@@ -92,9 +92,28 @@ export const AccountPage: React.FC = () => {
             )}
           </CardBody>
           <div className="rounded-b-lg border-t border-slate-200 bg-slate-50/70 px-5 py-3 text-xs text-slate-500">
-            To correct your details or room allotment, contact the hostel office.
+            To correct your name, email or room allotment, contact the hostel office.
           </div>
         </Card>
+
+        {me?.role === 'STUDENT' && (
+          <Card>
+            <CardHeader
+              icon={
+                <span className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+                  <IdCard className="h-4 w-4" />
+                </span>
+              }
+              title="Resident profile"
+              description="Your studies, emergency contacts, home address and preferences. Keep them current."
+              actions={
+                <ButtonLink to="/onboarding" variant="secondary" size="sm">
+                  View or update
+                </ButtonLink>
+              }
+            />
+          </Card>
+        )}
 
         <Card>
           <form onSubmit={handleSubmit} noValidate>

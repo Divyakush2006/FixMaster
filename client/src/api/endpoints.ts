@@ -31,6 +31,11 @@ import {
   RoomRequest,
   PendingAllotmentRequest,
   AppNotification,
+  AuthCapabilities,
+  RegisterResponse,
+  StudentProfile,
+  StudentProfileInput,
+  AccountStatus,
 } from '../types';
 
 // Three separate sign-in portals; each endpoint only accepts its own accounts.
@@ -46,7 +51,7 @@ export const authApi = {
   logout: () => apiFetch<void>('/auth/logout', { method: 'POST', keepalive: true }),
 
   /** What this deployment can do, e.g. whether password-reset email is set up. */
-  capabilities: () => apiFetch<{ password_reset: boolean }>('/auth/capabilities', { method: 'GET' }),
+  capabilities: () => apiFetch<AuthCapabilities>('/auth/capabilities', { method: 'GET' }),
 
   forgotPassword: (reg_or_emp_id: string) =>
     apiFetch<{ message: string }>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ reg_or_emp_id }) }),
@@ -54,12 +59,21 @@ export const authApi = {
   resetPassword: (token: string, new_password: string) =>
     apiFetch<{ message: string }>('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, new_password }) }),
 
-  // Public self-registration exists for students only.
+  // Public self-registration exists for students only. The account cannot sign
+  // in until the code emailed to the university address is confirmed.
   registerStudent: (data: RegisterPayload) =>
-    apiFetch<{ message: string; user: User; room_request: RoomRequest | null }>('/auth/student/register', {
+    apiFetch<RegisterResponse>('/auth/student/register', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  /** Confirms the emailed code and opens a session (status PENDING_PROFILE). */
+  verifyEmail: (reg_or_emp_id: string, code: string) =>
+    apiFetch<AuthResponse>('/auth/student/verify-email', { method: 'POST', body: JSON.stringify({ reg_or_emp_id, code }) }),
+
+  /** Always 202; a code is only sent when the account is waiting for one. */
+  resendCode: (reg_or_emp_id: string) =>
+    apiFetch<{ message: string }>('/auth/student/resend-code', { method: 'POST', body: JSON.stringify({ reg_or_emp_id }) }),
 };
 
 export const complaintsApi = {
@@ -201,6 +215,16 @@ export const notificationsApi = {
 
 export const meApi = {
   getMe: () => apiFetch<User>('/me', { method: 'GET' }),
+
+  /** The student's resident record, or null before onboarding. */
+  getProfile: () => apiFetch<{ profile: StudentProfile | null; account_status: AccountStatus }>('/me/profile', { method: 'GET' }),
+
+  /** Saves the record; the first save finishes onboarding (account becomes ACTIVE). */
+  saveProfile: (data: StudentProfileInput) =>
+    apiFetch<{ message: string; profile: StudentProfile; account_status: AccountStatus }>('/me/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
 
   /** The student's latest room request, or null when none is open / they already have a room. */
   getRoomRequest: () => apiFetch<{ request: RoomRequest | null }>('/me/room-request', { method: 'GET' }),

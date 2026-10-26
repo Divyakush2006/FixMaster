@@ -61,6 +61,70 @@ export interface User {
   last_login_at?: string | null;
   /** Set while the account is locked after repeated failed sign-ins. */
   locked_until?: string | null;
+  /** Self-registered students go PENDING_VERIFICATION -> PENDING_PROFILE -> ACTIVE. */
+  account_status?: AccountStatus;
+  email_verified_at?: string | null;
+  /** GET /me only: whether a student has saved their resident profile. */
+  profile_complete?: boolean;
+}
+
+export type AccountStatus = 'PENDING_VERIFICATION' | 'PENDING_PROFILE' | 'ACTIVE';
+
+export type Gender = 'MALE' | 'FEMALE' | 'OTHER' | 'UNDISCLOSED';
+export type CleaningSlot = 'MORNING' | 'AFTERNOON' | 'EVENING' | 'ANY';
+export type AssistantLanguage = 'en' | 'hi' | 'ta' | 'te';
+export type BloodGroup = 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-';
+
+/** The resident record a student completes at first sign-in. */
+export interface StudentProfileFields {
+  school: string;
+  programme: string;
+  admission_year: number;
+  expected_graduation_year: number;
+  gender: Gender;
+  date_of_birth: string;
+  guardian_name: string;
+  guardian_relation: string;
+  guardian_phone: string;
+  local_guardian_name?: string | null;
+  local_guardian_phone?: string | null;
+  permanent_city: string;
+  permanent_state: string;
+  permanent_pincode: string;
+  preferred_cleaning_slot: CleaningSlot;
+  preferred_language: AssistantLanguage;
+  health_consent: boolean;
+  blood_group?: BloodGroup | null;
+  medical_notes?: string | null;
+}
+
+export interface StudentProfile extends StudentProfileFields {
+  user_id: string;
+  privacy_notice_version: string;
+  privacy_consented_at: string;
+  completed_at: string;
+  updated_at: string;
+}
+
+export interface StudentProfileInput extends StudentProfileFields {
+  privacy_consent: boolean;
+  privacy_notice_version: string;
+}
+
+/** What this deployment supports, for the public pages. */
+export interface AuthCapabilities {
+  password_reset: boolean;
+  student_signup?: boolean;
+  student_email_domains?: string[];
+  privacy_notice_version?: string;
+}
+
+export interface RegisterResponse {
+  message: string;
+  user: User;
+  room_request: RoomRequest | null;
+  /** Where the code went (masked) and how long it works. */
+  verification: { email: string; expires_in_minutes: number };
 }
 
 export interface CreateUserPayload {
