@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ChevronRight } from 'lucide-react';
@@ -14,6 +14,7 @@ import { Alert } from '../../components/ui/Alert';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
 import { StatusBadge, PriorityBadge, SpecializationBadge, SlaBadge } from '../../components/common/Badges';
 import { DispatchDrawer } from './DispatchDrawer';
+import { AiHealthBanner } from '../../components/ai/AiHealthBanner';
 import { Complaint, ComplaintStatus, SlaStatus } from '../../types';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
 import { STATUS_LABEL, ticketLocation, ticketRef } from '../../utils/labels';
@@ -35,16 +36,27 @@ const SLA_FILTERS: { value: SlaStatus; label: string }[] = [
  * server (limit/offset + X-Total-Count), so it stays fast at any volume.
  */
 export const AllComplaintsTable: React.FC = () => {
-  // ?sla=OVERDUE etc. lets the dashboard link straight to a filtered register.
+  // ?sla=OVERDUE / ?status=OPEN let the dashboard and the AI banner link
+  // straight to a filtered register.
   const [searchParams] = useSearchParams();
   const initialSla = SLA_FILTERS.some((f) => f.value === searchParams.get('sla')) ? (searchParams.get('sla') as string) : '';
-  const [statusFilter, setStatusFilter] = useState('');
+  const urlStatus = searchParams.get('status') || '';
+  const [statusFilter, setStatusFilter] = useState(urlStatus);
   const [slaFilter, setSlaFilter] = useState(initialSla);
   const [blockFilter, setBlockFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Complaint | null>(null);
   const q = useDebouncedValue(searchQuery.trim(), 300);
+
+  // Sync with URL query parameter when navigating from notification banner
+  useEffect(() => {
+    const s = searchParams.get('status');
+    if (s !== null) {
+      setStatusFilter(s);
+      setPage(1);
+    }
+  }, [searchParams]);
 
   const { data: blocks = [] } = useQuery({ queryKey: ['meta-blocks'], queryFn: metaApi.getBlocks });
 
@@ -82,6 +94,10 @@ export const AllComplaintsTable: React.FC = () => {
         title="All tickets"
         description="Inspect any ticket and dispatch or reassign it to a technician."
       />
+
+      <div className="mb-5">
+        <AiHealthBanner />
+      </div>
 
       <Card>
         <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-3.5 lg:flex-row lg:items-center">

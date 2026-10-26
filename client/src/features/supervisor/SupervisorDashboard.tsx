@@ -7,6 +7,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { StatCard } from '../../components/ui/StatCard';
 import { Alert } from '../../components/ui/Alert';
+import { AiHealthBanner } from '../../components/ai/AiHealthBanner';
 import { ButtonLink } from '../../components/ui/Button';
 import { Skeleton } from '../../components/ui/PageLoader';
 import { Switch } from '../../components/ui/Switch';
@@ -117,6 +118,9 @@ export const SupervisorDashboard: React.FC = () => {
       />
 
       <div className="space-y-6">
+        {/* AI service health alert for supervisors */}
+        <AiHealthBanner />
+
         {totals.overdue > 0 && (
           <Alert
             tone="danger"

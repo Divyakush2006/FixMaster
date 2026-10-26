@@ -185,6 +185,33 @@ export interface CreateComplaintPayload {
   photo_evidence_url?: string | null;
   priority?: Priority;
   preferred_timeslot?: string | null;
+  ai_priority_reasoning?: string | null;
+  ai_safety_advisory?: string | null;
+  ai_decided?: boolean;
+}
+
+export interface AiTriageResult {
+  ticket_scope: TicketScope;
+  room_id?: string | null;
+  category_id: number;
+  category_name: string;
+  subcategory_id: number;
+  subcategory_name: string;
+  priority: Priority;
+  priority_reasoning: string;
+  safety_advisory?: string | null;
+  standardized_description: string;
+}
+
+export interface AiAllocationPreview {
+  selected_staff_user_id: string | null;
+  staff_name: string | null;
+  specialization: Specialization;
+  allocation_reasoning: string;
+  meta?: {
+    source: string;
+    candidates_count: number;
+  };
 }
 
 export interface Complaint {
@@ -393,3 +420,15 @@ export interface UserSummary {
   locked: number;
   deactivated: number;
 }
+
+export interface AiHealthStatus {
+  status: 'HEALTHY' | 'DEGRADED' | 'DOWN' | 'DISABLED';
+  gemini_enabled: boolean;
+  recent_calls: number;
+  fallback_count: number;
+  fallback_rate: number;
+  last_fallback_at: string | null;
+  last_success_at: string | null;
+  message: string;
+}
+

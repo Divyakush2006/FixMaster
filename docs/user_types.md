@@ -1,12 +1,12 @@
-﻿# FIX_MASTER — User Types & Role-Based Access Control (RBAC) Specification
+# FIX_MASTER — User Types & Role-Based Access Control (RBAC) Specification
 
 ## 1. Architectural Overview
 
-In strict compliance with relational database normalization standards and the course rubric (*single users table with a ole discriminator*), all users in the system reside in a unified users table.
+In strict compliance with relational database normalization standards and the BCSE307L course rubric, all system actors reside in a **single, unified `users` table** with a `role` discriminator. Separate entity tables (`students`, `staff`, `admins`) are avoided to preserve single-point identity management, consistent foreign key relationships, and standard authentication workflows.
 
-Role-specific attributes and permissions are enforced via application-level RBAC middleware and relational mapping tables (such as student_room_allotments and complaint_assignments).
+Role-specific attributes and permissions are enforced via application-level RBAC middleware and relational mapping tables (`student_room_allotments` and `complaint_assignments`).
 
-`mermaid
+```mermaid
 classDiagram
     class User {
         +VARCHAR(36) user_id (PK)
@@ -18,106 +18,105 @@ classDiagram
         +VARCHAR(20) role
         +VARCHAR(30) specialization
         +BOOLEAN is_available
+        +INT failed_login_count
+        +TIMESTAMPTZ locked_until
+        +TIMESTAMPTZ last_login_at
         +TIMESTAMP created_at
     }
     User <|-- STUDENT : role='STUDENT'
     User <|-- STAFF : role='STAFF'
     User <|-- SUPERVISOR : role='SUPERVISOR'
     User <|-- ADMIN : role='ADMIN'
-`
+```
 
 ---
 
 ## 2. Detailed User Roles & Profiles
 
-### 2.1. STUDENT (Hostel Resident)
-
-- **Identity**: VIT Student Registration Number (e.g., 21BCE0843).
-- **Allotment Context**: Linked via student_room_allotments to a specific Block and Room (e.g., L-843).
+### 2.1 STUDENT (Hostel Resident)
+- **Identity**: VIT Registration Number (e.g., `21BCE0843`).
+- **Allotment Context**: Linked via `student_room_allotments` to a specific block and room (e.g., `L-843`).
 - **Capabilities & Permissions**:
-  - **1-Click Quick Action**: Instant request for daily housekeeping and room cleaning.
-  - **Structured Ticket Raising**: Submit detailed technical maintenance complaints (Electrical, AC, Carpentry, Plumbing) with description, optional photo URL, and preferred arrival time slot.
-  - **Common Area Reporting**: Report broken or malfunctioning shared infrastructure (water coolers, common washrooms, lifts, corridor lights).
-  - **Live Tracking**: View assigned technician details (Name, Specialization, Contact Number, Current Status).
-  - **Verification & Rating**: Confirm completion of the job upon staff completion and provide a 1–5 star rating with optional feedback.
-  - **History**: View past complaints history with complete audit timelines.
+  - **1-Click Quick Action**: Request instant daily housekeeping and room cleaning.
+  - **Structured Ticket Raising**: Submit technical issues (Electrical, AC, Carpentry, Plumbing) with description, optional photo proof, and preferred timeslot.
+  - **Common Area Reporting**: Report public facility failures (water coolers, washrooms, elevators).
+  - **Live Tracking**: Monitor assigned technician details, live status, and contact.
+  - **Closed-Loop Verification**: Confirm work completion with 1–5 star rating and feedback.
+  - **Audit History**: Access full complaint timeline.
 
----
-
-### 2.2. STAFF (Maintenance Personnel & Housekeeping)
-
-- **Identity**: Employee ID (e.g., EMP_ELEC_04), with a defined skill specialization.
+### 2.2 STAFF (Maintenance Personnel & Housekeeping)
+- **Identity**: Employee ID (e.g., `EMP_ELEC_01`).
 - **Specializations**:
-  - **CLEANING**: Housekeeping, room sweeping, mopping, dusting, trash clearance.
-  - **ELECTRICIAN**: Power sockets, switches, lights, fans, MCB breakers.
-  - **CARPENTER**: Desks, chairs, wardrobes, door locks, window latches, beds.
-  - **AC_TECH**: Air conditioners, HVAC units, cooling issues, filter cleaning.
-  - **PLUMBER**: Water taps, geysers, flush tanks, clogged drainage, shower heads.
+  - `CLEANING`: Housekeeping, sweeping, mopping, dusting, trash clearance.
+  - `ELECTRICIAN`: Sockets, wiring, lights, fans, MCBs.
+  - `CARPENTER`: Desks, wardrobes, door locks, window latches, beds.
+  - `AC_TECH`: Air conditioners, HVAC units, filters, cooling issues.
+  - `PLUMBER`: Taps, geysers, flush tanks, drainage, pipes.
 - **Capabilities & Permissions**:
-  - **Smart Task Queue**: View tasks assigned to them, automatically sorted by **Floor and Room number** to minimize transit time.
-  - **Status Transitions**: Transition tasks across lifecycle states (ASSIGNED -> IN_PROGRESS / Arrived -> PENDING_VERIFICATION / Work Done).
-  - **Shift Availability**: Toggle status (is_available: On-Duty / Off-Duty / On-Break) for auto-dispatch algorithms.
-  - **Decline / Escalate with Reason**: Flag issues that require replacement parts or higher-level intervention.
+  - **Floor-Optimized Task Queue**: View assigned tasks sorted by floor and room to minimize transit time.
+  - **Lifecycle Transitions**: Transition tickets (`ASSIGNED` → `IN_PROGRESS` → `PENDING_VERIFICATION`).
+  - **Shift Availability**: Toggle `is_available` (`TRUE`/`FALSE`) for auto-dispatch algorithms.
+  - **Decline / Escalate**: Flag issues requiring replacement parts or supervisory escalation.
+
+### 2.3 SUPERVISOR (Hostel Block Supervisor / Warden)
+- **Identity**: Supervisor ID assigned to a specific hostel block (e.g., `SUP_LBLOCK_01`).
+- **Capabilities & Permissions**:
+  - **Block Telemetry Dashboard**: Real-time view of open, active, pending, and escalated complaints across all floors.
+  - **Common Area Management**: Prioritize shared amenity repairs.
+  - **Manual Task Dispatch**: Assign or reassign tickets when staff is bottlenecked, off-duty, or when AI is degraded.
+  - **SLA & Defect Monitoring**: Track resolution times, recurring defect hotspots, and staff workload distribution.
+  - **Resolution Sign-off**: Close disputed complaints or resolve resident escalations.
+
+### 2.4 ADMIN (Chief Warden / Estates & Maintenance Office)
+- **Identity**: System Administrator account (e.g., `ADMIN_ESTATES_01`).
+- **Capabilities & Permissions**:
+  - **Infrastructure Configuration**: Manage hostel blocks, floors, rooms, bed capacities, and common areas.
+  - **User & Allotment Management**: Onboard staff/supervisors, bulk-manage room allotments, and unlock locked accounts.
+  - **Category & SLA Master**: Manage complaint categories, subcategories, SLAs, and priority levels.
+  - **System Audit & Maintenance**: Access administrative audit logs (`audit_log`), backup/restore database (`pg_dump`/`pg_restore`).
 
 ---
 
-### 2.3. SUPERVISOR (Hostel Block Supervisor / Warden)
+## 3. Database Schema Implementation (`users` Table)
 
-- **Identity**: Supervisor ID assigned to manage a specific hostel block (e.g., L_BLOCK).
-- **Capabilities & Permissions**:
-  - **Hostel Telemetry Dashboard**: Real-time overview of active, in-progress, pending, and escalated complaints across all floors in their block.
-  - **Common Area Facility Management**: Monitor and prioritize public amenity issues (e.g., Water coolers down on Floor 8, Elevator maintenance).
-  - **Manual Task Dispatch & Reassignment**: Override auto-dispatch when staff is bottlenecked, on leave, or when urgent escalation is required.
-  - **SLA & Performance Monitoring**: View average resolution times, recurring defect hotspots, and staff workload distribution.
-  - **Resolution Sign-off**: Close unresolved complaints or override student disputes.
-
----
-
-### 2.4. ADMIN (Chief Warden / Estates & Maintenance Office)
-
-- **Identity**: System Administrator account.
-- **Capabilities & Permissions**:
-  - **Infrastructure Configuration**: Add/manage hostel blocks, rooms, bed capacities, and common areas.
-  - **User & Allotment Management**: Onboard supervisors, staff, and bulk-import student room allotments.
-  - **Category & SLA Master Management**: Configure complaint categories, subcategories, target SLA hours, and priority weighting.
-  - **System Audit & Maintenance**: Access full audit logs (complaint_logs), perform database backups (pg_dump), and restore data.
-
----
-
-## 3. Database Schema Implementation (users Table)
-
-`sql
+```sql
 CREATE TABLE users (
-    user_id VARCHAR(36) PRIMARY KEY, -- UUID v4
-    reg_or_emp_id VARCHAR(30) UNIQUE NOT NULL, -- e.g., '21BCE0843' or 'EMP_ELEC_04'
+    user_id VARCHAR(36) PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+    reg_or_emp_id VARCHAR(30) UNIQUE NOT NULL,      -- '21BCE0843' (Student) / 'EMP_ELEC_01' (Staff)
     full_name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     phone_number VARCHAR(15) NOT NULL,
-    password_hash VARCHAR(255) NOT NULL, -- BCrypt hashed password
+    password_hash VARCHAR(255) NOT NULL,           -- BCrypt hash (cost factor 12)
     role VARCHAR(20) NOT NULL CHECK (role IN ('STUDENT', 'STAFF', 'SUPERVISOR', 'ADMIN')),
     specialization VARCHAR(30) CHECK (
         specialization IS NULL OR 
         specialization IN ('CLEANING', 'ELECTRICIAN', 'CARPENTER', 'AC_TECH', 'PLUMBER')
     ),
     is_available BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    failed_login_count INT NOT NULL DEFAULT 0 CHECK (failed_login_count >= 0),
+    locked_until TIMESTAMPTZ,
+    last_login_at TIMESTAMPTZ,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
-`
+
+CREATE INDEX idx_users_role_specialization ON users(role, specialization, is_available);
+CREATE INDEX idx_users_reg_or_emp_id ON users(reg_or_emp_id);
+```
 
 ---
 
 ## 4. Role-Based Permissions Matrix
 
-| Feature / Action | STUDENT | STAFF | SUPERVISOR | ADMIN |
-|---|:---:|:---:|:---:|:---:|
-| Raise 1-Click Cleaning Request | Yes | No | No | No |
-| Raise Technical Complaint (Room) | Yes | No | No | No |
-| Raise Common Area Issue | Yes | Yes | Yes | Yes |
-| View Personal Assigned Task Queue | No | Yes | No | No |
-| Update Task Status (In-Progress / Done) | No | Yes | No | No |
-| Confirm Resolution & Rate Service | Yes | No | No | No |
-| View Block Analytics & Heatmaps | No | No | Yes | Yes |
-| Reassign / Dispatch Tasks Manually | No | No | Yes | Yes |
-| Manage Blocks, Rooms & Categories | No | No | No | Yes |
-| Manage User Accounts & Staff | No | No | No | Yes |
-| Access Database Backup & Recovery | No | No | No | Yes |
+| Feature / Action | STUDENT | STAFF | SUPERVISOR | ADMIN | Enforced Via |
+|---|:---:|:---:|:---:|:---:|---|
+| **1-Click Quick Clean** | Yes | No | No | No | `authorize(['STUDENT'])` |
+| **Raise Room Complaint** | Yes | No | No | No | `authorize(['STUDENT'])` + allotment check |
+| **Raise Common Area Issue** | Yes | Yes | Yes | Yes | Authenticated JWT |
+| **View Assigned Task Queue** | No | Yes | No | No | `authorize(['STAFF'])` + queue filter |
+| **Update Task State (Start / Done)** | No | Yes | No | No | `authorize(['STAFF'])` + ownership check |
+| **Confirm Resolution & Star Rating** | Yes | No | No | No | `sp_confirm_resolution` raiser check |
+| **Block Telemetry & Heatmaps** | No | No | Yes | Yes | `authorize(['SUPERVISOR', 'ADMIN'])` |
+| **Manual Dispatch / Reassignment** | No | No | Yes | Yes | `authorize(['SUPERVISOR', 'ADMIN'])` |
+| **Manage Blocks, Rooms & Allotments** | No | No | No | Yes | `authorize(['ADMIN'])` |
+| **Manage Users & Unlock Accounts** | No | No | No | Yes | `authorize(['ADMIN'])` |
+| **View Administrative Audit Logs** | No | No | No | Yes | `authorize(['ADMIN'])` |

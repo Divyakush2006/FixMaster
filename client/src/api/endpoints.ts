@@ -320,3 +320,23 @@ export const adminApi = {
   updateRoom: (roomId: string, changes: { is_active?: boolean; room_type?: RoomType; bed_capacity?: number }) =>
     apiFetch<AdminRoom>(`/admin/rooms/${roomId}`, { method: 'PATCH', body: JSON.stringify(changes) }),
 };
+
+export const aiApi = {
+  parseAndTriage: (data: { raw_text: string; photo_url?: string | null; student_allotment_room?: string | null }) =>
+    apiFetch<{ success: boolean; data: import('../types').AiTriageResult; meta: { source: string } }>('/ai/parse-and-triage', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  previewAllocation: (data: { category_id?: number | null; subcategory_id?: number | null; priority?: string; floor_number?: number | null }) =>
+    apiFetch<{ success: boolean; data: import('../types').AiAllocationPreview; meta: { source: string } }>('/ai/allocate-technician', {
+      method: 'POST',
+      body: JSON.stringify({ ...data, preview: true }),
+    }),
+
+  /** Supervisor/Admin: poll AI service health status. */
+  getHealth: () =>
+    apiFetch<import('../types').AiHealthStatus>('/ai/health', { method: 'GET' }),
+};
+
+
