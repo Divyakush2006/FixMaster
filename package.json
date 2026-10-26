@@ -39,7 +39,9 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^10.1.0",
-    "pg": "^8.23.0"
+    "pg": "^8.23.0",
+    "rate-limit-redis": "^4.2.3",
+    "redis": "^5.12.1"
   },
   "engines": {
     "node": ">=20"

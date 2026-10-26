@@ -1,4 +1,6 @@
 const rateLimit = require('express-rate-limit');
+const { LazyRedisStore } = require('./redisRateLimitStore');
+const { redisConfigured } = require('../config/redis');
 const jwt = require('jsonwebtoken');
 const { ALL_AUDIENCES } = require('../config/portals');
 const { credentialsOf } = require('../utils/sessionCookies');
@@ -8,9 +10,10 @@ const int = (value, fallback) => {
     return Number.isFinite(n) && n > 0 ? n : fallback;
 };
 
-// NOTE: counters live in this process's memory. With more than one API
-// instance behind a load balancer each instance counts separately; use a
-// shared store (e.g. rate-limit-redis) if the API is scaled horizontally.
+// Counters live in this process's memory unless REDIS_URL is set, in which case
+// they are kept in Redis and shared by every API instance behind the load
+// balancer (if Redis is unreachable the limits are skipped until it returns).
+//
 // Behind a reverse proxy, TRUST_PROXY must be set (see app.js) or every
 // client is counted as the proxy's single IP.
 //
@@ -24,6 +27,16 @@ const loginId = (req) =>
 
 const common = { standardHeaders: 'draft-7', legacyHeaders: false };
 
+// Every limiter is built here, so each gets its own Redis key prefix when Redis
+// is in use. The prefix is the limiter's position in this file, which is the
+// same on every server running the same code.
+let limiterCount = 0;
+function limiter(options, name) {
+    const id = name || limiterCount++;
+    const shared = redisConfigured() ? { store: new LazyRedisStore(`fm:rl:${id}:`), passOnStoreError: true } : {};
+    return rateLimit({ ...options, ...shared });
+}
+
 // Login: only FAILED attempts count, so normal use never trips them.
 //  - per account + IP: stops one source guessing one account's password
 //    without letting one mistyping student lock the whole campus out;
@@ -33,7 +46,7 @@ const common = { standardHeaders: 'draft-7', legacyHeaders: false };
 const loginLimitersFor = (perAccount, perIp, scope) => {
     const window = int(process.env.RATE_LIMIT_AUTH_WINDOW_MS, 15 * 60 * 1000);
     return [
-        rateLimit({
+        limiter({
             ...common,
             windowMs: window,
             limit: perIp,
@@ -41,7 +54,7 @@ const loginLimitersFor = (perAccount, perIp, scope) => {
             keyGenerator: (req) => `${scope}:ip:${req.ip}`,
             message: { error: 'Too many failed sign-in attempts from this network. Please try again later.' },
         }),
-        rateLimit({
+        limiter({
             ...common,
             windowMs: window,
             limit: perAccount,
@@ -60,7 +73,7 @@ const loginLimiters = {
 
 // POST /api/auth/student/register: every attempt counts, successful or not -
 // here the abuse is automated account creation, which succeeds.
-const registerLimiter = rateLimit({
+const registerLimiter = limiter({
     ...common,
     windowMs: int(process.env.RATE_LIMIT_REGISTER_WINDOW_MS, 60 * 60 * 1000),
     limit: int(process.env.RATE_LIMIT_REGISTER_MAX, 10),
@@ -70,14 +83,14 @@ const registerLimiter = rateLimit({
 // POST /api/auth/forgot-password: every request counts. Per account, so nobody
 // can flood one person's inbox; per IP as a coarse ceiling for the campus NAT.
 const forgotPasswordLimiters = [
-    rateLimit({
+    limiter({
         ...common,
         windowMs: int(process.env.RATE_LIMIT_FORGOT_WINDOW_MS, 60 * 60 * 1000),
         limit: int(process.env.RATE_LIMIT_FORGOT_IP_MAX, 60),
         keyGenerator: (req) => `forgot:ip:${req.ip}`,
         message: { error: 'Too many reset requests from this network. Please try again later.' },
     }),
-    rateLimit({
+    limiter({
         ...common,
         windowMs: int(process.env.RATE_LIMIT_FORGOT_WINDOW_MS, 60 * 60 * 1000),
         limit: int(process.env.RATE_LIMIT_FORGOT_MAX, 3),
@@ -87,7 +100,7 @@ const forgotPasswordLimiters = [
 ];
 
 // POST /api/auth/reset-password: a ceiling on guessing/replaying tokens.
-const resetPasswordLimiter = rateLimit({
+const resetPasswordLimiter = limiter({
     ...common,
     windowMs: int(process.env.RATE_LIMIT_FORGOT_WINDOW_MS, 60 * 60 * 1000),
     limit: int(process.env.RATE_LIMIT_RESET_IP_MAX, 60),
@@ -98,14 +111,14 @@ const resetPasswordLimiter = rateLimit({
 // POST /api/auth/student/verify-email: each code also dies after a few wrong
 // guesses (migration 010); these are ceilings on guessing across codes.
 const verifyEmailLimiters = [
-    rateLimit({
+    limiter({
         ...common,
         windowMs: int(process.env.RATE_LIMIT_VERIFY_WINDOW_MS, 15 * 60 * 1000),
         limit: int(process.env.RATE_LIMIT_VERIFY_IP_MAX, 100),
         keyGenerator: (req) => `verify:ip:${req.ip}`,
         message: { error: 'Too many attempts from this network. Please try again later.' },
     }),
-    rateLimit({
+    limiter({
         ...common,
         windowMs: int(process.env.RATE_LIMIT_VERIFY_WINDOW_MS, 15 * 60 * 1000),
         limit: int(process.env.RATE_LIMIT_VERIFY_MAX, 10),
@@ -116,7 +129,7 @@ const verifyEmailLimiters = [
 
 // POST /api/auth/student/resend-code: the code itself can be resent once a
 // minute per account; this stops one network flooding many inboxes.
-const resendCodeLimiter = rateLimit({
+const resendCodeLimiter = limiter({
     ...common,
     windowMs: int(process.env.RATE_LIMIT_VERIFY_WINDOW_MS, 15 * 60 * 1000),
     limit: int(process.env.RATE_LIMIT_RESEND_IP_MAX, 30),
@@ -126,7 +139,7 @@ const resendCodeLimiter = rateLimit({
 
 // POST /api/assistant/draft: each use calls a model. A per-day allowance per
 // student is enforced by the AI gateway; this stops bursts.
-const assistantLimiter = rateLimit({
+const assistantLimiter = limiter({
     ...common,
     windowMs: 60 * 1000,
     limit: int(process.env.RATE_LIMIT_ASSISTANT_MAX, 10),
@@ -135,7 +148,7 @@ const assistantLimiter = rateLimit({
 });
 
 // PUT /api/complaints/:id/photo: uploads are the heaviest requests the API takes.
-const photoUploadLimiter = rateLimit({
+const photoUploadLimiter = limiter({
     ...common,
     windowMs: int(process.env.RATE_LIMIT_UPLOAD_WINDOW_MS, 10 * 60 * 1000),
     limit: int(process.env.RATE_LIMIT_UPLOAD_MAX, 20),
@@ -145,7 +158,7 @@ const photoUploadLimiter = rateLimit({
 
 // GET /api/me/data-export and POST /api/me/erasure-request: bulk reads and a
 // consequential request, so a few per hour per person is plenty.
-const privacyLimiter = rateLimit({
+const privacyLimiter = limiter({
     ...common,
     windowMs: int(process.env.RATE_LIMIT_PRIVACY_WINDOW_MS, 60 * 60 * 1000),
     limit: int(process.env.RATE_LIMIT_PRIVACY_MAX, 10),
@@ -174,7 +187,7 @@ function generalKey(req) {
     return `ip:${req.ip}`;
 }
 
-const generalLimiter = rateLimit({
+const generalLimiter = limiter({
     ...common,
     windowMs: int(process.env.RATE_LIMIT_WINDOW_MS, 60 * 1000),
     limit: (req) =>
@@ -184,6 +197,7 @@ const generalLimiter = rateLimit({
 });
 
 module.exports = {
+    limiter,
     loginLimiters,
     registerLimiter,
     verifyEmailLimiters,

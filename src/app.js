@@ -79,7 +79,11 @@ app.get('/api/health/live', (req, res) => res.json({ status: 'ok' }));
 app.get('/api/health', async (req, res) => {
     try {
         const result = await db.query('SELECT NOW() AS now');
-        res.json({ status: 'ok', server_time: result.rows[0].now });
+        const body = { status: 'ok', server_time: result.rows[0].now };
+        // Redis only shares rate-limit counters; without it the API still serves, so it never fails readiness.
+        const redis = require('./config/redis');
+        if (redis.redisConfigured()) body.redis = redis.getClient().isReady ? 'up' : 'down';
+        res.json(body);
     } catch (err) {
         console.error('Health check: database unreachable:', err.message);
         res.status(503).json({ status: 'error', message: 'Database connection error' });
