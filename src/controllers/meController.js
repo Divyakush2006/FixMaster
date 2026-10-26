@@ -9,6 +9,7 @@ const { countLiveJobs, releaseLiveJobs } = require('../services/taskService');
 const { assertRequestableRoom, recordRoomRequest, requestStatus, WITHDRAW } = require('../services/roomRequestService');
 const { recordAudit } = require('../services/auditService');
 const { getProfile, saveProfile } = require('../services/profileService');
+const { PRIVACY_NOTICE_VERSION } = require('../config/identity');
 
 // GET /api/me - the caller's account (password_hash never selected), plus
 // whether a student still has onboarding to finish.
@@ -25,7 +26,13 @@ exports.getMe = asyncHandler(async (req, res) => {
     if (result.rows.length === 0) {
         throw new AppError(404, 'User not found.');
     }
-    res.json(result.rows[0]);
+    const me = result.rows[0];
+    if (me.role === 'STUDENT' && me.profile_complete) {
+        // The notice changed since this resident last accepted it: they are asked to read it again.
+        const consented = await db.query('SELECT privacy_notice_version FROM student_profiles WHERE user_id = $1', [req.user.userId]);
+        me.privacy_notice_outdated = consented.rows[0] ? consented.rows[0].privacy_notice_version !== PRIVACY_NOTICE_VERSION : false;
+    }
+    res.json(me);
 });
 
 // GET /api/me/profile (STUDENT) - the resident record, or null before onboarding.

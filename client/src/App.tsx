@@ -39,6 +39,7 @@ const AccountPage = named(() => import('./features/account/AccountPage'), 'Accou
 const UsersPage = named(() => import('./features/admin/UsersPage'), 'UsersPage');
 const AllotmentsPage = named(() => import('./features/admin/AllotmentsPage'), 'AllotmentsPage');
 const InfrastructurePage = named(() => import('./features/admin/InfrastructurePage'), 'InfrastructurePage');
+const PrivacyNoticePage = named(() => import('./features/privacy/PrivacyNoticePage'), 'PrivacyNoticePage');
 const PrivacyRequestsPage = named(() => import('./features/admin/PrivacyRequestsPage'), 'PrivacyRequestsPage');
 const AuditLogPage = named(() => import('./features/admin/AuditLogPage'), 'AuditLogPage');
 const NotFoundPage = named(() => import('./features/NotFoundPage'), 'NotFoundPage');
@@ -69,6 +70,8 @@ export const App: React.FC = () => {
                     <Route path="/login" element={<LoginScreen />} />
                     <Route path="/register" element={<RegisterScreen />} />
                     <Route path="/verify-email" element={<VerifyEmailScreen />} />
+                    {/* Public: a student reads it before they have an account. */}
+                    <Route path="/privacy" element={<PrivacyNoticePage />} />
 
                     {/* A new student's resident profile: its own page, before the app opens up. */}
                     <Route

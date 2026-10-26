@@ -73,6 +73,8 @@ export interface User {
   managed_blocks?: string[] | null;
   /** When this person asked for their data to be erased; null when they have not. */
   erasure_requested_at?: string | null;
+  /** Students: the privacy notice changed since they last accepted it. */
+  privacy_notice_outdated?: boolean;
 }
 
 export interface ErasureRequest {
@@ -736,4 +738,13 @@ export interface ReportResult<T> {
   title: string;
   answer: string;
   rows: T;
+}
+
+export interface PrivacyNotice {
+  version: string;
+  title: string;
+  intro: string;
+  sections: { id: string; title: string; items: string[] }[];
+  contact: string;
+  retention: Record<string, number>;
 }

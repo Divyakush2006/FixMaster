@@ -432,6 +432,12 @@ export const OnboardingPage: React.FC = () => {
                   <li>Nothing here is sent to the request assistant or any outside service.</li>
                   <li>You can view and correct it at any time from your account, and ask the hostel office to delete it when you leave the hostel.</li>
                 </ul>
+                <p className="mt-2">
+                  <a href="/privacy" target="_blank" rel="noreferrer" className="font-medium text-brand-700 underline">
+                    Read the full privacy notice
+                  </a>{' '}
+                  (opens in a new tab).
+                </p>
               </section>
               <label className="flex items-start gap-3 text-sm text-slate-800">
                 <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600" checked={consent} onChange={(e) => setConsent(e.target.checked)} />

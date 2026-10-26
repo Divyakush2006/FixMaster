@@ -115,6 +115,15 @@ test.describe('residents and administrators: privacy', () => {
     await expect(page.getByText(/No requests|Ready to erase|Erase/).first()).toBeVisible();
   });
 
+  test('the privacy notice is public and states the retention periods and the rights', async ({ page }) => {
+    await page.goto('/privacy');
+    await expect(page.getByRole('heading', { name: 'How FixMaster uses your information' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'How long we keep it' })).toBeVisible();
+    await expect(page.getByText(/removed after 90 days/).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Your rights' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /back to sign in/i })).toBeVisible();
+  });
+
   test('a resident cannot reach manager pages', async ({ page }) => {
     await signIn(page, STUDENT);
     await page.goto('/supervisor/insights');

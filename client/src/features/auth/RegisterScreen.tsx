@@ -201,7 +201,11 @@ export const RegisterScreen: React.FC = () => {
         </Button>
 
         <p className="text-center text-xs text-slate-500">
-          This creates a student account. Staff and supervisor accounts are issued by the hostel office.
+          This creates a student account. Staff and supervisor accounts are issued by the hostel office. You will be asked to accept the{' '}
+          <a href="/privacy" target="_blank" rel="noreferrer" className="font-medium text-brand-700 underline">
+            privacy notice
+          </a>{' '}
+          before you can use the service.
         </p>
       </form>
     </AuthLayout>

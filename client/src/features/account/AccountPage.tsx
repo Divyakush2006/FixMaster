@@ -65,7 +65,11 @@ const YourDataCard: React.FC<{ role?: string; requestedAt: string | null }> = ({
           </span>
         }
         title="Your data"
-        description="You can see everything we hold about you, and ask for it to be erased."
+        description={
+          <>
+            You can see everything we hold about you, and ask for it to be erased. <a href="/privacy" className="font-medium text-brand-700 underline">Read the privacy notice</a>.
+          </>
+        }
         actions={
           <Button variant="secondary" size="sm" icon={Download} loading={download.isPending} onClick={() => download.mutate()}>
             Download my data

@@ -5,6 +5,7 @@ import { Topbar } from './Topbar';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { PageLoader } from '../ui/PageLoader';
 import { IdleSignOut } from './IdleSignOut';
+import { PrivacyNoticeBanner } from './PrivacyNoticeBanner';
 
 export const AppShell: React.FC = () => {
   const location = useLocation();
@@ -30,6 +31,7 @@ export const AppShell: React.FC = () => {
         <Topbar onOpenNav={() => setNavOpen(true)} />
         <main id="main" className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           {/* Keyed by path: a crash on one page doesn't stick when you navigate away. */}
+          <PrivacyNoticeBanner />
           <ErrorBoundary key={location.pathname}>
             <Suspense fallback={<PageLoader />}>
               <Outlet />

@@ -55,6 +55,7 @@ import {
   Briefing,
   AskResult,
   ErasureRequest,
+  PrivacyNotice,
   ReportResult,
   BlockComparisonRow,
   VolumeTrend,
@@ -213,6 +214,9 @@ export const analyticsApi = {
 
 export const metaApi = {
   getBlocks: () => apiFetch<HostelBlock[]>('/meta/blocks', { method: 'GET' }),
+
+  /** Public: the privacy notice and the retention periods in force. */
+  getPrivacyNotice: () => apiFetch<PrivacyNotice>('/meta/privacy-notice', { method: 'GET' }),
 
   getRoomsByBlock: (blockId: string) =>
     apiFetch<Room[]>(`/meta/blocks/${blockId}/rooms`, { method: 'GET' }),
