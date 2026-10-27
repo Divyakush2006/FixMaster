@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { blockLabel, greeting, initials, isOpenStatus, shortDuration, slaText, STATUS_LABEL, ticketLocation, ticketRef } from './labels';
+import { blockGroup, blockLabel, blockShort, compareBlocks, greeting, initials, isOpenStatus, shortDuration, slaText, STATUS_LABEL, ticketLocation, ticketRef } from './labels';
 import { floorCode, floorLabel, roomNumberFor } from './formatters';
 
 describe('ticketRef', () => {
@@ -31,8 +31,8 @@ describe('labels', () => {
   it('formats block ids, initials and greetings', () => {
     expect(blockLabel('C_BLOCK')).toBe('C-Block');
     expect(blockLabel('PRP')).toBe('PRP');
-    expect(blockLabel('PRP_BLOCK')).toBe('PRP');
-    expect(blockLabel('MH_BLOCK')).toBe('MH');
+    expect(blockLabel('PRP_BLOCK')).toBe('PRP (academic block)');
+    expect(blockLabel('MH_BLOCK')).toBe("MH (whole men's hostel)");
     expect(blockLabel('LA_BLOCK')).toBe('A-Block (Ladies)');
     expect(blockLabel('L_BLOCK')).toBe('L-Block');
     expect(initials('Vihaan  Sharma')).toBe('VS');
@@ -77,5 +77,23 @@ describe('SLA wording', () => {
   it('says nothing where no SLA applies', () => {
     expect(slaText({ sla_status: 'NOT_APPLICABLE', sla_due_at: at(1), resolved_at: null, closed_at: null }, now)).toBeNull();
     expect(slaText({ sla_status: undefined, sla_due_at: null, resolved_at: null, closed_at: null }, now)).toBeNull();
+  });
+});
+
+describe('block ordering', () => {
+  const ids = ['PRP_BLOCK', 'LS_BLOCK', 'T_BLOCK', 'LA_BLOCK', 'MH_BLOCK', 'B_BLOCK', 'L_BLOCK', 'A_BLOCK'];
+  it("lists the men's hostel, then the ladies', then academic blocks", () => {
+    const sorted = ids.map((block_id) => ({ block_id })).sort(compareBlocks).map((b) => b.block_id);
+    expect(sorted).toEqual(['MH_BLOCK', 'A_BLOCK', 'B_BLOCK', 'L_BLOCK', 'T_BLOCK', 'LA_BLOCK', 'LS_BLOCK', 'PRP_BLOCK']);
+  });
+  it('trusts the hostel on the row, and falls back to the id', () => {
+    expect(blockGroup({ block_id: 'PRP_BLOCK', hostel_type: null })).toBe('ACADEMIC');
+    expect(blockGroup({ block_id: 'LC_BLOCK' })).toBe('LADIES');
+    expect(blockGroup({ block_id: 'L_BLOCK' })).toBe('MENS');
+    expect(blockGroup({ block_id: 'X_BLOCK', hostel_type: 'LADIES' })).toBe('LADIES');
+  });
+  it('keeps the two A-Blocks apart on a chart axis', () => {
+    expect(blockShort('A_BLOCK')).toBe('A');
+    expect(blockShort('LA_BLOCK')).toBe('LA');
   });
 });

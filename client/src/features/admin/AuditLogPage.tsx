@@ -132,7 +132,7 @@ export const AuditLogPage: React.FC = () => {
 
   const target = (e: AuditEntry) => {
     if (e.target_type === 'user') return e.target_name ?? e.target_id;
-    if (e.target_type === 'block') return e.target_id?.replace('_BLOCK', '-Block');
+    if (e.target_type === 'block') return e.target_id ? blockLabel(e.target_id) : e.target_id;
     if (e.target_type === 'complaint') return ticketRef(e.target_id);
     return e.target_id;
   };

@@ -8,6 +8,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { SearchInput } from '../../components/ui/SearchInput';
 import { Select } from '../../components/ui/Form';
+import { BlockOptions } from '../../components/common/BlockOptions';
 import { Pagination } from '../../components/ui/Pagination';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Alert } from '../../components/ui/Alert';
@@ -127,11 +128,7 @@ export const AllComplaintsTable: React.FC = () => {
             </Select>
             <Select aria-label="Filter by block" value={blockFilter} onChange={(e) => resetTo(setBlockFilter)(e.target.value)} className="lg:w-56">
               <option value="">All blocks</option>
-              {blocks.map((b) => (
-                <option key={b.block_id} value={b.block_id}>
-                  {b.block_name}
-                </option>
-              ))}
+              <BlockOptions blocks={blocks} />
             </Select>
           </div>
           <p className="text-[13px] text-slate-500 lg:ml-auto" aria-live="polite">

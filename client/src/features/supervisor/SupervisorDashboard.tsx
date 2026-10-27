@@ -14,7 +14,8 @@ import { Switch } from '../../components/ui/Switch';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
 import { coerceNumber } from '../../utils/formatters';
 import { cn } from '../../components/ui/cn';
-import { HOSTEL_LABEL } from '../../utils/labels';
+import { Segmented } from '../../components/ui/Tabs';
+import { BLOCK_GROUPS, blockGroup, blockShort, compareBlocks, HOSTEL_LABEL, type BlockGroup } from '../../utils/labels';
 
 // One colour per lifecycle stage, used by both charts and the legend.
 const SERIES = [
@@ -36,6 +37,7 @@ const tooltipStyle = {
 
 export const SupervisorDashboard: React.FC = () => {
   const [showEmptyBlocks, setShowEmptyBlocks] = useState(false);
+  const [view, setView] = useState<'ALL' | BlockGroup>('ALL');
   // What "every block" means depends on who is looking: one hostel, the blocks assigned to them, or all.
   const me = useQuery({ queryKey: ['me'], queryFn: meApi.getMe, staleTime: 60_000 }).data;
   const scopeText = !me || me.campus_wide ? 'across all hostel blocks' : me.hostel_type && !(me.assigned_blocks?.length) ? `across the ${HOSTEL_LABEL[me.hostel_type].toLowerCase()}` : 'across the blocks you run';
@@ -49,7 +51,11 @@ export const SupervisorDashboard: React.FC = () => {
     () =>
       kpis.map((b) => ({
         id: b.block_id,
+        block_id: b.block_id,
         name: b.block_name || b.block_id,
+        group: blockGroup(b),
+        hostel_type: b.hostel_type,
+        block_kind: b.block_kind,
         total: coerceNumber(b.total_complaints),
         notStarted: coerceNumber(b.pending_complaints),
         inProgress: coerceNumber(b.active_in_progress),
@@ -86,10 +92,19 @@ export const SupervisorDashboard: React.FC = () => {
 
   const pct = (n: number) => (totals.total ? `${Math.round((n / totals.total) * 100)}% of all tickets` : 'No tickets yet');
   const activeBlocks = blocks.filter((b) => b.total > 0);
-  const tableBlocks = (showEmptyBlocks ? blocks : activeBlocks).slice().sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  // The men's and the ladies' hostel each have an A-Block, so let people look at one hostel at a time.
+  // Academic blocks (PRP) belong to neither and show in every view.
+  const hostelsPresent = BLOCK_GROUPS.filter((g) => g.key !== 'ACADEMIC' && blocks.some((b) => b.group === g.key));
+  const inView = (b: { group: BlockGroup }) => view === 'ALL' || b.group === view || b.group === 'ACADEMIC';
+  const tableBlocks = (showEmptyBlocks ? blocks : activeBlocks).filter(inView).slice().sort((a, b) => b.total - a.total || compareBlocks(a, b));
 
-  const chartData = activeBlocks.map((b) => ({
-    block: b.name.replace(/\s*\(.*\)$/, ''),
+  const chartData = activeBlocks
+    .filter(inView)
+    .slice()
+    .sort(compareBlocks)
+    .map((b) => ({
+    block: blockShort(b.id),
+    name: `${b.name}`,
     'Not started': b.notStarted,
     'In progress': b.inProgress,
     'Awaiting confirmation': b.verification,
@@ -207,7 +222,24 @@ export const SupervisorDashboard: React.FC = () => {
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <Card className="xl:col-span-2">
-            <CardHeader title="Tickets by block" description="Current status of every ticket, per hostel block." />
+            <CardHeader
+              title="Tickets by block"
+              description={
+                hostelsPresent.length > 1
+                  ? "Current status of every ticket, per block. A–T are the men's blocks, LA–LS the ladies' (A–H, J, S)."
+                  : 'Current status of every ticket, per hostel block.'
+              }
+              actions={
+                hostelsPresent.length > 1 ? (
+                  <Segmented
+                    ariaLabel="Hostel shown"
+                    value={view}
+                    onChange={setView}
+                    items={[{ value: 'ALL', label: 'Both' }, ...hostelsPresent.map((g) => ({ value: g.key, label: g.key === 'MENS' ? "Men's" : "Ladies'" }))]}
+                  />
+                ) : undefined
+              }
+            />
             <CardBody>
               {isLoading ? (
                 <Skeleton className="h-72" />
@@ -216,15 +248,20 @@ export const SupervisorDashboard: React.FC = () => {
               ) : (
                 <div className="h-72">
                   <p className="sr-only">
-                    Tickets by block: {chartData.map((d) => `${d.block}: ${d['Not started']} not started, ${d['In progress']} in progress, ${d['Awaiting confirmation']} awaiting confirmation, ${d.Resolved} resolved, ${d.Escalated} escalated`).join('; ')}.
+                    Tickets by block: {chartData.map((d) => `${d.name}:${d['Not started']} not started, ${d['In progress']} in progress, ${d['Awaiting confirmation']} awaiting confirmation, ${d.Resolved} resolved, ${d.Escalated} escalated`).join('; ')}.
                   </p>
                   <div className="h-full" aria-hidden="true">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }} barCategoryGap="28%">
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                      <XAxis dataKey="block" stroke="#64748b" fontSize={12} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} />
+                      {/* interval 0: every block is labelled, none skipped to make room */}
+                      <XAxis dataKey="block" stroke="#64748b" fontSize={10} interval={0} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} />
                       <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
-                      <Tooltip contentStyle={tooltipStyle} cursor={{ fill: '#f1f5f9' }} />
+                      <Tooltip
+                        contentStyle={tooltipStyle}
+                        cursor={{ fill: '#f1f5f9' }}
+                        labelFormatter={(_label, items) => (items?.[0]?.payload as { name?: string } | undefined)?.name ?? String(_label)}
+                      />
                       <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
                       {SERIES.map((s, i) => (
                         <Bar key={s.key} dataKey={s.key} stackId="status" fill={s.color} radius={i === SERIES.length - 1 ? [3, 3, 0, 0] : 0} maxBarSize={56} />
@@ -315,9 +352,11 @@ export const SupervisorDashboard: React.FC = () => {
                   )}
                   {tableBlocks.map((b) => (
                     <Tr key={b.id}>
-                      <Td>
+                      <Td className="whitespace-nowrap">
                         <p className="font-medium text-slate-900">{b.name}</p>
-                        <p className="font-mono text-2xs text-slate-500">{b.id}</p>
+                        <p className="text-2xs text-slate-500">
+                          {BLOCK_GROUPS.find((g) => g.key === b.group)?.label} · <span className="font-mono">{b.id}</span>
+                        </p>
                       </Td>
                       <Td className="text-right font-medium text-slate-900 tabular">{b.total}</Td>
                       <Td className="text-right tabular">{b.notStarted}</Td>

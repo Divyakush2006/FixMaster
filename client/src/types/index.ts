@@ -430,6 +430,9 @@ export interface FeedbackPayload {
 export interface BlockKpi {
   block_id: string;
   block_name: string;
+  /** null for an academic block. */
+  hostel_type?: HostelType | null;
+  block_kind?: BlockKind;
   total_complaints: string | number;
   pending_complaints: string | number;
   active_in_progress: string | number;

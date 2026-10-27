@@ -20,7 +20,7 @@ exports.getBlocks = asyncHandler(async (req, res) => {
     }
     const result = await db.query(
         `SELECT * FROM hostel_blocks WHERE ($1::text IS NULL OR hostel_type IS NULL OR hostel_type = $1)
-         ORDER BY hostel_type NULLS LAST, block_kind <> 'HOSTEL_WIDE', length(split_part(block_id, '_', 1)), block_id`,
+         ORDER BY CASE hostel_type WHEN 'MENS' THEN 0 WHEN 'LADIES' THEN 1 ELSE 2 END, block_kind <> 'HOSTEL_WIDE', length(split_part(block_id, '_', 1)), block_id`,
         [hostel]
     );
     res.json(result.rows);

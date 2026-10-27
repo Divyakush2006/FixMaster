@@ -155,9 +155,43 @@ export function ticketLocation(c: { room_id: string | null; common_area_id: stri
 export function blockLabel(blockId: string): string {
   const [code] = blockId.split('_');
   if (!blockId.endsWith('_BLOCK')) return blockId;
-  if (code === 'MH' || code === 'PRP') return code;
+  if (code === 'MH') return "MH (whole men's hostel)";
+  if (code === 'PRP') return 'PRP (academic block)';
   if (/^L[A-Z]$/.test(code)) return `${code[1]}-Block (Ladies)`;
   return `${code}-Block`;
+}
+
+/** The short tag for a chart axis: A, B ... T for the men's blocks, LA ... LS for the ladies', MH, PRP. */
+export function blockShort(blockId: string): string {
+  return blockId.split('_')[0];
+}
+
+export type BlockGroup = 'MENS' | 'LADIES' | 'ACADEMIC';
+
+export const BLOCK_GROUPS: { key: BlockGroup; label: string }[] = [
+  { key: 'MENS', label: HOSTEL_LABEL.MENS },
+  { key: 'LADIES', label: HOSTEL_LABEL.LADIES },
+  { key: 'ACADEMIC', label: 'Academic blocks' },
+];
+
+interface BlockLike {
+  block_id: string;
+  hostel_type?: HostelType | null;
+  block_kind?: BlockKind;
+}
+
+/** Which list a block belongs to. Falls back to the id for rows that carry no hostel (older data). */
+export function blockGroup(b: BlockLike): BlockGroup {
+  if (b.hostel_type) return b.hostel_type;
+  if (b.hostel_type === null || b.block_id === 'PRP_BLOCK') return 'ACADEMIC';
+  return /^L[A-Z]_BLOCK$/.test(b.block_id) ? 'LADIES' : 'MENS';
+}
+
+/** Men's hostel, then the ladies', then academic; inside each the whole-hostel block first, then A, B, C ... */
+export function compareBlocks(a: BlockLike, b: BlockLike): number {
+  const rank = (x: BlockLike) => BLOCK_GROUPS.findIndex((g) => g.key === blockGroup(x));
+  const wide = (x: BlockLike) => (x.block_kind === 'HOSTEL_WIDE' || x.block_id === 'MH_BLOCK' ? 0 : 1);
+  return rank(a) - rank(b) || wide(a) - wide(b) || blockShort(a.block_id).length - blockShort(b.block_id).length || a.block_id.localeCompare(b.block_id);
 }
 
 export function initials(name: string | null | undefined): string {

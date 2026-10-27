@@ -47,7 +47,7 @@ exports.listBlocks = asyncHandler(async (req, res) => {
               WHERE r.block_id = b.block_id AND a.is_current)::int AS occupied_beds
         FROM hostel_blocks b
         WHERE ($1::varchar[] IS NULL OR b.block_id = ANY($1::varchar[]))
-        ORDER BY b.hostel_type NULLS LAST, b.block_kind <> 'HOSTEL_WIDE', length(split_part(b.block_id, '_', 1)), b.block_id
+        ORDER BY CASE b.hostel_type WHEN 'MENS' THEN 0 WHEN 'LADIES' THEN 1 ELSE 2 END, b.block_kind <> 'HOSTEL_WIDE', length(split_part(b.block_id, '_', 1)), b.block_id
     `, [scope]);
     res.json(result.rows);
 });

@@ -455,7 +455,7 @@ export const autopilotApi = {
 
   settings: () => apiFetch<AutopilotSettingsResponse>('/autopilot/settings', { method: 'GET' }),
 
-  saveSetting: (data: { block_id: string | null; specialization: Specialization; mode: AutopilotMode; live_job_cap?: number; weights?: Partial<Record<ScoreComponent, number>> | null }) =>
+  saveSetting: (data: { block_id: string | null; /** Every block of this hostel that the caller runs, instead of one block. */ hostel?: HostelType; specialization: Specialization; mode: AutopilotMode; live_job_cap?: number; weights?: Partial<Record<ScoreComponent, number>> | null }) =>
     apiFetch<AutopilotSetting>('/autopilot/settings', { method: 'PUT', body: JSON.stringify(data) }),
 
   performance: (specialization?: Specialization) =>

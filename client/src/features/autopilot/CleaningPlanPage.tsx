@@ -9,8 +9,8 @@ import { Field, Select } from '../../components/ui/Form';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Skeleton } from '../../components/ui/PageLoader';
 import type { StaffShift } from '../../types';
-import { blockLabel } from '../../utils/labels';
 import { useManagedBlocks } from './useManagedBlocks';
+import { BlockOptions } from '../../components/common/BlockOptions';
 
 const SHIFTS: { value: StaffShift; label: string }[] = [
   { value: 'MORNING', label: 'Morning shift' },
@@ -53,11 +53,7 @@ export const CleaningPlanPage: React.FC = () => {
           <Field label="Block">
             {(a) => (
               <Select {...a} value={blockId} onChange={(e) => setBlockId(e.target.value)} disabled={loadingBlocks}>
-                {blocks.map((b) => (
-                  <option key={b.block_id} value={b.block_id}>
-                    {blockLabel(b.block_id)}
-                  </option>
-                ))}
+                <BlockOptions blocks={blocks} />
               </Select>
             )}
           </Field>

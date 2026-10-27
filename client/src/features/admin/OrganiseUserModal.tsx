@@ -7,8 +7,9 @@ import { Modal } from '../../components/ui/Modal';
 import { Alert } from '../../components/ui/Alert';
 import { Button, IconButton } from '../../components/ui/Button';
 import { Field, Input, Select } from '../../components/ui/Form';
+import { BlockOptions } from '../../components/common/BlockOptions';
 import type { AdminBlock, HostelType, StaffShift, User } from '../../types';
-import { HOSTEL_LABEL } from '../../utils/labels';
+import { HOSTEL_LABEL, blockLabel, blockShort } from '../../utils/labels';
 
 const SHIFT_LABEL: Record<StaffShift, string> = { MORNING: 'Morning (6–2)', EVENING: 'Evening (2–10)', NIGHT: 'Night (10–6)' };
 
@@ -17,12 +18,12 @@ const HOSTEL_SHORT: Record<HostelType, string> = { MENS: "Men's", LADIES: "Ladie
 /** One line for the users table: where a staff member works, which hostel and blocks a supervisor runs, or a chief warden's hostel. */
 export function placementSummary(u: User): string | null {
   if (u.role === 'STAFF') {
-    const where = u.home_block_id ? u.home_block_id.replace(/_BLOCK$/, '-Block') : 'Campus pool';
+    const where = u.home_block_id ? blockLabel(u.home_block_id) : 'Campus pool';
     return u.shift ? `${where} · ${SHIFT_LABEL[u.shift].split(' ')[0]}` : where;
   }
   if (u.role === 'SUPERVISOR') {
     const blocks = u.managed_blocks ?? [];
-    const what = blocks.length === 0 ? (u.hostel_type ? 'Every block' : 'All blocks') : blocks.map((b) => b.replace(/_BLOCK$/, '')).join(', ');
+    const what = blocks.length === 0 ? (u.hostel_type ? 'Every block' : 'All blocks') : blocks.map(blockShort).join(', ');
     return u.hostel_type ? `${HOSTEL_SHORT[u.hostel_type]} · ${what}` : what;
   }
   if (u.role === 'CHIEF_WARDEN') return u.hostel_type ? HOSTEL_LABEL[u.hostel_type] : 'Every block';
@@ -104,11 +105,7 @@ export const OrganiseUserModal: React.FC<{ user: User; onClose: () => void; onSa
                 {(a) => (
                   <Select {...a} value={homeBlock} onChange={(e) => setHomeBlock(e.target.value)}>
                     <option value="">Campus pool</option>
-                    {blocks.map((b) => (
-                      <option key={b.block_id} value={b.block_id}>
-                        {b.block_name}
-                      </option>
-                    ))}
+                    <BlockOptions blocks={blocks} />
                   </Select>
                 )}
               </Field>

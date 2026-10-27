@@ -4,6 +4,7 @@ import { metaApi } from '../../api/endpoints';
 import { Alert } from '../ui/Alert';
 import { Button } from '../ui/Button';
 import { Field, Select } from '../ui/Form';
+import { BlockOptions } from './BlockOptions';
 import { floorLabel } from '../../utils/formatters';
 
 export interface RoomChoice {
@@ -82,11 +83,7 @@ export const RoomPicker: React.FC<RoomPickerProps> = ({ value, onChange, errors 
               onChange={(e) => onChange({ blockId: e.target.value, floor: '', roomId: '' })}
             >
               <option value="">{loadingBlocks ? 'Loading…' : 'Select block'}</option>
-              {blocks.map((b) => (
-                <option key={b.block_id} value={b.block_id}>
-                  {b.block_name}
-                </option>
-              ))}
+              <BlockOptions blocks={blocks.filter((b) => !b.block_kind || b.block_kind === 'RESIDENTIAL')} />
             </Select>
           )}
         </Field>

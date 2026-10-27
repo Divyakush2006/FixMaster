@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SlidersHorizontal } from 'lucide-react';
-import { autopilotApi } from '../../api/endpoints';
+import { autopilotApi, meApi } from '../../api/endpoints';
 import { useToast } from '../../components/ui/Toast';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
@@ -12,15 +12,18 @@ import { Segmented } from '../../components/ui/Tabs';
 import { Badge } from '../../components/ui/Badge';
 import { Skeleton } from '../../components/ui/PageLoader';
 import { SpecializationBadge } from '../../components/common/Badges';
-import type { AutopilotMode, AutopilotSetting, ScoreComponent, Specialization } from '../../types';
-import { blockLabel } from '../../utils/labels';
+import type { AutopilotMode, AutopilotSetting, HostelType, ScoreComponent, Specialization } from '../../types';
+import { blockGroup, blockLabel, HOSTEL_LABEL } from '../../utils/labels';
 import { COMPONENT_HELP, COMPONENT_LABEL, MODE_HELP, MODE_LABEL } from './autopilotLabels';
 import { useManagedBlocks } from './useManagedBlocks';
+import { BlockOptions } from '../../components/common/BlockOptions';
 
 const TRADES: Specialization[] = ['CLEANING', 'ELECTRICIAN', 'PLUMBER', 'AC_TECH', 'CARPENTER'];
 const MODES: AutopilotMode[] = ['OFF', 'SUGGEST', 'AUTO'];
 const COMPONENTS: ScoreComponent[] = ['quality', 'load', 'idle', 'proximity', 'reliability', 'roomHistory'];
 const CAMPUS = '__campus__';
+const HOSTEL_PREFIX = '__hostel:';
+const HOSTELS: HostelType[] = ['MENS', 'LADIES'];
 
 /**
  * Where and how far the dispatch autopilot acts: per block and trade, Off,
@@ -31,15 +34,29 @@ const CAMPUS = '__campus__';
 export const AutopilotSettingsPage: React.FC = () => {
   const { data, isLoading } = useQuery({ queryKey: ['autopilot-settings'], queryFn: autopilotApi.settings });
   const { blocks, isLoading: loadingBlocks } = useManagedBlocks();
+  const me = useQuery({ queryKey: ['me'], queryFn: meApi.getMe, staleTime: 60_000 }).data;
   const [scope, setScope] = useState<string>('');
+
+  // "Every block of a hostel" is offered for each hostel the caller runs blocks in; the campus default
+  // reaches both hostels, so a hostel's own chief warden does not get it.
+  const hostelsRun = HOSTELS.filter((h) => blocks.some((b) => blockGroup(b) === h));
 
   useEffect(() => {
     if (scope || !data || loadingBlocks) return;
-    setScope(data.can_edit_campus_default ? CAMPUS : blocks[0]?.block_id ?? '');
-  }, [data, blocks, loadingBlocks, scope]);
+    const wholeHostel = me?.hostel_type && !me.assigned_blocks?.length ? `${HOSTEL_PREFIX}${me.hostel_type}` : '';
+    setScope(data.can_edit_campus_default ? CAMPUS : wholeHostel || blocks[0]?.block_id || '');
+  }, [data, blocks, loadingBlocks, scope, me]);
 
-  const blockId = scope === CAMPUS ? null : scope;
+  const hostel = scope.startsWith(HOSTEL_PREFIX) ? (scope.slice(HOSTEL_PREFIX.length) as HostelType) : null;
+  const blockId = scope === CAMPUS || hostel ? null : scope;
   const find = (b: string | null, trade: Specialization) => data?.settings.find((s) => s.block_id === b && s.specialization === trade);
+  // For a whole hostel there is no row of its own: it is the blocks' rows, and they may not all agree.
+  const hostelRows = (trade: Specialization) => {
+    const mine = blocks.filter((b) => blockGroup(b) === hostel && b.block_kind !== 'ACADEMIC').map((b) => find(b.block_id, trade));
+    const first = mine[0];
+    const same = !!first && mine.every((r) => r && r.mode === first.mode && r.live_job_cap === first.live_job_cap);
+    return { own: same ? first : undefined, mixed: !same && mine.some(Boolean) };
+  };
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -54,12 +71,17 @@ export const AutopilotSettingsPage: React.FC = () => {
           <Field label="Settings for">
             {(a) => (
               <Select {...a} value={scope} onChange={(e) => setScope(e.target.value)}>
-                {data?.can_edit_campus_default && <option value={CAMPUS}>Campus default (every block)</option>}
-                {blocks.map((b) => (
-                  <option key={b.block_id} value={b.block_id}>
-                    {blockLabel(b.block_id)}
-                  </option>
-                ))}
+                {data?.can_edit_campus_default && <option value={CAMPUS}>Campus default (both hostels)</option>}
+                {hostelsRun.length > 0 && (
+                  <optgroup label="A whole hostel at once">
+                    {hostelsRun.map((h) => (
+                      <option key={h} value={`${HOSTEL_PREFIX}${h}`}>
+                        Every block of the {HOSTEL_LABEL[h].toLowerCase()}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <BlockOptions blocks={blocks} />
               </Select>
             )}
           </Field>
@@ -77,16 +99,21 @@ export const AutopilotSettingsPage: React.FC = () => {
         <Skeleton className="h-64" />
       ) : (
         <div className="space-y-3">
-          {TRADES.map((trade) => (
-            <TradeSettingRow
-              key={`${scope}-${trade}`}
-              blockId={blockId}
-              trade={trade}
-              own={find(blockId, trade)}
-              inherited={blockId ? find(null, trade) : undefined}
-              defaults={data.defaults}
-            />
-          ))}
+          {TRADES.map((trade) => {
+            const whole = hostel ? hostelRows(trade) : null;
+            return (
+              <TradeSettingRow
+                key={`${scope}-${trade}-${data.settings.length}`}
+                blockId={blockId}
+                hostel={hostel}
+                mixed={whole?.mixed}
+                trade={trade}
+                own={whole ? whole.own : find(blockId, trade)}
+                inherited={blockId || hostel ? find(null, trade) : undefined}
+                defaults={data.defaults}
+              />
+            );
+          })}
         </div>
       )}
     </div>
@@ -95,11 +122,15 @@ export const AutopilotSettingsPage: React.FC = () => {
 
 const TradeSettingRow: React.FC<{
   blockId: string | null;
+  /** Set when the row covers every block of a hostel. */
+  hostel?: HostelType | null;
+  /** The blocks of that hostel do not all have the same setting. */
+  mixed?: boolean;
   trade: Specialization;
   own?: AutopilotSetting;
   inherited?: AutopilotSetting;
   defaults: { mode: AutopilotMode; live_job_cap: number; weights: Record<ScoreComponent, number> };
-}> = ({ blockId, trade, own, inherited, defaults }) => {
+}> = ({ blockId, hostel, mixed, trade, own, inherited, defaults }) => {
   const effective = own ?? inherited ?? { ...defaults, block_id: null, specialization: trade };
   const [mode, setMode] = useState<AutopilotMode>(effective.mode);
   const [cap, setCap] = useState(effective.live_job_cap);
@@ -112,10 +143,10 @@ const TradeSettingRow: React.FC<{
   const total = useMemo(() => COMPONENTS.reduce((s, k) => s + (weights[k] || 0), 0), [weights]);
 
   const save = useMutation({
-    mutationFn: () => autopilotApi.saveSetting({ block_id: blockId, specialization: trade, mode, live_job_cap: cap, weights: tuning ? weights : own?.weights ?? null }),
+    mutationFn: () => autopilotApi.saveSetting({ block_id: blockId, ...(hostel ? { hostel } : {}), specialization: trade, mode, live_job_cap: cap, weights: tuning ? weights : own?.weights ?? null }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['autopilot-settings'] });
-      showToast('Autopilot updated', 'success', `${trade.toLowerCase()} · ${blockId ? blockLabel(blockId) : 'campus default'}: ${MODE_LABEL[mode]}`);
+      showToast('Autopilot updated', 'success', `${trade.toLowerCase()} · ${blockId ? blockLabel(blockId) : hostel ? `every block of the ${HOSTEL_LABEL[hostel].toLowerCase()}` : 'campus default'}: ${MODE_LABEL[mode]}`);
     },
     onError: (err: Error) => showToast('Not saved', 'error', err.message),
   });
@@ -127,7 +158,7 @@ const TradeSettingRow: React.FC<{
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
           <SpecializationBadge specialization={trade} />
-          {!own && <Badge tone="neutral">{blockId && inherited ? 'Follows campus default' : 'Default'}</Badge>}
+          {!own && <Badge tone="neutral">{mixed ? 'Blocks differ' : (blockId || hostel) && inherited ? 'Follows campus default' : 'Default'}</Badge>}
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Segmented

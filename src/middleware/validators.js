@@ -558,6 +558,7 @@ const autopilotDispatchValidators = [body('complaint_id').isString().trim().notE
 
 const autopilotSettingValidators = [
     body('block_id').optional({ values: 'null' }).isString().trim().notEmpty().isLength({ max: 10 }).withMessage('block_id is invalid.'),
+    body('hostel').optional({ values: 'null' }).isIn(['MENS', 'LADIES']).withMessage('hostel must be MENS or LADIES.'),
     body('specialization').isIn(SPECIALIZATIONS).withMessage(`specialization must be one of: ${SPECIALIZATIONS.join(', ')}.`),
     body('mode').isIn(['OFF', 'SUGGEST', 'AUTO']).withMessage('mode must be OFF, SUGGEST or AUTO.'),
     body('live_job_cap').optional().isInt({ min: 1, max: 50 }).withMessage('live_job_cap must be 1-50.').toInt(),

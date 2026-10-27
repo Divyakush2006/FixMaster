@@ -9,6 +9,7 @@ import { useToast } from '../../components/ui/Toast';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card, CardBody, CardFooter, CardHeader } from '../../components/ui/Card';
 import { Field, Input, Select, Textarea } from '../../components/ui/Form';
+import { BlockOptions } from '../../components/common/BlockOptions';
 import { Alert } from '../../components/ui/Alert';
 import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/cn';
@@ -271,11 +272,7 @@ export const NewComplaintForm: React.FC = () => {
                         }}
                       >
                         <option value="">Select a block</option>
-                        {blocks.map((b) => (
-                          <option key={b.block_id} value={b.block_id}>
-                            {b.block_name}
-                          </option>
-                        ))}
+                        <BlockOptions blocks={blocks} />
                       </Select>
                     )}
                   </Field>

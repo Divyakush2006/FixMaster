@@ -252,5 +252,52 @@ describe('two hostels: scoped chief wardens and supervisors, block settings, res
             assert.ok(!(await t.api('/complaints', { token: tok.cwL })).data.some((c) => c.block_id === 'MH_BLOCK'));
             assert.ok((await t.api('/complaints', { token: tok.cwL })).data.some((c) => c.block_id === 'PRP_BLOCK'));
         });
+
+    describe('block performance figures', () => {
+        it('carry the hostel and kind of each block, grouped men, ladies, academic, so a chart can tell the two A-Blocks apart', async () => {
+            const rows = (await t.api('/analytics/kpi', { token: admin })).data;
+            const byId = Object.fromEntries(rows.map((r) => [r.block_id, r]));
+            assert.equal(byId.A_BLOCK.hostel_type, 'MENS');
+            assert.equal(byId.LA_BLOCK.hostel_type, 'LADIES');
+            assert.equal(byId.MH_BLOCK.block_kind, 'HOSTEL_WIDE');
+            assert.equal(byId.PRP_BLOCK.hostel_type, null);
+            assert.equal(byId.PRP_BLOCK.block_kind, 'ACADEMIC');
+            const rank = rows.map((r) => ({ MENS: 0, LADIES: 1 })[r.hostel_type] ?? 2);
+            assert.deepEqual(rank, [...rank].sort(), 'men, then ladies, then academic');
+            const ladies = (await t.api('/analytics/kpi', { token: tok.cwL })).data.map((r) => r.block_id);
+            assert.ok(ladies.includes('LS_BLOCK') && ladies.includes('PRP_BLOCK') && !ladies.includes('MH_BLOCK'));
+        });
+    });
+
+    describe('dispatch autopilot settings', () => {
+        const put = (token, body) => t.api('/autopilot/settings', { method: 'PUT', token, body: { specialization: 'CLEANING', mode: 'AUTO', ...body } });
+
+        it('a hostel chief warden sets every block of their hostel at once, and never the other hostel or the campus default', async () => {
+            const own = await put(tok.cwL, { hostel: 'LADIES' });
+            assert.equal(own.status, 200, JSON.stringify(own.data));
+            assert.ok(LADIES.every((id) => own.data.block_ids.includes(id)), 'every ladies block');
+            assert.ok(own.data.block_ids.every((id) => /^L[A-Z]_BLOCK$/.test(id)), 'no academic block and none of the mens');
+            const rows = (await t.api('/autopilot/settings', { token: tok.cwL })).data;
+            assert.equal(rows.can_edit_campus_default, false);
+            assert.ok(LADIES.every((id) => rows.settings.some((r) => r.block_id === id && r.mode === 'AUTO')));
+            const { rows: men } = await t.sql("SELECT COUNT(*)::int AS n FROM autopilot_settings WHERE block_id IS NOT NULL AND block_id NOT LIKE 'L_\_BLOCK'");
+            assert.equal(men[0].n, 0, 'the mens blocks were not touched');
+
+            assert.equal((await put(tok.cwL, { hostel: 'MENS' })).status, 403);
+            assert.equal((await put(tok.cwL, { block_id: 'A_BLOCK' })).status, 403);
+            assert.equal((await put(tok.cwL, { block_id: null })).status, 403, 'the campus default reaches the other hostel too');
+            assert.equal((await put(tok.cwL, { hostel: 'LADIES', block_id: 'LA_BLOCK' })).status, 400);
+        });
+
+        it('a supervisor sets the blocks of the hostel that they run; the administrator can set the campus default', async () => {
+            const sup = await put(tok.supL, { hostel: 'LADIES', mode: 'OFF' });
+            assert.equal(sup.status, 200);
+            assert.ok(sup.data.block_ids.length > 0 && sup.data.block_ids.every((id) => /^L[A-Z]_BLOCK$/.test(id)));
+            assert.equal((await put(tok.supL, { hostel: 'MENS' })).status, 403);
+            assert.equal((await put(admin, { block_id: null })).status, 200);
+            const adminView = (await t.api('/autopilot/settings', { token: admin })).data;
+            assert.equal(adminView.can_edit_campus_default, true);
+        });
+    });
     });
 });

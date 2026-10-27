@@ -15,7 +15,7 @@ async function blockSummary(scope) {
     const params = [];
     const scoped = scopeCondition(scope, 'v.block_id', params);
     const result = await db.query(`
-        SELECT v.*,
+        SELECT v.*, hb.hostel_type, hb.block_kind,
                COALESCE(s.overdue_count, 0)::int AS overdue_count,
                COALESCE(s.at_risk_count, 0)::int AS at_risk_count,
                COALESCE(s.sla_met_count, 0)::int AS sla_met_count,
@@ -23,6 +23,7 @@ async function blockSummary(scope) {
                ROUND(100.0 * COALESCE(s.sla_met_count, 0)
                      / NULLIF(COALESCE(s.sla_met_count, 0) + COALESCE(s.sla_breached_count, 0), 0), 1) AS sla_compliance_pct
         FROM view_block_supervisor_summary v
+        JOIN hostel_blocks hb ON hb.block_id = v.block_id
         LEFT JOIN (
             SELECT block_id,
                    COUNT(*) FILTER (WHERE st = 'OVERDUE') AS overdue_count,
@@ -39,7 +40,7 @@ async function blockSummary(scope) {
             GROUP BY block_id
         ) s ON s.block_id = v.block_id
         ${scoped ? `WHERE ${scoped}` : ''}
-        ORDER BY v.block_id`, params);
+        ORDER BY CASE hb.hostel_type WHEN 'MENS' THEN 0 WHEN 'LADIES' THEN 1 ELSE 2 END, hb.block_kind <> 'HOSTEL_WIDE', length(split_part(v.block_id, '_', 1)), v.block_id`, params);
     return result.rows;
 }
 
