@@ -162,10 +162,21 @@ model off any GPU. Nothing local runs unless its address is configured.
 1. **Secrets** (`.env`): a random `JWT_SECRET` (32+ characters), `POSTGRES_PASSWORD`, `CORS_ORIGIN` (the web origin), `TRUST_PROXY` (1 behind one proxy), `METRICS_TOKEN` if `/api/metrics` is scraped. The API refuses to start without a strong secret and `CORS_ORIGIN`.
 2. **Database**: `npm run db:migrate` (the API container does it on start). A fresh database already holds the blocks (A-T men's, A-H/J/S ladies', MH, PRP) and the issue catalogue (migration 018); rooms and shared areas are added by the hostel office under Block settings, or as a sample with `npm run db:provision -- --yes`.
 3. **First administrator**: `docker compose --profile setup run --rm provision` (or `npm run db:provision -- --yes --admin-only`). The password is random, written to `credentials/` and must be changed at first sign-in. Create everyone else under Users and access, with "must choose their own password" ticked.
-4. **Email** (`SMTP_URL`, `MAIL_FROM`, `APP_URL`): without it, resident self-registration and "Forgot password" report themselves unavailable instead of pretending to send; the hostel office then creates resident accounts. Set it before opening sign-up.
+4. **Email** (`SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS` or `SMTP_URL`, `MAIL_FROM`, `APP_URL`; setup below; check with `npm run mail:check -- --to you@example.com`): without it, resident self-registration and "Forgot password" report themselves unavailable instead of pretending to send; the hostel office then creates resident accounts. Set it before opening sign-up.
 5. **AI keys** (`GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, several allowed): optional; every AI feature has a non-AI path.
 6. **HTTPS** at the proxy (cookies are `Secure`, HSTS is sent), backups copied off the host (`backup` service), `npm audit` clean, `npm test` green.
 7. **After the first sign-in**: delete the credentials file, switch the autopilot on per block (Autopilot, Dispatch settings), and check `/api/health`.
+
+## Email setup (Brevo, free)
+
+Brevo's free plan sends 300 emails a day with no monthly cap, which covers sign-up codes and password resets except in the first week of a term.
+
+1. Create an account at brevo.com and confirm your email.
+2. **Senders, Domains**: add and verify the address (quickest) or the domain (best: add the SPF and DKIM records it shows to the domain's DNS; the university IT team usually does this). Mail from an unverified sender is refused or lands in spam.
+3. **SMTP & API, SMTP**: copy the *SMTP login* (looks like `123abc@smtp-brevo.com`) and generate an *SMTP key*. They are not your account email and password.
+4. Put them in `.env` (never in git): `SMTP_HOST=smtp-relay.brevo.com`, `SMTP_PORT=587`, `SMTP_USER=<login>`, `SMTP_PASS=<key>`, `MAIL_FROM="FixMaster <the verified address>"`, and `APP_URL=<the web address>`.
+5. `npm run mail:check -- --to you@example.com` connects, signs in and sends one test message, and says in plain words what is wrong if it cannot. Restart the API; the sign-up and "Forgot password" pages come back on by themselves (`GET /api/auth/capabilities` shows `student_signup: true`).
+6. Watch Brevo's daily count. Past 300 a day, mail stops until the next day: switch to a paid plan or to Amazon SES, which only needs the same four `SMTP_*` settings changed.
 
 ## Accounts
 
