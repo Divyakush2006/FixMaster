@@ -22,6 +22,7 @@ function requestLogger(req, res, next) {
         const entry = {
             time: new Date().toISOString(),
             request_id: req.id,
+            trace_id: req.traceId,
             method: req.method,
             path: req.originalUrl.split('?')[0],
             status: res.statusCode,

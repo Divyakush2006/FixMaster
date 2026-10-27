@@ -151,6 +151,25 @@ model off any GPU. Nothing local runs unless its address is configured.
 3. Check `/api/health` and the metrics for errors before the next instance.
 4. The web app is static; deploy it after the API when a release adds endpoints, before it when it only changes screens.
 
-## Not covered here
+## Tracing
 
-Tracing is not set up.
+Every request gets a trace id, returned as the `X-Trace-Id` header, written to
+the request log (`trace_id`) and included in error alerts, so an alert leads to
+the exact request. A caller's W3C `traceparent` header is honoured: the trace
+continues rather than restarting.
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` (for example `http://otel-collector:4318`) to
+export spans as OTLP/HTTP JSON to any OpenTelemetry-compatible backend (Grafana
+Tempo, Jaeger, Honeycomb, Datadog, the OpenTelemetry Collector). Optional:
+`OTEL_EXPORTER_OTLP_HEADERS` for an API key, `OTEL_SERVICE_NAME`,
+`OTEL_TRACES_SAMPLER_ARG` (share of new traces kept, default 1). Without the
+endpoint nothing is exported and nothing is recorded.
+
+A trace holds one server span per request (method, route pattern, status) with
+child spans for database work (the operation only, such as SELECT), AI calls
+(task, provider, model) and object-storage calls. Spans never carry SQL,
+parameters, prompts, model output, request or response bodies, ticket ids or
+anyone's name. Export is batched and best effort: a collector that is down costs
+only the spans (a warning is logged once a minute) and never slows or fails a
+request. A drilled-down view in the monitoring stack is the quickest way to see
+why a slow dashboard is slow.

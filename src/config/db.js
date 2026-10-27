@@ -1,6 +1,7 @@
 const { Pool } = require('pg');
 require('dotenv').config({ quiet: true });
 const { connectionConfig } = require('./dbConfig');
+const tracing = require('../services/tracing');
 
 const int = (value, fallback) => {
     const n = parseInt(value, 10);
@@ -78,7 +79,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function withTransaction(work, actingUserId = null) {
     for (let attempt = 1; ; attempt++) {
         try {
-            return await runTransaction(work, actingUserId);
+            return await tracing.withSpan('db.transaction', { 'db.system.name': 'postgresql' }, () => runTransaction(work, actingUserId), 'client');
         } catch (err) {
             if (!RETRYABLE.has(err && err.code) || attempt >= MAX_ATTEMPTS) throw err;
             // Jittered back-off so the two contenders don't collide again.
@@ -110,7 +111,11 @@ async function runTransaction(work, actingUserId) {
 }
 
 module.exports = {
-    query: (text, params) => pool.query(text, params),
+    // The span names the operation (SELECT, INSERT ...), never the statement or its values.
+    query: (text, params) =>
+        tracing.isEnabled()
+            ? tracing.withSpan('db.query', { 'db.system.name': 'postgresql', 'db.operation.name': String(text).trim().split(/\s+/, 1)[0].toUpperCase() }, () => pool.query(text, params), 'client')
+            : pool.query(text, params),
     withTransaction,
     pool,
 };

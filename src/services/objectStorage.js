@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const tracing = require('./tracing');
 
 /**
  * S3-compatible object storage (Amazon S3, Cloudflare R2, MinIO, SeaweedFS ...)
@@ -84,7 +85,12 @@ async function send(method, key, { body, contentType } = {}) {
     if (cfg.sse && method === 'PUT') headers['x-amz-server-side-encryption'] = 'AES256';
     const signed = sigv4({ method, url, headers, payloadHash, region: cfg.region, accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey });
     delete signed.host; // the HTTP client sends it from the address
-    return fetch(url, { method, headers: signed, body: method === 'PUT' ? payload : undefined, signal: AbortSignal.timeout(TIMEOUT_MS), redirect: 'error' });
+    return tracing.withSpan(
+        `object_storage.${method.toLowerCase()}`,
+        { 'http.request.method': method },
+        () => fetch(url, { method, headers: signed, body: method === 'PUT' ? payload : undefined, signal: AbortSignal.timeout(TIMEOUT_MS), redirect: 'error' }),
+        'client'
+    );
 }
 
 async function put(key, buffer, contentType) {

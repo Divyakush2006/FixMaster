@@ -59,6 +59,7 @@ const app = express();
 app.set('trust proxy', trustProxySetting(process.env.TRUST_PROXY));
 
 app.use(requestLogger);
+app.use(require('./services/tracing').middleware); // trace id on every request; spans exported when OTEL_EXPORTER_OTLP_ENDPOINT is set
 app.use(require('./services/metrics').middleware);
 // Dashboards reuse figures for a few seconds (services/cache.js), but never hide a
 // change made through this server: any successful write forgets them, so a

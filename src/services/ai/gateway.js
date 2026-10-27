@@ -3,6 +3,7 @@ const Ajv = require('ajv');
 const db = require('../../config/db');
 const { TASKS, routeFor, dailyLimit, timeoutMs, userDailyLimit } = require('../../config/ai');
 const providers = require('./providers');
+const tracing = require('../tracing');
 
 // The one way the API talks to a language model.
 //
@@ -147,7 +148,12 @@ async function run({ task, promptVersion, system, user, schema, userId = null, f
         const timer = setTimeout(() => controller.abort(), timeoutMs(provider));
         const started = Date.now();
         try {
-            const reply = await providers.call(provider, { model, system, user, maxTokens, signal: controller.signal });
+            const reply = await tracing.withSpan(
+                'ai.call',
+                { 'fixmaster.ai.task': task, 'fixmaster.ai.provider': provider, 'fixmaster.ai.model': model },
+                () => providers.call(provider, { model, system, user, maxTokens, signal: controller.signal }),
+                'client'
+            );
             const latencyMs = Date.now() - started;
             let data;
             try {

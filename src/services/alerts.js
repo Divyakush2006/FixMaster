@@ -40,7 +40,7 @@ function notifyError(req, err, status = 500) {
         return;
     }
     const env = process.env.NODE_ENV || 'development';
-    const text = `FixMaster API error (${env}): ${req.method} ${route} returned ${status}\n${message}\nrequest ${req.id || '-'}`;
+    const text = `FixMaster API error (${env}): ${req.method} ${route} returned ${status}\n${message}\nrequest ${req.id || '-'}${req.traceId ? ` trace ${req.traceId}` : ''}`;
     fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

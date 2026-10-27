@@ -43,6 +43,7 @@ function shutdown(signal, exitCode = 0) {
             console.error('Error closing database pool:', err);
         }
         await require('./config/redis').closeRedis().catch(() => {});
+        await require('./services/tracing').shutdown().catch(() => {});
         process.exit(exitCode);
     });
     // Idle keep-alive sockets would otherwise hold server.close() open.
