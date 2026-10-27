@@ -57,6 +57,7 @@ function trustProxySetting(value) {
 
 const app = express();
 app.set('trust proxy', trustProxySetting(process.env.TRUST_PROXY));
+app.use(require('./middleware/edgeClientIp')); // real visitor address from the Cloudflare Pages proxy (EDGE_PROXY_SECRET)
 
 app.use(requestLogger);
 app.use(require('./services/tracing').middleware); // trace id on every request; spans exported when OTEL_EXPORTER_OTLP_ENDPOINT is set

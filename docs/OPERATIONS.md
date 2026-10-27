@@ -184,6 +184,8 @@ Brevo's free plan sends 300 emails a day with no monthly cap, which covers sign-
 
 ## Deploying
 
+Cloudflare Pages + Render + Neon: follow [DEPLOY_CLOUDFLARE_RENDER.md](DEPLOY_CLOUDFLARE_RENDER.md). Generic steps:
+
 1. `npm run db:migrate` (versioned, checksummed, safe to repeat).
 2. Roll the API instances one at a time; each drains in-flight requests on SIGTERM.
 3. Check `/api/health` and the metrics for errors before the next instance.

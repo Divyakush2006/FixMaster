@@ -1,0 +1,62 @@
+# Render Blueprint for the FixMaster API. The web app is on Cloudflare Pages
+# (client/); step-by-step instructions are in docs/DEPLOY_CLOUDFLARE_RENDER.md.
+#
+# Variables marked `sync: false` are asked for when the Blueprint is created and
+# never stored in git. `generateValue` makes Render invent a random secret.
+services:
+  - type: web
+    name: fixmaster-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter            # always on; the free plan sleeps after 15 idle minutes
+    region: singapore        # keep it close to the Neon database region
+    branch: final
+    healthCheckPath: /api/health/live
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DATABASE_URL            # Neon connection string (pooled is fine)
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: EDGE_PROXY_SECRET       # copy the same value into Cloudflare Pages
+        generateValue: true
+      - key: METRICS_TOKEN
+        generateValue: true
+      - key: CORS_ORIGIN
+        value: https://divyakush.info
+      - key: APP_URL
+        value: https://divyakush.info
+      # Email (Brevo)
+      - key: SMTP_HOST
+        value: smtp-relay.brevo.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      # Ticket photos (Cloudflare R2). Render's disk is wiped on every deploy.
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_REGION
+        value: auto
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      # AI (optional: every feature has a non-AI path)
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false

@@ -32,6 +32,8 @@ function testDatabaseUrl() {
 const TEST_DB_URL = testDatabaseUrl();
 
 process.env.NODE_ENV = 'test';
+// A developer's .env may hold real mail, photo-bucket and proxy settings; the suite must never use them.
+for (const name of ['SMTP_URL', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'MAIL_FROM', 'S3_BUCKET', 'S3_ENDPOINT', 'EDGE_PROXY_SECRET']) process.env[name] = ''; // empty, not deleted: dotenv would load it again
 // Uploaded photos go to a throwaway folder, never the working tree.
 process.env.UPLOAD_DIR = require('path').join(require('os').tmpdir(), `fixmaster-test-uploads-${process.pid}`);
 process.env.DATABASE_URL = TEST_DB_URL;

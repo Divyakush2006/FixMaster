@@ -18,6 +18,7 @@
  *   --rotate               give accounts of this roster that already exist a new password too
  *   --email-domain <d>     placeholder email domain (default fixmaster.example: a reserved name that
  *                          can never be somebody's mailbox). Replace the addresses before relying on email.
+ *   --admin-email <addr>   a real address for ADMIN_01, so "Forgot password" reaches them (others keep placeholders)
  *   --web-url <url>        shown in the credentials file
  *
  * The roster is fixed by the code, so running it again creates only what is missing.
@@ -153,7 +154,7 @@ function fullRoster({ admins, students }) {
 }
 
 // ---- writing it -------------------------------------------------------------------------------------------------
-async function provision({ connectionString, admins = 2, students = 200, campus = true, adminOnly = false, requireChange = false, rotate = false, emailDomain = 'fixmaster.example', log = console.log } = {}) {
+async function provision({ connectionString, admins = 2, students = 200, campus = true, adminOnly = false, requireChange = false, rotate = false, emailDomain = 'fixmaster.example', adminEmail = null, log = console.log } = {}) {
     const client = new Client(connectionConfig(connectionString));
     await client.connect();
     const q = (text, params) => client.query(text, params);
@@ -193,7 +194,7 @@ async function provision({ connectionString, admins = 2, students = 200, campus 
 
         const insertedStudents = [];
         for (const p of roster) {
-            p.email = emailFor(p);
+            p.email = adminEmail && p.id === 'ADMIN_01' ? adminEmail : emailFor(p);
             const knownId = known.get(p.id.toUpperCase());
             const must = requireChange;
             if (knownId) {
@@ -345,6 +346,7 @@ async function main() {
         requireChange,
         rotate: flag('rotate'),
         emailDomain,
+        adminEmail: arg('admin-email', null),
     });
     if (result.created.length === 0) {
         console.log(`Nothing to create: all ${result.existing.length} roster accounts already exist (use --rotate for new passwords).`);

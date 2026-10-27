@@ -391,6 +391,8 @@ CI runs on every push and pull request to `main` and `dev`:
 
 | Document | Contents |
 |---|---|
+| [Deploy: Cloudflare Pages + Render](docs/DEPLOY_CLOUDFLARE_RENDER.md) | Step-by-step production deployment, limits and troubleshooting |
+| [Operations](docs/OPERATIONS.md) | Accounts, email, AI keys, photo storage, backups, first-deployment checklist |
 | [Production Readiness](docs/PRODUCTION_READINESS.md) | Security audit, fixes, verification evidence and known limitations |
 | [Bug Fix Log](docs/BUGFIXES.md) | Defects found and how they were fixed |
 | [Frontend Notes](FRONTEND_NOTES.md) | Screens, routes and frontend conventions |

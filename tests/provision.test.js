@@ -89,4 +89,11 @@ describe('provisioning accounts', () => {
         assert.equal((await t.sql('SELECT COUNT(*)::int AS n FROM users')).rows[0].n, before + 1);
         assert.equal((await t.sql("SELECT COUNT(*)::int AS n FROM users WHERE reg_or_emp_id LIKE 'TECH\_%' OR reg_or_emp_id LIKE 'CW\_%'")).rows[0].n, 0);
     });
+
+    it('gives the first administrator a real email address when one is passed', async () => {
+        await resetDatabase();
+        await provision({ connectionString: TEST_DB_URL, admins: 1, adminOnly: true, adminEmail: 'owner@example.org', log: () => {} });
+        const { rows } = await t.sql("SELECT email FROM users WHERE reg_or_emp_id = 'ADMIN_01'");
+        assert.equal(rows[0].email, 'owner@example.org');
+    });
 });

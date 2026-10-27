@@ -36,3 +36,6 @@ uploads/
 
 # Generated account credentials (plain-text passwords): never commit
 credentials/
+
+# Cloudflare local dev state
+.wrangler/
