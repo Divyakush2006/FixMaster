@@ -32,3 +32,4 @@ database/backups/
 
 # Ticket photos written at runtime
 uploads/
+.bench/

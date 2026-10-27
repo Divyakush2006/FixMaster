@@ -37,16 +37,20 @@ const int = (value, fallback) => {
     return Number.isFinite(n) && n > 0 ? n : fallback;
 };
 
-// Defaults chosen per task (docs/ROADMAP.md section 7): the high-volume,
-// latency-sensitive tasks start on Groq (verified live, several keys); the
-// writing tasks use its larger model; OpenRouter's free models are next
-// because their daily allowance is the smallest; Gemini is last because its
-// free tier is not available in every Google project.
+// Defaults chosen from a benchmark of the free models on each platform against
+// the app's own prompts (docs/AI_MODELS.md; repeat it with `npm run ai:bench`).
+// Groq answers in under a second and was exact on every classification case, and
+// each of its models has its own daily allowance, so the chain walks Groq's
+// models before leaving Groq. The briefing, which is written once a day and
+// must quote only the facts it is given, starts on Gemini (the only family that
+// never invented a number). OpenRouter's free models come after Groq and Gemini
+// because their daily allowance is the smallest; the free roster changes often.
+const OR = 'openrouter:poolside/laguna-s-2.1:free';
 const DEFAULT_ROUTES = {
-    INTAKE: 'groq:openai/gpt-oss-20b,openrouter:google/gemma-4-31b-it:free,gemini:gemini-flash-lite-latest',
-    FEEDBACK_TAGS: 'groq:openai/gpt-oss-20b,openrouter:google/gemma-4-31b-it:free,gemini:gemini-flash-lite-latest',
-    BRIEFING: 'groq:openai/gpt-oss-120b,openrouter:google/gemma-4-31b-it:free,gemini:gemini-flash-lite-latest',
-    ASK: 'groq:openai/gpt-oss-120b,openrouter:google/gemma-4-31b-it:free,gemini:gemini-flash-lite-latest',
+    INTAKE: `groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-20b,groq:openai/gpt-oss-120b,gemini:gemini-3.1-flash-lite,${OR}`,
+    FEEDBACK_TAGS: 'groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-120b,gemini:gemini-3.1-flash-lite',
+    BRIEFING: `gemini:gemini-3.1-flash-lite,${OR},groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b`,
+    ASK: `groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-120b,gemini:gemini-3.1-flash-lite,${OR}`,
 };
 
 const TASKS = Object.keys(DEFAULT_ROUTES);
@@ -73,7 +77,7 @@ function routeFor(task) {
 }
 
 // Local runtimes have no allowance; the limit only guards against a runaway loop.
-const DEFAULT_DAILY_LIMITS = { groq: 12000, gemini: 400, openrouter: 45, ollama: 200000, local: 200000, fake: 1000000 };
+const DEFAULT_DAILY_LIMITS = { groq: 3000, gemini: 500, openrouter: 50, ollama: 200000, local: 200000, fake: 1000000 };
 
 /**
  * Every key of a provider, in the order written. <PROVIDER>_API_KEYS and

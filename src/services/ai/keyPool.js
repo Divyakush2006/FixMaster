@@ -9,7 +9,10 @@ const { apiKeys } = require('../../config/ai');
 // A key that was turned away is set aside for the time the provider asked
 // for (Retry-After), one minute when it did not say, and tried again after
 // that, so an exhausted daily allowance is picked up again the next day
-// without a restart. State is per process; each API server learns on its own.
+// without a restart. A rate limit belongs to one MODEL (Groq and Gemini count
+// each model's allowance separately), so a key resting for one model still
+// serves the others; a refused key (401 / 402 / 403) rests for every model.
+// State is per process; each API server learns on its own.
 //
 // With a single key there is nothing to rotate to, so it is never set aside:
 // the gateway's circuit breaker handles an unhealthy provider.
@@ -18,26 +21,28 @@ const MIN_COOLDOWN_MS = 1_000;
 const DEFAULT_COOLDOWN_MS = 60_000;
 const MAX_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
-const coolingUntil = new Map(); // `${provider}\n${key}` -> epoch ms
-const slot = (provider, key) => `${provider}\n${key}`;
+const ALL_MODELS = '*';
+const coolingUntil = new Map(); // provider, model (or *) and key -> epoch ms
+const slot = (provider, model, key) => [provider, model, key].join('\n');
 
-/** The provider's keys that are not set aside right now, in configured order. */
-function available(provider) {
+/** The provider's keys that can serve `model` right now, in configured order. */
+function available(provider, model) {
     const now = Date.now();
-    return apiKeys(provider).filter((key) => (coolingUntil.get(slot(provider, key)) ?? 0) <= now);
+    const resting = (m, key) => (coolingUntil.get(slot(provider, m, key)) ?? 0) > now;
+    return apiKeys(provider).filter((key) => !resting(ALL_MODELS, key) && !resting(model, key));
 }
 
-/** How many keys the provider has and how many can be used now. */
-function status(provider) {
+/** How many keys the provider has and how many can serve `model` now. */
+function status(provider, model) {
     const total = apiKeys(provider).length;
-    return { total, available: total ? available(provider).length : 0 };
+    return { total, available: total ? available(provider, model).length : 0 };
 }
 
-/** Sets a key aside; ignored when it is the provider's only key. */
-function cooldown(provider, key, ms) {
+/** Sets a key aside for one model (or, with keyWide, for every model); ignored when it is the provider's only key. */
+function cooldown(provider, model, key, ms, keyWide = false) {
     if (apiKeys(provider).length < 2) return;
     const wait = Math.min(MAX_COOLDOWN_MS, Math.max(MIN_COOLDOWN_MS, Number.isFinite(ms) ? ms : DEFAULT_COOLDOWN_MS));
-    coolingUntil.set(slot(provider, key), Date.now() + wait);
+    coolingUntil.set(slot(provider, keyWide ? ALL_MODELS : model, key), Date.now() + wait);
 }
 
 /** Retry-After as milliseconds: delta-seconds or an HTTP date; undefined when absent or unreadable. */

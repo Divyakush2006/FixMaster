@@ -32,6 +32,29 @@ const SCHEMA = {
     },
 };
 
+const numbersIn = (text) => (String(text).match(/d+(?:.d+)?/g) || []).map(Number);
+
+/**
+ * Why a model's briefing cannot be shown, or null when it can: it must quote
+ * only numbers and blocks that are in the facts it was given (the prompt says
+ * so; this enforces it), and must mention open emergencies. Numbers 0-5 are
+ * free ("two blocks", "3 actions"). A rejected reply falls to the next model,
+ * and finally to the fixed-rule briefing.
+ */
+function groundingProblem(facts, narrative) {
+    const text = [narrative.headline, ...narrative.highlights, ...narrative.actions].join(' | ');
+    const factsText = JSON.stringify(facts);
+    const known = new Set(numbersIn(factsText));
+    const stray = numbersIn(text).find((n) => n > 5 && !known.has(n));
+    if (stray !== undefined) return `quotes ${stray}, which is not in the facts`;
+    const blocks = new Set(factsText.match(/[A-Z]_BLOCK/g) || []);
+    const invented = (text.match(/[A-Z]_BLOCK/g) || []).find((b) => !blocks.has(b));
+    if (invented) return `names ${invented}, which is not in the facts`;
+    if ((facts.totals?.emergencies || 0) > 0 && !/emergenc/i.test(text)) return 'leaves out the open emergencies';
+    if (narrative.actions.length === 0) return 'has no actions';
+    return null;
+}
+
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** Everything the briefing is written from. Places and counts only: no people. */
@@ -132,6 +155,7 @@ async function generate(scope, userId) {
         schema: SCHEMA,
         userId,
         maxTokens: 700,
+        check: (narrative) => groundingProblem(facts, narrative),
     });
     if (result.ok) {
         return { facts, narrative: result.data, source: 'AI', model: `${result.provider}:${result.model}` };
@@ -171,4 +195,4 @@ async function briefingFor(scope, { userId, refresh = false } = {}) {
     return { ...kept.rows[0], cached: true };
 }
 
-module.exports = { briefingFor, gatherFacts, ruleBriefing, scopeKeyOf };
+module.exports = { briefingFor, gatherFacts, ruleBriefing, scopeKeyOf, groundingProblem, _SYSTEM: SYSTEM, _SCHEMA: SCHEMA };

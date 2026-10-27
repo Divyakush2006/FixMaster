@@ -23,9 +23,6 @@ class ProviderError extends Error {
 
 // 401 = key refused, 402 = no credit left (OpenRouter), 403 on Gemini = no free tier. A refused key will not
 // recover on its own soon, so it is set aside for an hour.
-// Tokens left over for gpt-oss thinking (low effort used 27-36 in live tests).
-const GPT_OSS_THINKING_HEADROOM = 256;
-
 const KEY_REFUSED_COOLDOWN_MS = 60 * 60 * 1000;
 
 async function postJson(url, headers, body, signal, refusalStatuses = [401, 402]) {
@@ -59,8 +56,8 @@ async function postJson(url, headers, body, signal, refusalStatuses = [401, 402]
  * problem and is thrown as is. When every key has been turned away, the last
  * refusal is thrown so the gateway records it and moves down its chain.
  */
-async function withKeys(provider, attempt) {
-    const keys = keyPool.available(provider);
+async function withKeys(provider, model, attempt) {
+    const keys = keyPool.available(provider, model);
     if (keys.length === 0) {
         throw new ProviderError('RATE_LIMITED', 'Every key for this provider is set aside after hitting a limit.', 429);
     }
@@ -70,15 +67,34 @@ async function withKeys(provider, attempt) {
             return await attempt(key);
         } catch (err) {
             if (!(err instanceof ProviderError) || !err.rotate) throw err;
-            keyPool.cooldown(provider, key, err.retryAfterMs);
+            keyPool.cooldown(provider, model, key, err.retryAfterMs, err.status !== 429);
             last = err;
         }
     }
     throw last;
 }
 
+// Per-model settings the adapters add to a request. A model that is not listed
+// is called plainly. 'body' is merged into the request body (OpenAI-style) or
+// into generationConfig (Gemini); 'extraTokens' is added to max_tokens for
+// models that think before answering, because the thinking counts against it;
+// 'mergeSystem' puts the system text in front of the user message for models
+// that take no separate system instruction. Found by running each model
+// against the live services (docs/AI_MODELS.md). A request's own 'tuning'
+// replaces the entry, which is how the benchmark (scripts/ai-benchmark)
+// tries other settings.
+const MODEL_TUNING = [{ provider: 'groq', model: /gpt-oss/, body: { reasoning_effort: 'low' }, extraTokens: 256 }];
+
+const tuningFor = (provider, model, override) => ({
+    body: {},
+    extraTokens: 0,
+    ...(MODEL_TUNING.find((t) => t.provider === provider && t.model.test(model)) || {}),
+    ...(override || {}),
+});
+
 /** Groq and OpenRouter both speak the OpenAI chat-completions dialect. */
-const openAiCompatible = (base, extraHeaders = {}) => async (provider, { model, system, user, maxTokens, signal }) => {
+const openAiCompatible = (base, extraHeaders = {}) => async (provider, { model, system, user, maxTokens, signal, tuning }) => {
+    const tune = tuningFor(provider, model, tuning);
     const body = {
         model,
         messages: [
@@ -88,19 +104,17 @@ const openAiCompatible = (base, extraHeaders = {}) => async (provider, { model, 
         temperature: 0.1,
         max_tokens: maxTokens,
         response_format: { type: 'json_object' },
+        ...tune.body,
     };
     // Groq's gpt-oss models think before they answer, and the thinking counts
     // against max_tokens: a small budget is used up before the JSON is complete
     // and Groq answers 400 "Failed to validate JSON". Keep the thinking short and
     // leave room for it (found by running against the live service).
-    if (provider === 'groq' && /gpt-oss/.test(model)) {
-        body.reasoning_effort = 'low';
-        body.max_tokens = maxTokens + GPT_OSS_THINKING_HEADROOM;
-    }
+    body.max_tokens = maxTokens + tune.extraTokens;
     const url = `${typeof base === 'function' ? base() : base}/chat/completions`;
     // A local server may have no key at all; a hosted provider rotates through its keys.
-    const payload = keyPool.status(provider).total
-        ? await withKeys(provider, (key) => postJson(url, { Authorization: `Bearer ${key}`, ...extraHeaders }, body, signal))
+    const payload = keyPool.status(provider, model).total
+        ? await withKeys(provider, model, (key) => postJson(url, { Authorization: `Bearer ${key}`, ...extraHeaders }, body, signal))
         : await postJson(url, extraHeaders, body, signal);
     const text = payload?.choices?.[0]?.message?.content;
     if (typeof text !== 'string' || !text.trim()) throw new ProviderError('ERROR', 'The provider returned no content.');
@@ -110,19 +124,22 @@ const openAiCompatible = (base, extraHeaders = {}) => async (provider, { model, 
 // Gemini answers 403 PERMISSION_DENIED when a key's project has no free tier or the key is restricted.
 const GEMINI_REFUSALS = [401, 402, 403];
 
-async function gemini(provider, { model, system, user, maxTokens, signal }) {
+async function gemini(provider, { model, system, user, maxTokens, signal, tuning }) {
+    const tune = tuningFor(provider, model, tuning);
     const base = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '');
     const body = {
-        systemInstruction: { parts: [{ text: system }] },
-        contents: [{ role: 'user', parts: [{ text: user }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
+        ...(tune.mergeSystem ? {} : { systemInstruction: { parts: [{ text: system }] } }),
+        contents: [{ role: 'user', parts: [{ text: tune.mergeSystem ? `${system}\n\n${user}` : user }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens + tune.extraTokens, responseMimeType: 'application/json', ...tune.body },
     };
-    const payload = await withKeys(provider, (key) =>
+    const payload = await withKeys(provider, model, (key) =>
         postJson(`${base}/models/${encodeURIComponent(model)}:generateContent`, { 'x-goog-api-key': key }, body, signal, GEMINI_REFUSALS)
     );
     const text = payload?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('');
     if (!text || !text.trim()) throw new ProviderError('ERROR', 'The provider returned no content.');
-    return { text, inputTokens: payload.usageMetadata?.promptTokenCount ?? null, outputTokens: payload.usageMetadata?.candidatesTokenCount ?? null };
+    // Thinking tokens are billed against the free allowance like any other output.
+    const out = (payload.usageMetadata?.candidatesTokenCount ?? 0) + (payload.usageMetadata?.thoughtsTokenCount ?? 0);
+    return { text, inputTokens: payload.usageMetadata?.promptTokenCount ?? null, outputTokens: out || null };
 }
 
 // ---- Local open-source models (CPU only) --------------------------------------------
@@ -204,7 +221,7 @@ function isAvailable(provider) {
 }
 
 /** Keys configured and keys usable now (not set aside after a limit); both 0 for keyless providers. */
-const keyStatus = (provider) => keyPool.status(provider);
+const keyStatus = (provider, model) => keyPool.status(provider, model);
 
 function call(provider, request) {
     return ADAPTERS[provider](provider, request);

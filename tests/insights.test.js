@@ -142,7 +142,7 @@ describe('insights', () => {
         });
 
         it('lets a model write the text from the facts alone, with no names or ticket text sent', async () => {
-            useModel(() => ({ headline: 'Three fan faults in one room need a proper repair.', highlights: ['One ticket is overdue.'], actions: ['Replace the fan in 843.'] }));
+            useModel(() => ({ headline: 'Three fan faults in one room need a proper repair, and any open emergency comes first.', highlights: ['One ticket is overdue.'], actions: ['Replace the fan in 843.'] }));
             const r = await t.api('/insights/briefing/refresh', { method: 'POST', token: admin });
             assert.equal(r.status, 200);
             assert.equal(r.data.source, 'AI');
@@ -168,6 +168,15 @@ describe('insights', () => {
             useModel(() => ({ headline: 'ok', highlights: 'not a list', actions: [], sneaky: true }));
             const r = await t.api('/insights/briefing', { token: admin });
             assert.equal(r.data.source, 'RULES');
+        });
+
+        it('rejects a model briefing that quotes a number or a block it was not given', async () => {
+            await t.sql('DELETE FROM ai_briefings');
+            useModel(() => ({ headline: 'Emergency: 4821 tickets are overdue in Z_BLOCK.', highlights: [], actions: ['Act now.'] }));
+            const r = await t.api('/insights/briefing', { token: admin });
+            assert.equal(r.data.source, 'RULES');
+            const row = (await t.sql("SELECT error_code FROM ai_calls WHERE error_code LIKE 'check:%' ORDER BY call_id DESC LIMIT 1")).rows[0];
+            assert.match(row.error_code, /not in the facts/);
         });
 
         it('uses the rules during an AI outage drill', async () => {

@@ -258,6 +258,17 @@ describe('AI providers: wire formats', () => {
             assert.equal(h.keys_available, 0);
         });
 
+        it('rests keys for the model that was limited only: the same keys still serve the provider\'s other models', async () => {
+            process.env.AI_ROUTE_ASK = 'groq:m1,groq:m2';
+            behave = (req) => (req.body.model === 'm1' ? { status: 429, body: {} } : { body: openAiReply('{"answer":"from m2"}') });
+            const r = await run();
+            assert.equal(r.model, 'm2');
+            assert.deepEqual(requests.map((q) => `${q.body.model}:${keyOf(q)}`), ['m1:gk-1', 'm1:gk-2', 'm1:gk-3', 'm2:gk-1']);
+            requests = [];
+            assert.equal((await run()).model, 'm2');
+            assert.deepEqual(requests.map((q) => `${q.body.model}:${keyOf(q)}`), ['m2:gk-1'], 'm1 is skipped while all its keys rest; m2 starts on the first key');
+        });
+
         it('multiplies the daily allowance by the number of keys, and never reports a key', async () => {
             const { dailyLimit } = require('../src/config/ai');
             process.env.AI_DAILY_LIMIT_GROQ = '100';

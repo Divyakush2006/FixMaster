@@ -7,14 +7,17 @@ const tracing = require('../tracing');
 
 // The one way the API talks to a language model.
 //
-//   run({ task, promptVersion, system, user, schema, userId?, flaggedInjection?, maxTokens? })
+//   run({ task, promptVersion, system, user, schema, userId?, flaggedInjection?, maxTokens?, check? })
 //     -> { ok: true, data, provider, model }
 //     -> { ok: false, reason }    reason: DRILL | USER_LIMIT | UNAVAILABLE
 //
 // For each provider:model in the task's route it checks, in order: the
 // provider is configured, its circuit breaker is closed, today's shared quota
 // has room; then calls it with a timeout, parses JSON and validates it against
-// `schema`. The first valid answer wins. Every attempt is written to ai_calls
+// `schema` and, when the caller gave a `check(data)` that returns a problem
+// description, against that too (e.g. "the briefing quotes a number it was not
+// given"): a reply with a problem counts as invalid and the next model is tried.
+// The first valid answer wins. Every attempt is written to ai_calls
 // (no prompt or response text), which also makes those rows the quota
 // counters shared by every API server.
 //
@@ -130,7 +133,7 @@ function parseJson(text) {
     }
 }
 
-async function run({ task, promptVersion, system, user, schema, userId = null, flaggedInjection = false, maxTokens = 800 }) {
+async function run({ task, promptVersion, system, user, schema, userId = null, flaggedInjection = false, maxTokens = 800, check = null }) {
     if (await drill()) return { ok: false, reason: 'DRILL' };
     if (userId && (await userUsesToday(userId, task)) >= userDailyLimit()) return { ok: false, reason: 'USER_LIMIT' };
 
@@ -139,7 +142,7 @@ async function run({ task, promptVersion, system, user, schema, userId = null, f
     for (const { provider, model } of routeFor(task)) {
         if (!providers.isAvailable(provider) || breakerOpen(provider)) continue;
         // Every key of this provider was turned away a moment ago: skip it without a call.
-        const keys = providers.keyStatus(provider);
+        const keys = providers.keyStatus(provider, model);
         if (keys.total > 0 && keys.available === 0) continue;
         const base = { runId, task, provider, model, promptVersion, userId, flaggedInjection };
         if ((await usedToday(provider)) >= dailyLimit(provider)) {
@@ -170,6 +173,12 @@ async function run({ task, promptVersion, system, user, schema, userId = null, f
                 await logCall({ ...base, outcome: 'INVALID_OUTPUT', latencyMs, inputTokens: reply.inputTokens, outputTokens: reply.outputTokens, errorCode: why });
                 continue;
             }
+            const problem = check ? check(data) : null;
+            if (problem) {
+                // The provider worked; this model's text is not usable. Not a breaker failure.
+                await logCall({ ...base, outcome: 'INVALID_OUTPUT', latencyMs, inputTokens: reply.inputTokens, outputTokens: reply.outputTokens, errorCode: `check: ${problem}` });
+                continue;
+            }
             recordResult(provider, true);
             await logCall({ ...base, outcome: 'OK', latencyMs, inputTokens: reply.inputTokens, outputTokens: reply.outputTokens });
             return { ok: true, data, provider, model };
@@ -190,6 +199,8 @@ async function run({ task, promptVersion, system, user, schema, userId = null, f
  * configured, its breaker, today's use against its allowance, and the last
  * hour's success rate; overall HEALTHY / DEGRADED / DOWN / DISABLED.
  */
+const routedModels = (provider) => [...new Set(TASKS.flatMap((t) => routeFor(t)).filter((r) => r.provider === provider).map((r) => r.model))];
+
 async function health() {
     const providersInUse = [...new Set(TASKS.flatMap((t) => routeFor(t).map((r) => r.provider)))];
     const { rows } = await db.query(
@@ -209,7 +220,8 @@ async function health() {
             provider,
             configured: providers.isAvailable(provider),
             keys_total: providers.keyStatus(provider).total,
-            keys_available: providers.keyStatus(provider).available,
+            // A key may rest for one model and still serve another: count it if any routed model can use it.
+            keys_available: Math.max(0, ...routedModels(provider).map((m) => providers.keyStatus(provider, m).available)),
             breaker_open: breakerOpen(provider),
             used_today: r.used_today,
             daily_limit: dailyLimit(provider),
@@ -230,7 +242,7 @@ async function health() {
     return { status, drill: drillState, providers: list, routes: Object.fromEntries(TASKS.map((t) => [t, routeFor(t)])) };
 }
 
-module.exports = { run, health, setDrill, _resetBreakers: () => {
+module.exports = { run, health, setDrill, _parseJson: parseJson, _resetBreakers: () => {
         breakers.clear();
         providers.resetKeys();
     } };

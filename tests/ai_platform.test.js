@@ -60,6 +60,17 @@ describe('AI platform: gateway, privacy and health', () => {
         assert.equal(rows[0].run_id, rows[1].run_id, 'attempts of one run share its id');
     });
 
+    it('moves on from an answer the caller own check rejects, without counting it as a provider failure', async () => {
+        providers.setFakeResponder(({ model }) => ({ answer: model === 'fake-primary' ? 'yes' : 'no' }));
+        const r = await ask({ check: (d) => (d.answer === 'yes' ? 'says yes, which this caller refuses' : null) });
+        assert.equal(r.ok, true);
+        assert.equal(r.model, 'fake-backup');
+        const rows = (await t.sql('SELECT outcome, error_code FROM ai_calls ORDER BY call_id')).rows;
+        assert.deepEqual(rows.map((c) => c.outcome), ['INVALID_OUTPUT', 'OK']);
+        assert.match(rows[0].error_code, /^check: says yes/);
+        assert.equal((await gateway.health()).providers.find((x) => x.provider === 'fake').breaker_open, false);
+    });
+
     it('treats values outside the allowed list as invalid', async () => {
         providers.setFakeResponder(() => ({ answer: 'maybe' }));
         assert.deepEqual(await ask(), { ok: false, reason: 'UNAVAILABLE' });

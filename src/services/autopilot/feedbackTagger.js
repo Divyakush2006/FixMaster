@@ -139,4 +139,4 @@ function startFeedbackTagger({ log = console } = {}) {
     };
 }
 
-module.exports = { tagPending, startFeedbackTagger, ruleTags, TAGS };
+module.exports = { tagPending, startFeedbackTagger, ruleTags, TAGS, _SYSTEM: SYSTEM, _schemaFor: schemaFor };
