@@ -1,5 +1,6 @@
 const db = require('../../config/db');
-const { dispatch, suggest } = require('./index');
+const { dispatch, suggest, explainNobody } = require('./index');
+const steps = require('../handling/steps');
 
 // The autopilot acts when a ticket is raised or sent back. That alone leaves
 // gaps: a ticket raised while nobody was eligible (everyone at their limit,
@@ -15,6 +16,33 @@ const { dispatch, suggest } = require('./index');
 const SWEEP_LOCK_KEY = 7253104; // arbitrary, app-specific (see verificationSweeper.js)
 const DEFAULT_SECONDS = 60;
 const DEFAULT_BATCH = 100;
+// A ticket nobody could take for this long is flagged to the supervisors in its trail (and on the status card).
+const alertAfterMinutes = () => Number.parseInt(process.env.TICKET_WAIT_ALERT_MINUTES, 10) || 30;
+
+/** Writes why a ticket is still waiting, once per change, and a follow-up line when it has waited too long. */
+async function noteWaiting(t, excluded) {
+    await steps.recordIfChanged(db, t.complaint_id, {
+        stage: 'DISPATCH',
+        actor: 'AUTOPILOT',
+        outcome: 'WAITING',
+        title: 'Waiting for a technician to become free',
+        detail: `${explainNobody(t.specialization, excluded)} It is tried again every minute, and a supervisor can assign someone sooner.`,
+        data: { reason: 'NO_ELIGIBLE_STAFF', excluded: excluded.length },
+    });
+    const minutes = (Date.now() - new Date(t.created_at).getTime()) / 60000;
+    if (minutes >= alertAfterMinutes()) {
+        const done = await db.query("SELECT 1 FROM ticket_handling_steps WHERE complaint_id = $1 AND stage = 'FOLLOW_UP' LIMIT 1", [t.complaint_id]);
+        if (done.rows.length === 0) {
+            await steps.record(db, t.complaint_id, {
+                stage: 'FOLLOW_UP',
+                actor: 'SYSTEM',
+                outcome: 'WAITING',
+                title: 'Flagged to the supervisors',
+                detail: `No technician has been free for ${alertAfterMinutes()} minutes, so this ticket is listed for the supervisors to assign or chase.`,
+            });
+        }
+    }
+}
 
 const last = { at: null, assigned: 0, waiting: 0, failed: 0 };
 
@@ -53,20 +81,22 @@ async function sweepOnce({ blocks = null, limit = DEFAULT_BATCH, log = console }
     const tickets = await waitingTickets(db, blocks, limit);
     const out = { checked: tickets.length, assigned: 0, waiting: 0, failed: 0 };
     // Nobody free for a block and trade stays true for its other tickets too, so they are not tried again in this pass.
-    const stuck = new Set();
+    const stuck = new Map(); // block:trade -> the exclusions that left nobody
     for (const t of tickets) {
         const key = `${t.block_id}:${t.specialization}`;
         if (stuck.has(key)) {
             out.waiting += 1;
+            await noteWaiting(t, stuck.get(key)).catch(() => {});
             continue;
         }
         try {
-            const r = await dispatch(t.complaint_id, { source: 'AUTOPILOT' });
+            const r = await dispatch(t.complaint_id, { source: 'AUTOPILOT', trigger: 'RETRY' });
             if (r.assigned) out.assigned += 1;
             else {
                 out.waiting += 1;
+                await noteWaiting(t, r.excluded).catch(() => {});
                 // A bad experience in one room excludes one person for that room only, so it says nothing about the block.
-                if (!r.excluded.some((e) => e.reason === 'BAD_EXPERIENCE_HERE')) stuck.add(key);
+                if (!r.excluded.some((e) => e.reason === 'BAD_EXPERIENCE_HERE')) stuck.set(key, r.excluded);
             }
         } catch (err) {
             // Taken by a supervisor or another instance a moment ago (409) is fine; anything else is worth a line.

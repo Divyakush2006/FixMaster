@@ -32,6 +32,7 @@ router.put(
 router.delete('/:id/photo', authenticate, authorize('STUDENT'), photoParamValidators, complaints.deletePhoto);
 router.get('/:id/photo', authenticate, photoParamValidators, complaints.getPhoto);
 router.get('/:id/logs', authenticate, complaintIdParamValidators, complaints.getComplaintLogs);
+router.get('/:id/handling', authenticate, complaintIdParamValidators, complaints.getHandling);
 router.get('/:id/related', authenticate, authorize(...MANAGER_ROLES), complaintIdParamValidators, complaints.getRelatedComplaints);
 
 // Closing a ticket without the work being done.

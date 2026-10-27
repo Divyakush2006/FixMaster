@@ -10,6 +10,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { Card, CardBody, CardFooter, CardHeader } from '../../components/ui/Card';
 import { Field, Input, Select, Textarea } from '../../components/ui/Form';
 import { BlockOptions } from '../../components/common/BlockOptions';
+import { acknowledgement } from '../../components/common/HandlingTrail';
 import { Alert } from '../../components/ui/Alert';
 import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/cn';
@@ -155,7 +156,7 @@ export const NewComplaintForm: React.FC = () => {
           `Raised ${formatRelativeTime(res.complaint.created_at)} as ${ticketRef(res.complaint.complaint_id)}. You have been added to it and will see its progress.`
         );
       } else {
-        showToast('Ticket raised', 'success', `${ticketRef(res.complaint.complaint_id)} · we will keep you updated here.`);
+        showToast('Ticket raised', 'success', `${ticketRef(res.complaint.complaint_id)} · ${acknowledgement(res.handling) ?? 'we will keep you updated here.'}`);
       }
       queryClient.invalidateQueries({ queryKey: ['complaints'] });
       navigate(`/student/complaints?id=${res.complaint.complaint_id}`);

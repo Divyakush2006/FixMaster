@@ -5,7 +5,8 @@ const { slaDueSql, slaStatusSql } = require('../services/slaService');
 const { photoUrl, sanitizeImage, savePhoto, removePhoto, findPhoto, sendPhoto } = require('../services/attachmentService');
 const { managedBlocks, scopeCondition, inScope, assertTicketInScope } = require('../services/scopeService');
 const { MANAGER_ROLES } = require('../config/roles');
-const { autoDispatchIfEnabled } = require('../services/autopilot');
+const handling = require('../services/handling/steps');
+const { processNewTicket } = require('../services/handling/pipeline');
 
 // Ticket model (migrations 007-008): the ROOM or COMMON AREA is the unit of a
 // ticket, not the person. There is at most one live ticket per location and
@@ -338,6 +339,13 @@ exports.createComplaint = asyncHandler(async (req, res) => {
                  VALUES ($1, $2, NULL, 'OPEN', 'Complaint raised')`,
                 [created.complaint_id, userId]
             );
+            await handling.record(client, created.complaint_id, {
+                stage: 'RECEIVED',
+                actor: 'SYSTEM',
+                outcome: 'DONE',
+                title: 'Request received',
+                detail: `Registered as ${ticketRef(created.complaint_id)} with ${PRIORITY_LABEL[effectivePriority] || effectivePriority} priority for ${issue.rows[0].issue_name}.`,
+            });
             return { joined: false, complaint: created };
         }, userId);
     } catch (err) {
@@ -359,11 +367,17 @@ exports.createComplaint = asyncHandler(async (req, res) => {
             complaint: outcome.complaint,
         });
     }
-    // Blocks and trades on AUTO are dispatched straight away, after the ticket
-    // is committed (never inside its transaction). The answer reports it.
-    const dispatched = await autoDispatchIfEnabled(outcome.complaint.complaint_id);
-    const complaint = dispatched && dispatched.assigned ? { ...outcome.complaint, status: 'ASSIGNED', assigned_staff_name: dispatched.staff_name } : outcome.complaint;
-    res.status(201).json({ joined: false, message: 'Complaint registered', complaint, autopilot: dispatched });
+    // After the ticket is committed (never inside its transaction): the AI review and the
+    // autopilot each act and write their step to the ticket's trail. The answer reports both.
+    const dispatched = await processNewTicket(outcome.complaint.complaint_id);
+    const fresh = (await db.query('SELECT priority FROM complaints WHERE complaint_id = $1', [outcome.complaint.complaint_id])).rows[0];
+    const complaint = {
+        ...outcome.complaint,
+        ...(fresh ? { priority: fresh.priority } : {}),
+        ...(dispatched && dispatched.assigned ? { status: 'ASSIGNED', assigned_staff_name: dispatched.staff_name } : {}),
+    };
+    const trail = await handling.list(complaint.complaint_id, { forManager: MANAGER_ROLES.includes(role) });
+    res.status(201).json({ joined: false, message: 'Complaint registered', complaint, autopilot: dispatched, handling: trail });
 });
 
 /** Adds the caller as a reporter of an existing live ticket (inside the create transaction). */
@@ -387,6 +401,13 @@ async function joinExistingTicket(client, ticket, { userId, description, ticket_
     // carries only what they added.
     const typed = description && description.trim() ? `: "${description.trim().slice(0, 200)}"` : '';
     await addNote(client, ticket.complaint_id, ticket.status, userId, `Also reported${typed}`);
+    await handling.record(client, ticket.complaint_id, {
+        stage: 'RECEIVED',
+        actor: 'SYSTEM',
+        outcome: 'DONE',
+        title: 'Another report added',
+        detail: 'Someone else reported the same issue here, so it was added to this ticket instead of opening a second one.',
+    });
 
     let complaint = ticket;
     if (ticket_scope === 'COMMON_AREA') {
@@ -607,6 +628,16 @@ exports.getComplaintLogs = asyncHandler(async (req, res) => {
         [req.params.id]
     );
     res.json(logs.rows);
+});
+
+// GET /api/complaints/:id/handling - how the system handled the ticket: received, reviewed (which AI
+// model, or the rules), dispatched, followed up. Same visibility as the ticket; only managers also get
+// the scores and the model's raw urgency.
+exports.getHandling = asyncHandler(async (req, res) => {
+    const found = await db.query('SELECT 1 FROM complaints WHERE complaint_id = $1', [req.params.id]);
+    if (found.rows.length === 0) throw new AppError(404, 'Complaint not found.');
+    await assertCanView(req.params.id, req.user);
+    res.json(await handling.list(req.params.id, { forManager: MANAGER_ROLES.includes(req.user.role) }));
 });
 
 // GET /api/complaints/:id/related (SUPERVISOR, ADMIN) - other live tickets at

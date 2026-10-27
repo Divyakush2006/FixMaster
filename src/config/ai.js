@@ -50,6 +50,8 @@ const int = (value, fallback) => {
 const OR = 'openrouter:poolside/laguna-s-2.1:free';
 const DEFAULT_ROUTES = {
     INTAKE: `groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-20b,groq:openai/gpt-oss-120b,gemini:gemini-3.1-flash-lite,${OR}`,
+    // Reads each new ticket once (urgency, safety). Same chain as INTAKE: it sees the resident's own words, so Groq first.
+    TRIAGE: `groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-20b,groq:openai/gpt-oss-120b,gemini:gemini-3.1-flash-lite,${OR}`,
     FEEDBACK_TAGS: 'groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-120b,gemini:gemini-3.1-flash-lite',
     BRIEFING: `gemini:gemini-3.1-flash-lite,${OR},groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b`,
     ASK: `groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-120b,gemini:gemini-3.1-flash-lite,${OR}`,

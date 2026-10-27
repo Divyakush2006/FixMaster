@@ -371,6 +371,35 @@ export interface Complaint {
   can_attach_photo?: boolean;
   /** Detail view only, and only where names may be shown. */
   reporters?: Reporter[];
+  /** Reviewed advice for the resident until the fault is fixed (set by the ticket review). */
+  ai_safety_advisory?: string | null;
+}
+
+/** Who did a step of handling a ticket. */
+export type HandlingActor = 'SYSTEM' | 'AI' | 'AUTOPILOT' | 'SUPERVISOR';
+export type HandlingStage = 'RECEIVED' | 'AI_REVIEW' | 'DISPATCH' | 'FOLLOW_UP';
+export type HandlingOutcome = 'DONE' | 'WAITING' | 'SKIPPED' | 'FAILED';
+
+/** One thing the system did to a ticket: received, reviewed (by which AI model or the rules), dispatched. */
+export interface HandlingStep {
+  step_id: string;
+  stage: HandlingStage;
+  actor: HandlingActor;
+  outcome: HandlingOutcome;
+  title: string;
+  detail: string | null;
+  /** The AI provider and model, when one was involved. */
+  provider: string | null;
+  model: string | null;
+  created_at: string;
+  /** Managers only: scores, the model's raw urgency and confidence ... */
+  data?: Record<string, unknown> | null;
+}
+
+export interface HandlingTrail {
+  steps: HandlingStep[];
+  /** Stages still on their way, e.g. AI_REVIEW right after the ticket is raised. */
+  pending: HandlingStage[];
 }
 
 export interface CreateComplaintResult {
@@ -378,6 +407,8 @@ export interface CreateComplaintResult {
   joined: boolean;
   message: string;
   complaint: Complaint;
+  /** What was done to the new ticket straight away (not sent when `joined`). */
+  handling?: HandlingTrail;
 }
 
 export interface ComplaintLogEntry {
@@ -631,6 +662,33 @@ export interface AutopilotSettingsResponse {
   can_edit_campus_default: boolean;
 }
 
+/** What the autopilot did in the last day and which tickets on Automatic are still waiting for it. */
+export interface AutopilotStatus {
+  assigned_last_24h: number;
+  waiting_total: number;
+  waiting: {
+    complaint_id: string;
+    block_id: string;
+    specialization: Specialization;
+    priority: Priority;
+    issue_name: string;
+    created_at: string;
+    waiting_minutes: number;
+    /** Technicians of the trade who could take it right now. */
+    eligible: number;
+    trade_staff: number;
+    reasons: Partial<Record<ExclusionReason, number>>;
+  }[];
+  last_sweep: { at: string; assigned: number; waiting: number; failed: number } | null;
+}
+
+export interface AutopilotSweepResult {
+  checked: number;
+  assigned: number;
+  waiting: number;
+  failed: number;
+}
+
 export type PerformanceFlagCode = 'LOW_RATING' | 'HIGH_REWORK' | 'MISSED_SLA' | 'LONG_IDLE';
 
 export interface StaffPerformanceRow {
@@ -662,33 +720,6 @@ export interface CleaningPlan {
   shift: StaffShift;
   total_rooms: number;
   cleaners: { user_id: string; full_name: string; floors: number[]; rooms: number; slots: { MORNING: number; AFTERNOON: number; EVENING: number } }[];
-/** What the autopilot did in the last day and which tickets on Automatic are still waiting for it. */
-export interface AutopilotStatus {
-  assigned_last_24h: number;
-  waiting_total: number;
-  waiting: {
-    complaint_id: string;
-    block_id: string;
-    specialization: Specialization;
-    priority: Priority;
-    issue_name: string;
-    created_at: string;
-    waiting_minutes: number;
-    /** Technicians of the trade who could take it right now. */
-    eligible: number;
-    trade_staff: number;
-    reasons: Partial<Record<ExclusionReason, number>>;
-  }[];
-  last_sweep: { at: string; assigned: number; waiting: number; failed: number } | null;
-}
-
-export interface AutopilotSweepResult {
-  checked: number;
-  assigned: number;
-  waiting: number;
-  failed: number;
-}
-
   unassigned_floors: number[];
   uses_campus_pool: boolean;
 }

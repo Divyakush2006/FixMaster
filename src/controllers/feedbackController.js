@@ -25,7 +25,7 @@ exports.submitResolutionFeedback = asyncHandler(async (req, res) => {
 
     // Work sent back goes to someone else at once where the autopilot is on
     // AUTO; the technician the residents were unhappy with is excluded.
-    const redispatch = is_satisfied ? null : await autoDispatchIfEnabled(complaint_id);
+    const redispatch = is_satisfied ? null : await autoDispatchIfEnabled(complaint_id, console, { trigger: 'SENT_BACK' });
 
     res.status(200).json({
         autopilot: redispatch,

@@ -88,6 +88,10 @@ If the campus outgrows this, the cheapest levers are, in order: add Groq/Gemini 
 
 Settings found necessary by the live runs live in `MODEL_TUNING` in [providers.js](../src/services/ai/providers.js): Groq `gpt-oss` models get `reasoning_effort: low` and 256 extra tokens, because their thinking otherwise uses the whole budget and Groq answers HTTP 400.
 
+### TRIAGE (the review of a new ticket)
+
+One call per ticket that has a description: the issue, the standard priority and the resident's redacted words in, `{urgency, safety_risk, reasoning, technician_note, confidence}` out (about 250 tokens in, 60 out). It uses the INTAKE chain (fast Groq models first; the resident's text stays on Groq as long as possible). It was not part of the benchmark above; the guards, not the model, carry the safety: it can only raise a priority (to High at most), needs 70% confidence, and fixed danger-word rules apply with or without it. See OPERATIONS.md, "How a new ticket is handled".
+
 ### Timeouts and the "AI partly off" signal
 
 Live requests (INTAKE, ASK, FEEDBACK_TAGS) give each attempt 8 s (`AI_TIMEOUT_MS`); the BRIEFING gets 20 s (`AI_TIMEOUT_BRIEFING_MS`). On 27 October the briefing's first model, Gemini, timed out twice at 8 s although the benchmark had measured 2-4 s, and OpenRouter answered 429 once; Groq answered both times, so the briefing was fine, but the two failures were enough to show "AI partly off". A provider now counts as struggling only after three failures in an hour with more failures than answers (or when it is paused, out of allowance or out of keys), and the top bar names which one.

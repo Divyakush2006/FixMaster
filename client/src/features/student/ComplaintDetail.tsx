@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button';
 import { Skeleton } from '../../components/ui/PageLoader';
 import { StatusBadge, PriorityBadge, SpecializationBadge, SlaBadge } from '../../components/common/Badges';
 import { ActivityTimeline } from '../../components/common/ActivityTimeline';
+import { HandlingTrailPanel } from '../../components/common/HandlingTrail';
 import { isNoteEntry, logDescription, noteTitle, reconstructTimeline } from '../../utils/timeline';
 import { complaintsApi } from '../../api/endpoints';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
@@ -235,6 +236,17 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({ isOp
         )}
 
         <TicketPhoto complaint={complaint} />
+
+        {complaint.ai_safety_advisory && !CLOSED_STATUSES.includes(complaint.status) && (
+          <Alert tone="warning" title="Until it is fixed">
+            {complaint.ai_safety_advisory}
+          </Alert>
+        )}
+
+        <section>
+          <h3 className="eyebrow mb-3">How your request was handled</h3>
+          <HandlingTrailPanel complaintId={complaint.complaint_id} enabled={isOpen} />
+        </section>
 
         <section>
           <h3 className="eyebrow mb-3">Activity</h3>

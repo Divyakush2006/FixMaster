@@ -6,6 +6,7 @@ import {
   CreateComplaintResult,
   Complaint,
   ComplaintLogEntry,
+  HandlingTrail,
   StaffTask,
   FeedbackPayload,
   BlockKpi,
@@ -47,9 +48,9 @@ import {
   AutopilotSuggestions,
   AutopilotDispatchResult,
   AutopilotSettingsResponse,
-  AutopilotSetting,
   AutopilotStatus,
   AutopilotSweepResult,
+  AutopilotSetting,
   AutopilotMode,
   ScoreComponent,
   StaffPerformanceRow,
@@ -139,6 +140,9 @@ export const complaintsApi = {
   getById: (id: string) => apiFetch<Complaint>(`/complaints/${id}`, { method: 'GET' }),
 
   getLogs: (id: string) => apiFetch<ComplaintLogEntry[]>(`/complaints/${id}/logs`, { method: 'GET' }),
+
+  /** How the ticket was handled: received, AI review, dispatch. */
+  getHandling: (id: string) => apiFetch<HandlingTrail>(`/complaints/${id}/handling`, { method: 'GET' }),
 
   /** Other live tickets at the same room / common area (merge candidates). Supervisor, admin. */
   related: (id: string) => apiFetch<Complaint[]>(`/complaints/${id}/related`, { method: 'GET' }),
@@ -457,16 +461,16 @@ export const autopilotApi = {
 
   settings: () => apiFetch<AutopilotSettingsResponse>('/autopilot/settings', { method: 'GET' }),
 
-  saveSetting: (data: { block_id: string | null; /** Every block of this hostel that the caller runs, instead of one block. */ hostel?: HostelType; specialization: Specialization; mode: AutopilotMode; live_job_cap?: number; weights?: Partial<Record<ScoreComponent, number>> | null }) =>
-    apiFetch<AutopilotSetting>('/autopilot/settings', { method: 'PUT', body: JSON.stringify(data) }),
-
-  performance: (specialization?: Specialization) =>
   /** What the autopilot did lately and which tickets on Automatic are waiting for it, with why. */
   status: () => apiFetch<AutopilotStatus>('/autopilot/status', { method: 'GET' }),
 
   /** Tries every waiting ticket on Automatic now, within the caller's blocks. */
   sweep: () => apiFetch<AutopilotSweepResult>('/autopilot/sweep', { method: 'POST' }),
 
+  saveSetting: (data: { block_id: string | null; /** Every block of this hostel that the caller runs, instead of one block. */ hostel?: HostelType; specialization: Specialization; mode: AutopilotMode; live_job_cap?: number; weights?: Partial<Record<ScoreComponent, number>> | null }) =>
+    apiFetch<AutopilotSetting>('/autopilot/settings', { method: 'PUT', body: JSON.stringify(data) }),
+
+  performance: (specialization?: Specialization) =>
     apiFetch<StaffPerformanceRow[]>('/autopilot/performance', { method: 'GET', params: { specialization } }),
 
   cleaningPlan: (blockId: string, shift?: string) =>

@@ -2,6 +2,7 @@ const db = require('../config/db');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { slaDueSql, slaStatusSql } = require('../services/slaService');
 const { assertTicketInScope } = require('../services/scopeService');
+const handling = require('../services/handling/steps');
 
 // Validation of dispatch requests (complaint exists, is in a dispatchable
 // state, staff member exists, is active and has the right trade) lives in the
@@ -35,6 +36,17 @@ exports.assignTechnician = asyncHandler(async (req, res) => {
             expected,
             allowOffDuty,
         ]);
+        const names = await client.query('SELECT user_id, full_name, specialization FROM users WHERE user_id = ANY($1)', [[staff_user_id, supervisorId]]);
+        const tech = names.rows.find((r) => r.user_id === staff_user_id);
+        const boss = names.rows.find((r) => r.user_id === supervisorId);
+        await handling.record(client, complaint_id, {
+            stage: 'DISPATCH',
+            actor: 'SUPERVISOR',
+            outcome: 'DONE',
+            title: 'Technician assigned by a supervisor',
+            detail: `${tech ? tech.full_name : 'A technician'} was assigned${boss ? ` by ${boss.full_name}` : ''}.`,
+            data: { staff_user_id, assigned_by: supervisorId, manual: true },
+        });
     }, supervisorId);
 
     res.status(200).json({ message: 'Task successfully assigned to technician.' });

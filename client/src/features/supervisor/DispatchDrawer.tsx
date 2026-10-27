@@ -16,6 +16,7 @@ import { Skeleton } from '../../components/ui/PageLoader';
 import { cn } from '../../components/ui/cn';
 import { StatusBadge, PriorityBadge, SpecializationBadge, SlaBadge } from '../../components/common/Badges';
 import { ActivityTimeline } from '../../components/common/ActivityTimeline';
+import { HandlingTrailPanel } from '../../components/common/HandlingTrail';
 import { Complaint, TimelineEvent } from '../../types';
 import { AutopilotPanel } from '../autopilot/AutopilotPanel';
 import { formatDateTime, formatRelativeTime } from '../../utils/formatters';
@@ -268,6 +269,11 @@ export const DispatchDrawer: React.FC<DispatchDrawerProps> = ({ isOpen, onClose,
               {complaint.description}
             </p>
           )}
+        </section>
+
+        <section>
+          <h3 className="eyebrow mb-3">Automatic handling</h3>
+          <HandlingTrailPanel complaintId={complaint.complaint_id} manager />
         </section>
 
         <section>

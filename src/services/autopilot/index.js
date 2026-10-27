@@ -1,6 +1,7 @@
 const db = require('../../config/db');
 const { AppError } = require('../../middleware/errorHandler');
 const { rank, normaliseWeights } = require('./scoring');
+const steps = require('../handling/steps');
 
 // The dispatch autopilot (docs/ROADMAP.md section 6).
 //
@@ -15,6 +16,15 @@ const { rank, normaliseWeights } = require('./scoring');
 const LIVE_STATES = ['ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS'];
 const DEFAULT_SETTINGS = { mode: 'SUGGEST', live_job_cap: 6, weights: null };
 const DEFAULT_CAMPUS_MEAN = 4.0;
+const TRADE_NAME = { CLEANING: 'housekeeping staff', ELECTRICIAN: 'electricians', PLUMBER: 'plumbers', AC_TECH: 'AC technicians', CARPENTER: 'carpenters' };
+const REASON_TEXT = {
+    OFF_DUTY: 'off duty',
+    ON_LEAVE: 'on leave',
+    OFF_SHIFT: 'on another shift',
+    OTHER_BLOCK: 'based in another block',
+    AT_CAPACITY: 'at their limit of live jobs',
+    BAD_EXPERIENCE_HERE: 'recently had a poor result at this place',
+};
 const RECOVERY_DAYS = 30;
 const TIMEZONE = () => process.env.APP_TIMEZONE || 'Asia/Kolkata';
 
@@ -208,12 +218,24 @@ async function suggest(complaintId) {
     return { ticket: { complaint_id: ticket.complaint_id, status: ticket.status, block_id: ticket.block_id, specialization: ticket.specialization }, ...(await evaluate(db, ticket)) };
 }
 
+/** "No electrician is free: 52 on another shift, 4 off duty." - for the trail, from the rules' own exclusions. */
+function explainNobody(specialization, excluded) {
+    const trade = TRADE_NAME[specialization] || 'staff';
+    if (!excluded || excluded.length === 0) return `No ${trade} are registered for this work yet.`;
+    const counts = {};
+    for (const e of excluded) counts[e.reason] = (counts[e.reason] || 0) + 1;
+    const parts = Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([reason, n]) => `${n} ${REASON_TEXT[reason] || reason.toLowerCase()}`);
+    return `No one of the ${excluded.length} ${trade} can take it right now: ${parts.join(', ')}.`;
+}
+
 /**
  * Assigns the top-ranked technician. `source` is AUTOPILOT (nobody asked)
  * or SUGGESTION (a manager accepted the suggestion). Returns
  * { assigned: false, reason } when nobody is eligible - a normal outcome.
  */
-async function dispatch(complaintId, { actorUserId = null, source = 'AUTOPILOT' } = {}) {
+async function dispatch(complaintId, { actorUserId = null, source = 'AUTOPILOT', trigger = 'NEW' } = {}) {
     return db.withTransaction(async (client) => {
         const ticket = await loadTicket(client, complaintId, { lock: true });
         if (!['OPEN', 'ESCALATED'].includes(ticket.status)) {
@@ -244,22 +266,80 @@ async function dispatch(complaintId, { actorUserId = null, source = 'AUTOPILOT' 
                 `${source === 'AUTOPILOT' ? 'Autopilot assigned' : 'Suggested and assigned'} ${best.full_name} (score ${best.score} of ${result.candidates.length} considered${result.recovery ? ', recovery mode' : ''})`,
             ]
         );
+        // The trail: who assigned, to whom, and why (the score is for managers only).
+        const byAutopilot = source === 'AUTOPILOT';
+        const supervisor = byAutopilot || !actorUserId ? null : (await client.query('SELECT full_name FROM users WHERE user_id = $1', [actorUserId])).rows[0];
+        const again = trigger === 'SENT_BACK' ? ' after the fix was not accepted' : trigger === 'RETRY' ? ' once someone became free' : '';
+        await steps.record(client, complaintId, {
+            stage: 'DISPATCH',
+            actor: byAutopilot ? 'AUTOPILOT' : 'SUPERVISOR',
+            outcome: 'DONE',
+            title: byAutopilot ? `Technician assigned automatically${again}` : 'Technician assigned by a supervisor',
+            detail: `${best.full_name} will handle this${byAutopilot ? '' : supervisor ? `; confirmed by ${supervisor.full_name}` : ''}.`,
+            data: { staff_user_id: best.user_id, staff_name: best.full_name, trigger, source, ...breakdown },
+        });
         return { assigned: true, staff_user_id: best.user_id, staff_name: best.full_name, score: best.score, recovery: result.recovery };
     }, actorUserId);
 }
 
-/** After a ticket is raised or sent back: dispatch it if its block and trade are on AUTO. Never throws. */
-async function autoDispatchIfEnabled(complaintId, log = console) {
+/**
+ * After a ticket is raised, sent back or found waiting: act on the block's
+ * setting for the trade and say what happened in the ticket's trail.
+ *   AUTO     assign the best technician, or record why nobody could take it
+ *   SUGGEST  record who the autopilot would pick, waiting for a supervisor
+ *   OFF      record that a supervisor must choose
+ * Never throws. Returns the dispatch result (AUTO) or null.
+ */
+async function autoDispatchIfEnabled(complaintId, log = console, { trigger = 'NEW' } = {}) {
     try {
         const ticket = await loadTicket(db, complaintId);
         if (!['OPEN', 'ESCALATED'].includes(ticket.status)) return null;
         const settings = await settingsFor(ticket.block_id, ticket.specialization);
-        if (settings.mode !== 'AUTO') return null;
-        return await dispatch(complaintId, { source: 'AUTOPILOT' });
+        if (settings.mode === 'AUTO') {
+            const result = await dispatch(complaintId, { source: 'AUTOPILOT', trigger });
+            if (!result.assigned) {
+                await steps.recordIfChanged(db, complaintId, {
+                    stage: 'DISPATCH',
+                    actor: 'AUTOPILOT',
+                    outcome: 'WAITING',
+                    title: 'Waiting for a technician to become free',
+                    detail: `${explainNobody(ticket.specialization, result.excluded)} It is tried again every minute, and a supervisor can assign someone sooner.`,
+                    data: { reason: result.reason, excluded: result.excluded.length },
+                });
+            }
+            return result;
+        }
+        const ev = await evaluate(db, ticket);
+        const top = ev.candidates[0];
+        await steps.recordIfChanged(db, complaintId, {
+            stage: 'DISPATCH',
+            actor: 'AUTOPILOT',
+            outcome: 'WAITING',
+            title: settings.mode === 'OFF' ? 'Waiting for a supervisor to assign a technician' : 'Waiting for a supervisor to confirm a technician',
+            detail:
+                settings.mode === 'OFF'
+                    ? 'Automatic assignment is switched off for this block, so a supervisor chooses the technician.'
+                    : top
+                      ? `Automatic assignment is on suggest-only for this block: ${top.full_name} is the suggested technician, waiting for a supervisor to confirm.`
+                      : `Automatic assignment is on suggest-only for this block. ${explainNobody(ticket.specialization, ev.excluded)}`,
+            data: { mode: settings.mode, suggested: top ? { user_id: top.user_id, full_name: top.full_name, score: top.score } : null },
+        });
+        return null;
     } catch (err) {
         log.error(`[autopilot] ${complaintId}: ${err.message}`);
+        try {
+            await steps.recordIfChanged(db, complaintId, {
+                stage: 'DISPATCH',
+                actor: 'AUTOPILOT',
+                outcome: 'FAILED',
+                title: 'Automatic assignment hit a problem',
+                detail: 'A supervisor has been left to assign this ticket by hand.',
+            });
+        } catch {
+            /* the ticket itself is already safe */
+        }
         return null;
     }
 }
 
-module.exports = { suggest, dispatch, autoDispatchIfEnabled, settingsFor, currentShift, applyRules, LIVE_STATES };
+module.exports = { suggest, dispatch, autoDispatchIfEnabled, explainNobody, settingsFor, currentShift, applyRules, LIVE_STATES };

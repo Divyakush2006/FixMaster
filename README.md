@@ -68,6 +68,10 @@ the whole loop: intake, dispatch, on-site work, student verification and analyti
 - Start a job, mark it done with a note, and set availability (on or off duty).
 - Going off duty with open jobs asks whether to keep them or hand them back for reassignment.
 
+**Automatic handling of every request**
+- Each ticket gets a handling trail residents and supervisors can read: received, reviewed (by which AI model, or by the safety rules when none is available), then assigned automatically, suggested to a supervisor, or waiting with the reason (everyone off duty, at their limit ...). Tickets nobody can take are retried every minute and flagged to the supervisors after 30 minutes.
+- The AI review can raise a priority (never above High, never lower it) and attaches reviewed safety advice until the fault is fixed.
+
 **Two hostels** (men's and ladies')
 - Each hostel has its own blocks, supervisors and chief warden. The men's hostel is blocks A to T except S; the ladies' hostel is A, B, C, D, E, F, G, H, J and S (ids `LA_BLOCK` ... `LS_BLOCK`, because both hostels have an A-Block). `MH` is the complete men's hostel and `PRP` an academic block: neither has rooms, only shared areas.
 - A chief warden runs every block of their hostel and the academic blocks; a supervisor runs the blocks assigned to them (or all of their hostel's). Nobody sees or acts on the other hostel's tickets. Administrators run both.
