@@ -9,6 +9,8 @@ router.use(authenticate, authorize(...MANAGER_ROLES));
 
 router.get('/suggestions/:complaint_id', v.autopilotTicketParamValidators, ap.getSuggestions);
 router.post('/dispatch', v.autopilotDispatchValidators, ap.dispatchSuggestion);
+router.get('/status', ap.getStatus);
+router.post('/sweep', ap.sweepNow);
 router.get('/settings', ap.getSettings);
 router.put('/settings', v.autopilotSettingValidators, ap.saveSetting);
 router.get('/performance', v.autopilotPerformanceValidators, ap.getPerformance);

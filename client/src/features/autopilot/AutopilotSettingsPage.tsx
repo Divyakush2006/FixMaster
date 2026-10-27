@@ -17,6 +17,7 @@ import { blockGroup, blockLabel, HOSTEL_LABEL } from '../../utils/labels';
 import { COMPONENT_HELP, COMPONENT_LABEL, MODE_HELP, MODE_LABEL } from './autopilotLabels';
 import { useManagedBlocks } from './useManagedBlocks';
 import { BlockOptions } from '../../components/common/BlockOptions';
+import { AutopilotStatusCard } from './AutopilotStatusCard';
 
 const TRADES: Specialization[] = ['CLEANING', 'ELECTRICIAN', 'PLUMBER', 'AC_TECH', 'CARPENTER'];
 const MODES: AutopilotMode[] = ['OFF', 'SUGGEST', 'AUTO'];
@@ -47,6 +48,8 @@ export const AutopilotSettingsPage: React.FC = () => {
     setScope(data.can_edit_campus_default ? CAMPUS : wholeHostel || blocks[0]?.block_id || '');
   }, [data, blocks, loadingBlocks, scope, me]);
 
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const hostel = scope.startsWith(HOSTEL_PREFIX) ? (scope.slice(HOSTEL_PREFIX.length) as HostelType) : null;
   const blockId = scope === CAMPUS || hostel ? null : scope;
   const find = (b: string | null, trade: Specialization) => data?.settings.find((s) => s.block_id === b && s.specialization === trade);
@@ -58,6 +61,30 @@ export const AutopilotSettingsPage: React.FC = () => {
     return { own: same ? first : undefined, mixed: !same && mine.some(Boolean) };
   };
 
+  const effectiveOf = (trade: Specialization) => (hostel ? hostelRows(trade).own : find(blockId, trade)) ?? find(null, trade);
+  const anyAuto = !!data && !!scope && TRADES.some((t) => (effectiveOf(t)?.mode ?? data.defaults.mode) === 'AUTO');
+  const allAuto = useMutation({
+    mutationFn: async () => {
+      for (const trade of TRADES) {
+        const eff = effectiveOf(trade);
+        await autopilotApi.saveSetting({
+          block_id: blockId,
+          ...(hostel ? { hostel } : {}),
+          specialization: trade,
+          mode: 'AUTO',
+          live_job_cap: eff?.live_job_cap ?? data?.defaults.live_job_cap ?? 6,
+          weights: (hostel ? hostelRows(trade).own : find(blockId, trade))?.weights ?? null,
+        });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['autopilot-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['autopilot-status'] });
+      showToast('Automatic is on for every trade here', 'success', 'Tickets already waiting are picked up within a minute.');
+    },
+    onError: (err: Error) => showToast('Not saved', 'error', err.message),
+  });
+
   return (
     <div className="mx-auto max-w-5xl">
       <PageHeader
@@ -65,6 +92,8 @@ export const AutopilotSettingsPage: React.FC = () => {
         title="Dispatch autopilot"
         description="Choose where the autopilot only suggests a technician and where it assigns one by itself. Every automatic decision is recorded with its full score."
       />
+
+      <AutopilotStatusCard />
 
       <Card className="mb-6 p-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-[280px_1fr] sm:items-end">
@@ -94,6 +123,21 @@ export const AutopilotSettingsPage: React.FC = () => {
           </ul>
         </div>
       </Card>
+
+      {data && scope && !anyAuto && (
+        <Alert
+          tone="warning"
+          title="Automatic is off here"
+          className="mb-6"
+          action={
+            <Button size="sm" loading={allAuto.isPending} onClick={() => allAuto.mutate()}>
+              Turn on for every trade
+            </Button>
+          }
+        >
+          Every trade is on Suggest or Off for this selection, so new tickets wait until a supervisor picks a technician. Choose Automatic for a trade below, or turn it on for all of them.
+        </Alert>
+      )}
 
       {isLoading || !data || !scope ? (
         <Skeleton className="h-64" />

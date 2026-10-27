@@ -2,6 +2,7 @@ const app = require('./app');
 const db = require('./config/db');
 const { startVerificationSweeper } = require('./services/verificationSweeper');
 const { startFeedbackTagger } = require('./services/autopilot/feedbackTagger');
+const { startAutopilotSweeper } = require('./services/autopilot/sweeper');
 const { startRetentionSweeper } = require('./services/retentionService');
 
 const PORT = parseInt(process.env.PORT, 10) || 5000;
@@ -15,6 +16,8 @@ const server = app.listen(PORT, () => {
 const stopSweeper = startVerificationSweeper();
 // Background job: themes in residents' review comments (see feedbackTagger.js).
 const stopTagger = startFeedbackTagger();
+// Background job: gives tickets on Automatic that nobody could take another go (see autopilot/sweeper.js).
+const stopAutopilot = startAutopilotSweeper();
 // Background job: removes data past its retention period (see retentionService.js).
 const stopRetention = startRetentionSweeper();
 
@@ -35,6 +38,7 @@ function shutdown(signal, exitCode = 0) {
 
     stopSweeper();
     stopTagger();
+    stopAutopilot();
     stopRetention();
     server.close(async () => {
         try {

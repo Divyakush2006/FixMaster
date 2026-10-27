@@ -33,7 +33,7 @@ export const MODE_LABEL: Record<AutopilotMode, string> = { OFF: 'Off', SUGGEST: 
 export const MODE_HELP: Record<AutopilotMode, string> = {
   OFF: 'No suggestions. Supervisors choose every technician.',
   SUGGEST: 'Shows the best technician for each ticket; a supervisor confirms.',
-  AUTO: 'Assigns new and sent-back tickets straight away. Supervisors can still reassign.',
+  AUTO: 'Assigns new and sent-back tickets straight away, and keeps trying every minute for tickets nobody could take. Supervisors can still reassign.',
 };
 
 export const FLAG_LABEL: Record<PerformanceFlagCode, string> = {
@@ -58,3 +58,13 @@ export const TAG_LABEL: Record<string, string> = {
 };
 
 export const POSITIVE_TAGS = new Set(['POLITE', 'QUICK', 'THOROUGH', 'CLEAN_AFTER']);
+
+/** Why a ticket on Automatic is still waiting, from the autopilot's own exclusions: "Nobody can take it: 3 off duty, 2 at their live-job limit". */
+export function waitingReason(w: { eligible: number; trade_staff: number; reasons: Partial<Record<ExclusionReason, number>> }): string {
+  if (w.eligible > 0) return 'A technician is free: it is assigned on the next pass';
+  if (w.trade_staff === 0) return 'No technician of this trade is registered';
+  const parts = (Object.entries(w.reasons) as [ExclusionReason, number][])
+    .sort((a, b) => b[1] - a[1])
+    .map(([code, n]) => `${n} ${EXCLUSION_LABEL[code].charAt(0).toLowerCase()}${EXCLUSION_LABEL[code].slice(1)}`);
+  return `Nobody can take it: ${parts.join(', ')}`;
+}

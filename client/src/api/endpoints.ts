@@ -48,6 +48,8 @@ import {
   AutopilotDispatchResult,
   AutopilotSettingsResponse,
   AutopilotSetting,
+  AutopilotStatus,
+  AutopilotSweepResult,
   AutopilotMode,
   ScoreComponent,
   StaffPerformanceRow,
@@ -459,6 +461,12 @@ export const autopilotApi = {
     apiFetch<AutopilotSetting>('/autopilot/settings', { method: 'PUT', body: JSON.stringify(data) }),
 
   performance: (specialization?: Specialization) =>
+  /** What the autopilot did lately and which tickets on Automatic are waiting for it, with why. */
+  status: () => apiFetch<AutopilotStatus>('/autopilot/status', { method: 'GET' }),
+
+  /** Tries every waiting ticket on Automatic now, within the caller's blocks. */
+  sweep: () => apiFetch<AutopilotSweepResult>('/autopilot/sweep', { method: 'POST' }),
+
     apiFetch<StaffPerformanceRow[]>('/autopilot/performance', { method: 'GET', params: { specialization } }),
 
   cleaningPlan: (blockId: string, shift?: string) =>

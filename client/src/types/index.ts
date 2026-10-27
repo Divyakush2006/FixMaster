@@ -662,6 +662,33 @@ export interface CleaningPlan {
   shift: StaffShift;
   total_rooms: number;
   cleaners: { user_id: string; full_name: string; floors: number[]; rooms: number; slots: { MORNING: number; AFTERNOON: number; EVENING: number } }[];
+/** What the autopilot did in the last day and which tickets on Automatic are still waiting for it. */
+export interface AutopilotStatus {
+  assigned_last_24h: number;
+  waiting_total: number;
+  waiting: {
+    complaint_id: string;
+    block_id: string;
+    specialization: Specialization;
+    priority: Priority;
+    issue_name: string;
+    created_at: string;
+    waiting_minutes: number;
+    /** Technicians of the trade who could take it right now. */
+    eligible: number;
+    trade_staff: number;
+    reasons: Partial<Record<ExclusionReason, number>>;
+  }[];
+  last_sweep: { at: string; assigned: number; waiting: number; failed: number } | null;
+}
+
+export interface AutopilotSweepResult {
+  checked: number;
+  assigned: number;
+  waiting: number;
+  failed: number;
+}
+
   unassigned_floors: number[];
   uses_campus_pool: boolean;
 }

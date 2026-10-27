@@ -3,6 +3,7 @@ const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const autopilot = require('../services/autopilot');
 const { staffPerformance } = require('../services/autopilot/performance');
 const { cleaningPlan } = require('../services/autopilot/cleaningPlan');
+const sweeper = require('../services/autopilot/sweeper');
 const { tagPending } = require('../services/autopilot/feedbackTagger');
 const { normaliseWeights } = require('../services/autopilot/scoring');
 const { assertTicketInScope, managedBlocks, inScope } = require('../services/scopeService');
@@ -116,6 +117,17 @@ exports.saveSetting = asyncHandler(async (req, res) => {
         return rows[0];
     }, req.user.userId);
     res.json({ ...saved, weights: normaliseWeights(saved.weights) });
+});
+
+// GET /api/autopilot/status (managers, scoped) - what the autopilot did in the last day and which
+// tickets on Automatic are still waiting for it, with the reason.
+exports.getStatus = asyncHandler(async (req, res) => {
+    res.json(await sweeper.status(await managedBlocks(req.user)));
+});
+
+// POST /api/autopilot/sweep (managers, scoped) - try every waiting ticket on Automatic now.
+exports.sweepNow = asyncHandler(async (req, res) => {
+    res.json(await sweeper.sweepOnce({ blocks: await managedBlocks(req.user) }));
 });
 
 // GET /api/autopilot/performance?specialization= (managers) - the staff board.
