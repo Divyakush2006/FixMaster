@@ -110,6 +110,7 @@ export const App: React.FC = () => {
                       <Route path="/supervisor/autopilot"element={guard(MANAGER_ROLES, <AutopilotSettingsPage />)} />
                       <Route path="/supervisor/staff" element={guard(MANAGER_ROLES, <StaffPerformancePage />)} />
                       <Route path="/supervisor/cleaning" element={guard(MANAGER_ROLES, <CleaningPlanPage />)} />
+                      <Route path="/supervisor/blocks" element={guard(['SUPERVISOR', 'CHIEF_WARDEN'], <InfrastructurePage />)} />
 
                       {/* Administration (signed in through /admin) */}
                       <Route path="/admin/dashboard" element={guard(['ADMIN'], <SupervisorDashboard />)} />

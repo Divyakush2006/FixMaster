@@ -364,6 +364,7 @@ const userIdParam = param('user_id').trim().notEmpty().isLength({ max: 36 }).wit
 const adminCreateUserValidators = [
     ...userProfileRules, // same rules as registration...
     body('role').exists().withMessage('role is required.'), // ...but role is mandatory here
+    body('hostel_type').optional({ values: 'null' }).isIn(['MENS', 'LADIES']).withMessage('hostel_type must be MENS or LADIES.'),
     // Students are students whoever creates the account: same identity rules.
     ...studentIdentityRules(body('role').equals('STUDENT')),
     handleValidation,
@@ -430,6 +431,7 @@ const adminEndAllotmentValidators = [
 // ---- /api/admin infrastructure (blocks, floors, rooms) -------------------------
 
 const ROOM_TYPES = ['AC', 'NON_AC', 'DELUXE_AC'];
+const BLOCK_KINDS = ['RESIDENTIAL', 'HOSTEL_WIDE', 'ACADEMIC'];
 const blockIdParam = param('block_id').trim().notEmpty().isLength({ max: 10 }).withMessage('block id is invalid.');
 
 const createBlockValidators = [
@@ -440,14 +442,41 @@ const createBlockValidators = [
         .withMessage('block_code must be 1-3 letters or digits, e.g. "A" or "PRP".'),
     body('block_name').trim().notEmpty().withMessage('block_name is required.').bail().isLength({ max: 50 }),
     body('top_floor').optional().isInt({ min: 1, max: 99 }).withMessage('top_floor must be between 1 and 99.').toInt(),
-    body('hostel_type').optional().isIn(['MENS', 'LADIES']).withMessage("hostel_type must be MENS or LADIES."),
+    body('hostel_type').optional({ values: 'null' }).isIn(['MENS', 'LADIES']).withMessage("hostel_type must be MENS or LADIES."),
+    body('block_kind').optional().isIn(BLOCK_KINDS).withMessage(`block_kind must be one of: ${BLOCK_KINDS.join(', ')}.`),
     handleValidation,
 ];
 
 const updateBlockValidators = [
     blockIdParam,
     body('block_name').trim().notEmpty().withMessage('block_name is required.').bail().isLength({ max: 50 }),
-    body('hostel_type').optional().isIn(['MENS', 'LADIES']).withMessage("hostel_type must be MENS or LADIES."),
+    body('hostel_type').optional({ values: 'null' }).isIn(['MENS', 'LADIES']).withMessage("hostel_type must be MENS or LADIES."),
+    body('block_kind').optional().isIn(BLOCK_KINDS).withMessage(`block_kind must be one of: ${BLOCK_KINDS.join(', ')}.`),
+    handleValidation,
+];
+
+const AREA_TYPES = ['WATER_COOLER', 'COMMON_WASHROOM', 'SHOWER_ROOM', 'ELEVATOR', 'CORRIDOR', 'STUDY_HALL'];
+
+const createCommonAreaValidators = [
+    blockIdParam,
+    body('floor_number').isInt({ min: 0, max: 99 }).withMessage('floor_number must be 0 (ground) to 99.').toInt(),
+    body('area_type').isIn(AREA_TYPES).withMessage(`area_type must be one of: ${AREA_TYPES.join(', ')}.`),
+    body('description').trim().notEmpty().withMessage('description is required.').bail().isLength({ max: 150 }).withMessage('description must be at most 150 characters.'),
+    handleValidation,
+];
+
+const updateCommonAreaValidators = [
+    param('area_id').trim().notEmpty().isLength({ max: 30 }).withMessage('area id is invalid.'),
+    body('is_operational').optional().isBoolean({ strict: true }).withMessage('is_operational must be true or false.'),
+    body('description').optional().trim().notEmpty().isLength({ max: 150 }).withMessage('description must be 1-150 characters.'),
+    body().custom((v) => v && (v.is_operational !== undefined || v.description !== undefined)).withMessage('Provide is_operational and/or description.'),
+    handleValidation,
+];
+
+const userHostelValidators = [
+    param('user_id').trim().notEmpty().isLength({ max: 36 }).withMessage('user id is invalid.'),
+    body('hostel_type').optional({ values: 'null' }).isIn(['MENS', 'LADIES']).withMessage('hostel_type must be MENS or LADIES (or null).'),
+    body().custom((v) => v && v.hostel_type !== undefined).withMessage('Send hostel_type.'),
     handleValidation,
 ];
 
@@ -628,6 +657,9 @@ module.exports = {
     adminAllotValidators,
     adminEndAllotmentValidators,
     createBlockValidators,
+    createCommonAreaValidators,
+    updateCommonAreaValidators,
+    userHostelValidators,
     updateBlockValidators,
     staffPlacementValidators,
     assistantDraftValidators,

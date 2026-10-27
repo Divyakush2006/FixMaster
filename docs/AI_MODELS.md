@@ -88,6 +88,10 @@ If the campus outgrows this, the cheapest levers are, in order: add Groq/Gemini 
 
 Settings found necessary by the live runs live in `MODEL_TUNING` in [providers.js](../src/services/ai/providers.js): Groq `gpt-oss` models get `reasoning_effort: low` and 256 extra tokens, because their thinking otherwise uses the whole budget and Groq answers HTTP 400.
 
+### Timeouts and the "AI partly off" signal
+
+Live requests (INTAKE, ASK, FEEDBACK_TAGS) give each attempt 8 s (`AI_TIMEOUT_MS`); the BRIEFING gets 20 s (`AI_TIMEOUT_BRIEFING_MS`). On 27 October the briefing's first model, Gemini, timed out twice at 8 s although the benchmark had measured 2-4 s, and OpenRouter answered 429 once; Groq answered both times, so the briefing was fine, but the two failures were enough to show "AI partly off". A provider now counts as struggling only after three failures in an hour with more failures than answers (or when it is paused, out of allowance or out of keys), and the top bar names which one.
+
 ### A guard instead of trust
 
 Because even good models occasionally quote a number they were not given, the briefing is now checked in code: [`groundingProblem`](../src/services/insights/briefing.js) rejects a reply that quotes a number above 5 or names a block that is not in the facts, or leaves out an open emergency, and the gateway then tries the next model (and finally the fixed-rule briefing). The benchmark's "grounded" score uses the same rule.

@@ -48,6 +48,8 @@ chief warden or administrator, AI health, "Start outage drill" (or `POST
 /api/ai/drill`). An AI error never affects priority: priority comes from the
 issue catalogue and nowhere else.
 
+**The top bar says "AI partly off".** A provider has failed at least three times in the last hour and more often than it answered, or it is paused, out of today's allowance or out of keys. Hover the chip, or read the banner on the overview, for which one and why; the others are covering, so nothing stops. A couple of slow answers are not enough to raise it. The daily briefing is allowed 20 s per attempt (live requests 8 s), because the free Gemini tier is sometimes slower than 8 s on the longer prompt.
+
 **A provider's free allowance ran out.** The gateway counts calls per provider
 per day across all servers and moves to the next provider in the task's chain
 (`AI_ROUTE_*`). Raise a limit only after checking the provider's console.
@@ -63,6 +65,16 @@ applies.
 does it themselves). Erasure is an administrator action: Administration,
 Privacy requests. It is refused while the resident still has a room or an open
 ticket, and says why.
+
+## The two hostels
+
+The men's and the ladies' hostel are separate in the data (migration 016). A block belongs to one hostel (`hostel_blocks.hostel_type` MENS or LADIES) or, for an academic block such as PRP, to neither; its `block_kind` is `RESIDENTIAL` (floors and rooms), `HOSTEL_WIDE` (the complete hostel, e.g. MH; one per hostel) or `ACADEMIC`. Hostel-wide and academic blocks have shared areas only: the database refuses to add rooms to them.
+
+- **Who sees what.** A chief warden runs every block of their hostel plus the academic blocks. A supervisor runs the blocks assigned to them, or every residential block of their hostel when none is assigned. Administrators run everything. An account with no hostel keeps the pre-016 behaviour (a chief warden or an unassigned supervisor sees every block), so nothing changes for installations that do not set hostels. Tickets, the register, analytics, the briefing, the autopilot and notifications all use this scope.
+- **Setting it up.** Administration, Users and access: pick a supervisor or chief warden, Hostel (and blocks). There is one chief warden per hostel; moving a supervisor to the other hostel takes away their blocks there. A block's hostel and kind are changed under Administration, Blocks and rooms (administrator only).
+- **Block ids.** Both hostels have an A-Block, and block ids are unique across the campus, so a ladies' residential block's id has an L in front (`LA_BLOCK`, `LS_BLOCK`; room `LA-101`). The men's L-Block stays `L_BLOCK`. The migration removes the empty `S_BLOCK` (S is a ladies' block); if rooms or tickets already refer to it, it is kept and handed to the ladies' hostel.
+- **Block settings.** Supervisors and chief wardens manage floors, rooms and shared areas of the blocks they run (Hostel, Block settings; `/api/infrastructure/*`). Every change is audited (`room.create`, `room.close`, `floor.add`, `area.create`, `area.close`, `block.rename`, ...).
+- **Residents.** A resident can request, and the office can allot, only a room in the hostel of the gender on their profile (MALE or FEMALE; other answers are not restricted). They can report faults in their own hostel's shared areas and in academic blocks, never in the other hostel's.
 
 ## AI provider keys
 

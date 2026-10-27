@@ -92,7 +92,8 @@ function studentProfile(extra = {}) {
         programme: 'B.Tech Computer Science and Engineering',
         admission_year: new Date().getFullYear() - 1,
         expected_graduation_year: new Date().getFullYear() + 3,
-        gender: 'FEMALE',
+        // The seed's blocks are the men's hostel (a resident lives in the hostel of their gender).
+        gender: 'MALE',
         date_of_birth: '2006-04-12',
         guardian_name: 'R. Iyer',
         guardian_relation: 'Mother',

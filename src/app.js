@@ -128,6 +128,7 @@ app.use('/api/me', require('./routes/meRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/residents', require('./routes/residentRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/infrastructure', require('./routes/infrastructureRoutes'));
 app.use('/api/ai', require('./routes/aiRoutes'));
 app.use('/api/assistant', require('./routes/assistantRoutes'));
 app.use('/api/autopilot', require('./routes/autopilotRoutes'));

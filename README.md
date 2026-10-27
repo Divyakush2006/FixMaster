@@ -68,7 +68,13 @@ the whole loop: intake, dispatch, on-site work, student verification and analyti
 - Start a job, mark it done with a note, and set availability (on or off duty).
 - Going off duty with open jobs asks whether to keep them or hand them back for reassignment.
 
-**Supervisors**
+**Two hostels** (men's and ladies')
+- Each hostel has its own blocks, supervisors and chief warden. The men's hostel is blocks A to T except S; the ladies' hostel is A, B, C, D, E, F, G, H, J and S (ids `LA_BLOCK` ... `LS_BLOCK`, because both hostels have an A-Block). `MH` is the complete men's hostel and `PRP` an academic block: neither has rooms, only shared areas.
+- A chief warden runs every block of their hostel and the academic blocks; a supervisor runs the blocks assigned to them (or all of their hostel's). Nobody sees or acts on the other hostel's tickets. Administrators run both.
+- A resident is offered, and can only be allotted to, the hostel of their gender, and reports faults in their own hostel's shared areas or in an academic block.
+
+**Supervisors and chief wardens**
+- Block settings for the blocks they run: rename a block, add or remove floors, add or close rooms, and manage the shared areas (washrooms, lifts, corridors) residents can report faults in. A chief warden can also add blocks to their hostel; moving a block between hostels is the administrator's.
 - A dashboard of key figures, a searchable and filterable ticket register, and an escalation queue.
 - Dispatch tickets to a technician or reassign them. Cleaning requests can be auto-dispatched.
 - If another supervisor changed the ticket while it was open on screen, the assignment is refused with who did it, instead of silently overriding them.

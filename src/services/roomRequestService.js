@@ -33,6 +33,27 @@ async function assertRequestableRoom(client, { block_id, floor_number, room_id }
     return room;
 }
 
+const HOSTEL_OF_GENDER = { MALE: 'MENS', FEMALE: 'LADIES' };
+const HOSTEL_NAME = { MENS: "men's", LADIES: "ladies'" };
+
+/**
+ * A resident lives in the hostel of their gender (the profile's MALE or FEMALE;
+ * other answers are not restricted). Applies to a room request and to an
+ * allotment by the hostel office alike.
+ */
+async function assertHostelFits(client, studentId, blockId) {
+    const { rows } = await client.query(
+        `SELECT p.gender, b.hostel_type FROM hostel_blocks b
+         LEFT JOIN student_profiles p ON p.user_id = $1
+         WHERE b.block_id = $2`,
+        [studentId, blockId]
+    );
+    const wanted = HOSTEL_OF_GENDER[rows[0]?.gender];
+    if (wanted && rows[0].hostel_type && rows[0].hostel_type !== wanted) {
+        throw new AppError(400, `That block is in the ${HOSTEL_NAME[rows[0].hostel_type]} hostel. Choose a block in the ${HOSTEL_NAME[wanted]} hostel.`);
+    }
+}
+
 async function recordRoomRequest(client, req, studentId, room) {
     await recordAudit(client, req, {
         action: REQUEST,
@@ -94,4 +115,4 @@ async function pendingRequests(executor) {
     return rows;
 }
 
-module.exports = { assertRequestableRoom, recordRoomRequest, requestStatus, pendingRequests, DECLINE, WITHDRAW };
+module.exports = { assertHostelFits, assertRequestableRoom, recordRoomRequest, requestStatus, pendingRequests, DECLINE, WITHDRAW };

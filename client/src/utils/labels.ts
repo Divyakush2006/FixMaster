@@ -1,4 +1,4 @@
-import { Complaint, ComplaintStatus, Priority, Role, RoomType, SlaStatus, Specialization, TicketScope } from '../types';
+import { BlockKind, CommonAreaType, Complaint, ComplaintStatus, HostelType, Priority, Role, RoomType, SlaStatus, Specialization, TicketScope } from '../types';
 
 /**
  * Display vocabulary. The API speaks in enum codes (PENDING_VERIFICATION,
@@ -91,6 +91,26 @@ export const ROOM_TYPE_LABEL: Record<RoomType, string> = {
   DELUXE_AC: 'Deluxe AC',
 };
 
+export const HOSTEL_LABEL: Record<HostelType, string> = {
+  MENS: "Men's hostel",
+  LADIES: "Ladies' hostel",
+};
+
+export const BLOCK_KIND_LABEL: Record<BlockKind, string> = {
+  RESIDENTIAL: 'Residential block',
+  HOSTEL_WIDE: 'Whole hostel',
+  ACADEMIC: 'Academic block',
+};
+
+export const AREA_TYPE_LABEL: Record<CommonAreaType, string> = {
+  WATER_COOLER: 'Water cooler',
+  COMMON_WASHROOM: 'Common washroom',
+  SHOWER_ROOM: 'Shower room',
+  ELEVATOR: 'Lift',
+  CORRIDOR: 'Corridor',
+  STUDY_HALL: 'Study hall',
+};
+
 export const SCOPE_LABEL: Record<TicketScope, string> = {
   ROOM: 'Room',
   COMMON_AREA: 'Common area',
@@ -127,10 +147,17 @@ export function ticketLocation(c: { room_id: string | null; common_area_id: stri
   return c.room_id || c.common_area_id || c.block_id;
 }
 
-/** "L_BLOCK" -> "L-Block" for places that only have the id. */
+/**
+ * "L_BLOCK" -> "L-Block" for places that only have the id. A ladies' block id
+ * has an L in front ("LA_BLOCK" -> "A-Block (Ladies)"), and MH and PRP are not
+ * lettered blocks at all.
+ */
 export function blockLabel(blockId: string): string {
   const [code] = blockId.split('_');
-  return blockId.endsWith('_BLOCK') ? `${code}-Block` : blockId;
+  if (!blockId.endsWith('_BLOCK')) return blockId;
+  if (code === 'MH' || code === 'PRP') return code;
+  if (/^L[A-Z]$/.test(code)) return `${code[1]}-Block (Ladies)`;
+  return `${code}-Block`;
 }
 
 export function initials(name: string | null | undefined): string {

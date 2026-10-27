@@ -18,6 +18,7 @@ router.post('/users/:user_id/reset-password', v.adminResetPasswordValidators, ad
 // Campus organisation: staff placement and leave, supervisor blocks.
 router.patch('/users/:user_id/placement', v.staffPlacementValidators, org.updateStaffPlacement);
 router.put('/users/:user_id/blocks', v.supervisorBlocksValidators, org.setSupervisorBlocks);
+router.put('/users/:user_id/hostel', v.userHostelValidators, org.setUserHostel);
 router.get('/users/:user_id/leave', v.userIdOnlyValidators, org.listLeave);
 router.post('/users/:user_id/leave', v.leaveValidators, org.addLeave);
 router.delete('/leave/:leave_id', v.leaveIdValidators, org.deleteLeave);

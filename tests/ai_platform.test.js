@@ -117,6 +117,34 @@ describe('AI platform: gateway, privacy and health', () => {
         assert.equal((await ask()).ok, true);
     });
 
+    it('does not call a provider degraded for a couple of slow answers, only for a pattern of failures', async () => {
+        const fail = () =>
+            t.sql(`INSERT INTO ai_calls (run_id, task, provider, model, prompt_version, outcome, error_code) VALUES (gen_random_uuid(), 'ASK', 'fake', 'fake-primary', 't', 'TIMEOUT', 'The provider did not answer in time.')`);
+        await fail();
+        await fail();
+        assert.equal((await gateway.health()).status, 'HEALTHY', 'two timeouts in an hour are noise');
+        await fail();
+        assert.equal((await gateway.health()).status, 'DEGRADED', 'three failures and no answers is a pattern');
+        await t.sql(`INSERT INTO ai_calls (run_id, task, provider, model, prompt_version, outcome) VALUES (gen_random_uuid(), 'ASK', 'fake', 'fake-backup', 't', 'OK'), (gen_random_uuid(), 'ASK', 'fake', 'fake-backup', 't', 'OK'), (gen_random_uuid(), 'ASK', 'fake', 'fake-backup', 't', 'OK'), (gen_random_uuid(), 'ASK', 'fake', 'fake-backup', 't', 'OK')`);
+        assert.equal((await gateway.health()).status, 'HEALTHY', 'answering more often than failing is healthy again');
+    });
+
+    it('gives the daily briefing, which nobody waits on live, a longer timeout than live requests', () => {
+        const { timeoutMs } = require('../src/config/ai');
+        try {
+            assert.equal(timeoutMs('gemini', 'ASK'), 8000);
+            assert.equal(timeoutMs('gemini', 'INTAKE'), 8000);
+            assert.equal(timeoutMs('gemini', 'BRIEFING'), 20000);
+            process.env.AI_TIMEOUT_MS = '1500';
+            assert.equal(timeoutMs('gemini', 'BRIEFING'), 1500, 'an explicit AI_TIMEOUT_MS applies to every task');
+            process.env.AI_TIMEOUT_BRIEFING_MS = '30000';
+            assert.equal(timeoutMs('gemini', 'BRIEFING'), 30000);
+            assert.equal(timeoutMs('gemini', 'ASK'), 1500);
+        } finally {
+            delete process.env.AI_TIMEOUT_BRIEFING_MS;
+        }
+    });
+
     it('lets managers read AI health, and only campus-wide roles run a drill', async () => {
         const sup = await t.login(SEED.supervisor);
         const health = await t.api('/ai/health', { token: sup });

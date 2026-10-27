@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DoorOpen, LogOut } from 'lucide-react';
-import { adminApi, metaApi } from '../../api/endpoints';
+import { adminApi, infraApi, metaApi } from '../../api/endpoints';
 import { useToast } from '../../components/ui/Toast';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
@@ -63,7 +63,7 @@ export const AllotmentsPage: React.FC = () => {
   // Admin room list carries live occupancy straight from the server.
   const { data: rooms = [], isLoading: isLoadingRooms } = useQuery({
     queryKey: ['admin-rooms', blockId],
-    queryFn: () => adminApi.listRooms(blockId),
+    queryFn: () => infraApi.listRooms(blockId),
     enabled: !!blockId,
   });
   const openRooms = rooms.filter((r) => r.is_active);

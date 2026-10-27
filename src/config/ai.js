@@ -14,7 +14,9 @@
  *
  *   AI_ROUTE_<TASK>   comma-separated provider:model chain, e.g.
  *                     AI_ROUTE_INTAKE="groq:openai/gpt-oss-20b,gemini:gemini-flash-lite-latest"
- *   AI_TIMEOUT_MS     per attempt (default 8000)
+ *   AI_TIMEOUT_MS     per attempt (default 8000; the daily briefing, which nobody
+ *                     waits on live, gets 20000)
+ *   AI_TIMEOUT_<TASK>_MS  the same for one task, e.g. AI_TIMEOUT_BRIEFING_MS
  *   AI_DAILY_LIMIT_GROQ / _GEMINI / _OPENROUTER
  *                     attempts per provider per day across all servers,
  *                     kept below the provider's free allowance
@@ -101,6 +103,10 @@ const apiKey = (provider) => apiKeys(provider)[0];
 const dailyLimit = (provider) =>
     int(process.env[`AI_DAILY_LIMIT_${provider.toUpperCase()}`], DEFAULT_DAILY_LIMITS[provider] || 100) * Math.max(1, apiKeys(provider).length);
 
+// The free Gemini tier sometimes takes over 8 s on the longer briefing prompt (measured: 2-4 s normally, two
+// timeouts at 8 s in one morning); the briefing is generated once per scope per day, so it may wait longer.
+const TASK_TIMEOUT_MS = { BRIEFING: 20000 };
+
 // A model on a CPU answers far slower than a hosted API.
 const LOCAL_PROVIDERS = new Set(['ollama', 'local']);
 
@@ -111,7 +117,9 @@ module.exports = {
     dailyLimit,
     apiKey,
     apiKeys,
-    timeoutMs: (provider) =>
-        LOCAL_PROVIDERS.has(provider) ? int(process.env.LOCAL_AI_TIMEOUT_MS, 45000) : int(process.env.AI_TIMEOUT_MS, 8000),
+    timeoutMs: (provider, task) =>
+        LOCAL_PROVIDERS.has(provider)
+            ? int(process.env.LOCAL_AI_TIMEOUT_MS, 45000)
+            : int(process.env[`AI_TIMEOUT_${task}_MS`], int(process.env.AI_TIMEOUT_MS, TASK_TIMEOUT_MS[task] || 8000)),
     userDailyLimit: () => int(process.env.AI_USER_DAILY_LIMIT, 40),
 };

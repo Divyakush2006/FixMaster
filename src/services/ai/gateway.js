@@ -151,7 +151,7 @@ async function run({ task, promptVersion, system, user, schema, userId = null, f
         }
 
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs(provider));
+        const timer = setTimeout(() => controller.abort(), timeoutMs(provider, task));
         const started = Date.now();
         try {
             const reply = await tracing.withSpan(
@@ -237,7 +237,9 @@ async function health() {
     if (drillState) status = 'DOWN';
     else if (!list.some((p) => p.configured)) status = 'DISABLED';
     else if (usable.length === 0) status = 'DOWN';
-    else if (usable.length < list.filter((p) => p.configured).length || list.some((p) => p.failed_last_hour > p.ok_last_hour)) status = 'DEGRADED';
+    // A couple of slow answers are not an outage: a provider counts as struggling once it has failed
+    // at least three times in the last hour and failed more often than it answered.
+    else if (usable.length < list.filter((p) => p.configured).length || list.some((p) => p.failed_last_hour >= 3 && p.failed_last_hour > p.ok_last_hour)) status = 'DEGRADED';
     else status = 'HEALTHY';
     return { status, drill: drillState, providers: list, routes: Object.fromEntries(TASKS.map((t) => [t, routeFor(t)])) };
 }

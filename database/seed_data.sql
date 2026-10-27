@@ -5,11 +5,24 @@
 -- ============================================================================
 
 -- 1. Insert Hostel Blocks
-INSERT INTO hostel_blocks (block_id, block_name, total_floors) VALUES
-('L_BLOCK', 'L-Block (Ladies/Mens Hostel)', 10),
-('PRP_BLOCK', 'PRP Block', 8),
-('MH_BLOCK', 'Mens Hostel Block Q', 12)
+INSERT INTO hostel_blocks (block_id, block_name, total_floors, hostel_type, block_kind) VALUES
+('L_BLOCK', 'L-Block', 10, 'MENS', 'RESIDENTIAL'),
+('PRP_BLOCK', 'PRP (academic block)', 8, NULL, 'ACADEMIC'),
+('MH_BLOCK', 'MH (complete men''s hostel)', 2, 'MENS', 'HOSTEL_WIDE')
 ON CONFLICT (block_id) DO NOTHING;
+
+-- MH is the whole men's hostel and PRP is an academic block: neither has rooms,
+-- only shared areas that tickets can be raised against.
+INSERT INTO common_areas (area_id, block_id, floor_number, area_type, description) VALUES
+('MH-F00-CORR-01', 'MH_BLOCK', 0, 'CORRIDOR', 'Men''s hostel main corridor'),
+('MH-F00-WASH-01', 'MH_BLOCK', 0, 'COMMON_WASHROOM', 'Men''s hostel ground floor washroom'),
+('MH-F00-COOLER-01', 'MH_BLOCK', 0, 'WATER_COOLER', 'Men''s hostel ground floor water cooler'),
+('MH-F01-STUDY-01', 'MH_BLOCK', 1, 'STUDY_HALL', 'Men''s hostel study hall'),
+('PRP-F00-LIFT-01', 'PRP_BLOCK', 0, 'ELEVATOR', 'PRP ground floor lift'),
+('PRP-F00-CORR-01', 'PRP_BLOCK', 0, 'CORRIDOR', 'PRP ground floor corridor'),
+('PRP-F01-WASH-01', 'PRP_BLOCK', 1, 'COMMON_WASHROOM', 'PRP first floor washroom'),
+('PRP-F01-COOLER-01', 'PRP_BLOCK', 1, 'WATER_COOLER', 'PRP first floor water cooler')
+ON CONFLICT (area_id) DO NOTHING;
 
 -- 2. Insert Rooms for L-Block (Floors 1-10, with full Floor 8 rooms: L-801 to L-850)
 INSERT INTO rooms (room_id, block_id, room_number, floor_number, room_type, bed_capacity) VALUES

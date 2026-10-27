@@ -96,6 +96,17 @@ const makeAuthenticate = ({ allowIncompleteProfile }) =>
         next();
     });
 
+/**
+ * For public routes that can tailor their answer to a signed-in caller (the
+ * block list a resident is offered). Never rejects: with no usable session the
+ * request simply carries no req.user.
+ */
+const identify = asyncHandler(async (req, res, next) => {
+    const decoded = verifyToken(credentialsOf(req).token);
+    if (decoded) req.user = (await loadActiveUser(decoded)) || undefined;
+    next();
+});
+
 const authenticate = makeAuthenticate({ allowIncompleteProfile: false });
 const authenticateOnboarding = makeAuthenticate({ allowIncompleteProfile: true });
 
@@ -131,4 +142,4 @@ function signToken(user) {
     );
 }
 
-module.exports = { authenticate, authenticateOnboarding, authorize, signToken };
+module.exports = { authenticate, authenticateOnboarding, identify, authorize, signToken };

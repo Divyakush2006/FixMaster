@@ -23,6 +23,9 @@ import {
   Role,
   Portal,
   AdminBlock,
+  BlockKind,
+  CommonAreaRow,
+  CommonAreaType,
   BlockFloor,
   AdminRoom,
   RoomType,
@@ -349,18 +352,6 @@ export const adminApi = {
   endAllotment: (studentId: string) =>
     apiFetch<{ message: string }>(`/admin/allotments/${studentId}`, { method: 'DELETE' }),
 
-  // ---- Infrastructure: blocks -> floors -> rooms ----
-  listBlocks: () => apiFetch<AdminBlock[]>('/admin/blocks', { method: 'GET' }),
-
-  createBlock: (block_code: string, block_name: string, top_floor: number, hostel_type: HostelType = 'MENS') =>
-    apiFetch<AdminBlock>('/admin/blocks', {
-      method: 'POST',
-      body: JSON.stringify({ block_code, block_name, top_floor, hostel_type }),
-    }),
-
-  renameBlock: (blockId: string, block_name: string, hostel_type?: HostelType) =>
-    apiFetch<AdminBlock>(`/admin/blocks/${blockId}`, { method: 'PATCH', body: JSON.stringify({ block_name, hostel_type }) }),
-
   // ---- Campus organisation ----
   /** Staff: home block (null = campus pool) and shift. Send only what changes. */
   setPlacement: (userId: string, changes: { home_block_id?: string | null; shift?: StaffShift | null }) =>
@@ -369,7 +360,14 @@ export const adminApi = {
       body: JSON.stringify(changes),
     }),
 
-  /** Supervisors: replaces their blocks; an empty list means every block. */
+  /** Supervisors and chief wardens: the hostel they belong to (null detaches them). Supervisors lose blocks of the other hostel. */
+  setUserHostel: (userId: string, hostel_type: HostelType | null) =>
+    apiFetch<{ user_id: string; hostel_type: HostelType | null; unassigned_blocks: string[] }>(`/admin/users/${userId}/hostel`, {
+      method: 'PUT',
+      body: JSON.stringify({ hostel_type }),
+    }),
+
+  /** Supervisors: replaces their blocks; an empty list means every block of their hostel. */
   setSupervisorBlocks: (userId: string, block_ids: string[]) =>
     apiFetch<{ block_ids: string[]; campus_wide: boolean }>(`/admin/users/${userId}/blocks`, {
       method: 'PUT',
@@ -383,31 +381,54 @@ export const adminApi = {
 
   deleteLeave: (leaveId: number) => apiFetch<void>(`/admin/leave/${leaveId}`, { method: 'DELETE' }),
 
-  listFloors: (blockId: string) => apiFetch<BlockFloor[]>(`/admin/blocks/${blockId}/floors`, { method: 'GET' }),
+};
+
+/** Block settings: blocks -> floors -> rooms and shared areas. For everyone who runs blocks; the server limits each caller to their own. */
+export const infraApi = {
+  listBlocks: () => apiFetch<AdminBlock[]>('/infrastructure/blocks', { method: 'GET' }),
+
+  /** Chief wardens add to their own hostel (hostel_type is then ignored); administrators choose the hostel and kind. */
+  createBlock: (data: { block_code: string; block_name: string; top_floor: number; hostel_type?: HostelType | null; block_kind?: BlockKind }) =>
+    apiFetch<AdminBlock>('/infrastructure/blocks', { method: 'POST', body: JSON.stringify(data) }),
+
+  /** Anyone who runs the block can rename it; hostel and kind are the administrator's. */
+  updateBlock: (blockId: string, data: { block_name: string; hostel_type?: HostelType | null; block_kind?: BlockKind }) =>
+    apiFetch<AdminBlock>(`/infrastructure/blocks/${blockId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  listFloors: (blockId: string) => apiFetch<BlockFloor[]>(`/infrastructure/blocks/${blockId}/floors`, { method: 'GET' }),
 
   // Without a floor number the next floor above the current top floor is added.
   addFloor: (blockId: string, floor_number?: number) =>
-    apiFetch<{ floor_number: number; floor_code: string }>(`/admin/blocks/${blockId}/floors`, {
+    apiFetch<{ floor_number: number; floor_code: string }>(`/infrastructure/blocks/${blockId}/floors`, {
       method: 'POST',
       body: JSON.stringify(floor_number === undefined ? {} : { floor_number }),
     }),
 
   removeFloor: (blockId: string, floorNumber: number) =>
-    apiFetch<{ message: string }>(`/admin/blocks/${blockId}/floors/${floorNumber}`, { method: 'DELETE' }),
+    apiFetch<{ message: string }>(`/infrastructure/blocks/${blockId}/floors/${floorNumber}`, { method: 'DELETE' }),
 
-  listRooms: (blockId: string) => apiFetch<AdminRoom[]>(`/admin/blocks/${blockId}/rooms`, { method: 'GET' }),
+  listRooms: (blockId: string) => apiFetch<AdminRoom[]>(`/infrastructure/blocks/${blockId}/rooms`, { method: 'GET' }),
 
   createRooms: (
     blockId: string,
     data: { floor_number: number; from: number; to: number; room_type: RoomType; bed_capacity: number }
   ) =>
-    apiFetch<{ message: string; created: string[]; skipped: string[] }>(`/admin/blocks/${blockId}/rooms`, {
+    apiFetch<{ message: string; created: string[]; skipped: string[] }>(`/infrastructure/blocks/${blockId}/rooms`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
   updateRoom: (roomId: string, changes: { is_active?: boolean; room_type?: RoomType; bed_capacity?: number }) =>
-    apiFetch<AdminRoom>(`/admin/rooms/${roomId}`, { method: 'PATCH', body: JSON.stringify(changes) }),
+    apiFetch<AdminRoom>(`/infrastructure/rooms/${roomId}`, { method: 'PATCH', body: JSON.stringify(changes) }),
+
+  // ---- Shared areas (washrooms, lifts, corridors ...) ----
+  listCommonAreas: (blockId: string) => apiFetch<CommonAreaRow[]>(`/infrastructure/blocks/${blockId}/common-areas`, { method: 'GET' }),
+
+  createCommonArea: (blockId: string, data: { floor_number: number; area_type: CommonAreaType; description: string }) =>
+    apiFetch<CommonAreaRow>(`/infrastructure/blocks/${blockId}/common-areas`, { method: 'POST', body: JSON.stringify(data) }),
+
+  updateCommonArea: (areaId: string, changes: { is_operational?: boolean; description?: string }) =>
+    apiFetch<CommonAreaRow>(`/infrastructure/common-areas/${areaId}`, { method: 'PATCH', body: JSON.stringify(changes) }),
 };
 
 export const aiApi = {

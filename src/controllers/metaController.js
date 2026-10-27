@@ -2,8 +2,27 @@ const db = require('../config/db');
 const { managedBlocks } = require('../services/scopeService');
 const { asyncHandler } = require('../middleware/errorHandler');
 
+// A student is offered the blocks of the hostel they live in (or, before they have a
+// room, of the hostel their profile's gender points to) and the academic blocks;
+// managers get every block and narrow it to their own scope.
 exports.getBlocks = asyncHandler(async (req, res) => {
-    const result = await db.query('SELECT * FROM hostel_blocks ORDER BY block_id ASC');
+    let hostel = null;
+    if (req.user?.role === 'STUDENT') {
+        const { rows } = await db.query(
+            `SELECT COALESCE(
+                        (SELECT b.hostel_type FROM student_room_allotments a JOIN rooms r ON r.room_id = a.room_id
+                           JOIN hostel_blocks b ON b.block_id = r.block_id WHERE a.student_id = $1 AND a.is_current),
+                        (SELECT CASE p.gender WHEN 'MALE' THEN 'MENS' WHEN 'FEMALE' THEN 'LADIES' END FROM student_profiles p WHERE p.user_id = $1)
+                    ) AS hostel`,
+            [req.user.userId]
+        );
+        hostel = rows[0].hostel;
+    }
+    const result = await db.query(
+        `SELECT * FROM hostel_blocks WHERE ($1::text IS NULL OR hostel_type IS NULL OR hostel_type = $1)
+         ORDER BY hostel_type NULLS LAST, block_kind <> 'HOSTEL_WIDE', length(split_part(block_id, '_', 1)), block_id`,
+        [hostel]
+    );
     res.json(result.rows);
 });
 

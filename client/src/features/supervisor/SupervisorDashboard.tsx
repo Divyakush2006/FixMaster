@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { AlarmClock, AlertTriangle, CheckCircle2, ClipboardCheck, Clock3, Gauge, Hourglass, Inbox, Layers, Star, Wrench } from 'lucide-react';
-import { analyticsApi, metaApi } from '../../api/endpoints';
+import { analyticsApi, meApi, metaApi } from '../../api/endpoints';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { StatCard } from '../../components/ui/StatCard';
@@ -14,6 +14,7 @@ import { Switch } from '../../components/ui/Switch';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td, TableSkeleton } from '../../components/ui/Table';
 import { coerceNumber } from '../../utils/formatters';
 import { cn } from '../../components/ui/cn';
+import { HOSTEL_LABEL } from '../../utils/labels';
 
 // One colour per lifecycle stage, used by both charts and the legend.
 const SERIES = [
@@ -35,6 +36,9 @@ const tooltipStyle = {
 
 export const SupervisorDashboard: React.FC = () => {
   const [showEmptyBlocks, setShowEmptyBlocks] = useState(false);
+  // What "every block" means depends on who is looking: one hostel, the blocks assigned to them, or all.
+  const me = useQuery({ queryKey: ['me'], queryFn: meApi.getMe, staleTime: 60_000 }).data;
+  const scopeText = !me || me.campus_wide ? 'across all hostel blocks' : me.hostel_type && !(me.assigned_blocks?.length) ? `across the ${HOSTEL_LABEL[me.hostel_type].toLowerCase()}` : 'across the blocks you run';
   const { data: kpis = [], isLoading, dataUpdatedAt } = useQuery({ queryKey: ['analytics-kpi'], queryFn: analyticsApi.getKpis });
   // Technicians who went off duty but kept jobs: that work is not moving.
   const { data: staff = [] } = useQuery({ queryKey: ['staff-roster', 'all'], queryFn: () => metaApi.getStaff() });
@@ -107,8 +111,8 @@ export const SupervisorDashboard: React.FC = () => {
         title="Operations overview"
         description={
           dataUpdatedAt
-            ? `Maintenance activity across all hostel blocks · updated ${new Date(dataUpdatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
-            : 'Maintenance activity across all hostel blocks.'
+            ? `Maintenance activity ${scopeText} · updated ${new Date(dataUpdatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
+            : `Maintenance activity ${scopeText}.`
         }
         actions={
           <ButtonLink to="/supervisor/all-complaints" variant="secondary" icon={Inbox}>

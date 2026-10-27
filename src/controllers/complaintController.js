@@ -170,6 +170,20 @@ async function assertValidLocation(client, { ticket_scope, room_id, common_area_
         if (area.rows[0].block_id !== block_id) {
             throw new AppError(400, `Common area ${common_area_id} does not belong to block ${block_id}.`);
         }
+        if (role === 'STUDENT') {
+            // Their own hostel's shared places and the academic blocks; not the other hostel's.
+            const other = await client.query(
+                `SELECT 1 FROM hostel_blocks b
+                 WHERE b.block_id = $2 AND b.hostel_type IS NOT NULL
+                   AND EXISTS (SELECT 1 FROM student_room_allotments a JOIN rooms r ON r.room_id = a.room_id
+                                 JOIN hostel_blocks own ON own.block_id = r.block_id
+                                WHERE a.student_id = $1 AND a.is_current AND own.hostel_type <> b.hostel_type)`,
+                [userId, block_id]
+            );
+            if (other.rows.length > 0) {
+                throw new AppError(403, 'You can only report faults in your own hostel or an academic block.', { code: 'OTHER_HOSTEL' });
+            }
+        }
     }
 }
 

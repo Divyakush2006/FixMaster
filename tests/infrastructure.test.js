@@ -12,24 +12,28 @@ describe('hostel infrastructure: blocks, floors, room numbering', () => {
     });
     after(async () => t && t.close());
 
-    const LETTERS = 'ABCDEFGHIJKLMNOPQRST'.split('');
+    // The men's hostel has A to T without S; the ladies' hostel has A-H, J and S under ids LA ... LS (migration 016).
+    const LETTERS = 'ABCDEFGHIJKLMNOPQRT'.split('');
+    const LADIES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'S'];
 
-    it('blocks A to T all exist, each with Ground + floors 1-10', async () => {
+    it('blocks A to T (without S) and the ladies blocks all exist, each with Ground + floors 1-10', async () => {
         const blocks = (await t.api('/meta/blocks')).data.map((b) => b.block_id);
         for (const letter of LETTERS) assert.ok(blocks.includes(`${letter}_BLOCK`), `${letter}_BLOCK missing`);
+        for (const letter of LADIES) assert.ok(blocks.includes(`L${letter}_BLOCK`), `L${letter}_BLOCK missing`);
+        assert.ok(!blocks.includes('S_BLOCK'), 'S belongs to the ladies hostel only');
 
         const { rows } = await t.sql(
             `SELECT block_id, string_agg(floor_code, ',' ORDER BY floor_number) AS floors
              FROM block_floors WHERE block_id = ANY($1) GROUP BY block_id`,
-            [LETTERS.map((l) => `${l}_BLOCK`)]
+            [[...LETTERS.map((l) => `${l}_BLOCK`), ...LADIES.map((l) => `L${l}_BLOCK`)]]
         );
-        assert.equal(rows.length, 20);
+        assert.equal(rows.length, 29);
         for (const r of rows) assert.equal(r.floors, 'G,1,2,3,4,5,6,7,8,9,10', r.block_id);
     });
 
     it('the existing demo L-Block row and its rooms are unchanged', async () => {
         const { rows } = await t.sql("SELECT block_name, total_floors FROM hostel_blocks WHERE block_id = 'L_BLOCK'");
-        assert.deepEqual(rows[0], { block_name: 'L-Block (Ladies/Mens Hostel)', total_floors: 10 });
+        assert.deepEqual(rows[0], { block_name: 'L-Block', total_floors: 10 });
         const rooms = await t.sql("SELECT COUNT(*)::int AS n FROM rooms WHERE block_id = 'L_BLOCK'");
         assert.equal(rooms.rows[0].n, 18);
     });

@@ -1,18 +1,23 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Menu, WifiOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { useAiHealth } from '../ai/AiHealthBanner';
+import { aiTrouble, useAiHealth } from '../ai/AiHealthBanner';
 import { WORKSPACE_NAME } from './navigation';
 import { NotificationBell } from './NotificationBell';
 import { UserMenu } from './UserMenu';
 import { isManager } from '../../utils/roles';
+import { meApi } from '../../api/endpoints';
+import { HOSTEL_LABEL } from '../../utils/labels';
 
 export const Topbar: React.FC<{ onOpenNav: () => void }> = ({ onOpenNav }) => {
   const { user } = useAuth();
   // Hooks run before any early return (rules of hooks).
   const isSupervisorOrAdmin = isManager(user?.role);
   const { data: health } = useAiHealth(isSupervisorOrAdmin);
+  // The hostel a supervisor or chief warden belongs to (administrators run both).
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: meApi.getMe, enabled: isSupervisorOrAdmin && user?.role !== 'ADMIN', staleTime: 60_000 });
   if (!user) return null;
 
   return (
@@ -28,6 +33,9 @@ export const Topbar: React.FC<{ onOpenNav: () => void }> = ({ onOpenNav }) => {
 
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <span className="truncate text-sm font-semibold text-slate-900">{WORKSPACE_NAME[user.role]}</span>
+        {me?.hostel_type && (
+          <span className="hidden rounded-full border border-slate-200 bg-slate-50 px-2 py-px text-2xs font-medium text-slate-600 sm:inline">{HOSTEL_LABEL[me.hostel_type]}</span>
+        )}
         {import.meta.env.DEV && (
           <span className="hidden rounded border border-amber-300 bg-amber-50 px-1.5 py-px text-2xs font-semibold uppercase tracking-wide text-amber-800 sm:inline">
             Development
@@ -53,7 +61,7 @@ export const Topbar: React.FC<{ onOpenNav: () => void }> = ({ onOpenNav }) => {
               <Link
                 to="/supervisor/all-complaints?status=OPEN"
                 className="flex items-center gap-1.5 rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200 transition"
-                title="Some AI providers are unavailable; others are covering."
+                title={aiTrouble(health)}
               >
                 <span className="h-2 w-2 rounded-full bg-amber-500" />
                 <span className="hidden sm:inline">AI partly off</span>

@@ -34,14 +34,35 @@ describe('scale dataset', () => {
         await t.close();
     });
 
-    it('creates a campus: 24 generated blocks of 8-10 floors, thousands of residents, a year of tickets', async () => {
+    it('creates a campus: two hostels of 8-10 floor blocks, thousands of residents, a year of tickets', async () => {
         assert.ok(totals.students >= 10000, `students: ${totals.students}`);
         assert.ok(totals.tickets >= 7000, `tickets: ${totals.tickets}`);
         assert.ok(totals.reviews >= 5000);
-        const { rows } = await t.sql(`SELECT total_floors, hostel_type FROM hostel_blocks WHERE block_id ~ '^[A-X]_BLOCK$' AND block_id <> 'L_BLOCK'`);
-        assert.equal(rows.length, 23);
+        const { rows } = await t.sql(`SELECT block_id, total_floors, hostel_type FROM hostel_blocks WHERE block_kind = 'RESIDENTIAL' AND block_id <> 'L_BLOCK' ORDER BY block_id`);
         assert.ok(rows.every((b) => b.total_floors >= 8 && b.total_floors <= 10));
-        assert.ok(rows.some((b) => b.hostel_type === 'LADIES') && rows.some((b) => b.hostel_type === 'MENS'));
+        // Men's hostel: A to T without S (L-Block is the seed's); ladies' hostel: A-H, J and S under ids LA ... LS.
+        assert.deepEqual(rows.filter((b) => b.hostel_type === 'MENS').map((b) => b.block_id[0]), 'ABCDEFGHIJKMNOPQRT'.split(''));
+        assert.deepEqual(rows.filter((b) => b.hostel_type === 'LADIES').map((b) => b.block_id), ['LA', 'LB', 'LC', 'LD', 'LE', 'LF', 'LG', 'LH', 'LJ', 'LS'].map((c) => `${c}_BLOCK`));
+        assert.equal((await t.sql(`SELECT hostel_type FROM hostel_blocks WHERE block_id = 'S_BLOCK'`)).rows.length, 0, 'S is a ladies block only');
+    });
+
+    it('keeps MH (the whole men\'s hostel) and PRP (academic) as blocks with shared areas and tickets only', async () => {
+        const { rows } = await t.sql(
+            `SELECT b.block_id, b.block_kind, b.hostel_type,
+                    (SELECT COUNT(*) FROM rooms r WHERE r.block_id = b.block_id)::int AS rooms,
+                    (SELECT COUNT(*) FROM common_areas a WHERE a.block_id = b.block_id)::int AS areas,
+                    (SELECT COUNT(*) FROM complaints c WHERE c.block_id = b.block_id)::int AS tickets
+             FROM hostel_blocks b WHERE b.block_id IN ('MH_BLOCK', 'PRP_BLOCK') ORDER BY b.block_id`
+        );
+        assert.deepEqual(rows.map((r) => [r.block_id, r.block_kind, r.hostel_type, r.rooms]), [['MH_BLOCK', 'HOSTEL_WIDE', 'MENS', 0], ['PRP_BLOCK', 'ACADEMIC', null, 0]]);
+        assert.ok(rows.every((r) => r.areas > 0 && r.tickets > 0));
+    });
+
+    it('gives each hostel its own chief warden and supervisors', async () => {
+        const { rows } = await t.sql(`SELECT reg_or_emp_id, role, hostel_type FROM users WHERE reg_or_emp_id LIKE 'GEN%' AND role IN ('CHIEF_WARDEN', 'SUPERVISOR') ORDER BY reg_or_emp_id`);
+        assert.deepEqual(rows.filter((r) => r.role === 'CHIEF_WARDEN').map((r) => [r.reg_or_emp_id, r.hostel_type]), [['GENCW01', 'MENS'], ['GENCW02', 'LADIES']]);
+        assert.ok(rows.filter((r) => r.role === 'SUPERVISOR').every((r) => r.hostel_type === (r.reg_or_emp_id.startsWith('GENSUPL') ? 'LADIES' : 'MENS')));
+        assert.equal((await t.sql(`SELECT COUNT(*)::int AS n FROM supervisor_blocks sb JOIN users u ON u.user_id = sb.supervisor_user_id JOIN hostel_blocks b ON b.block_id = sb.block_id WHERE b.hostel_type <> u.hostel_type`)).rows[0].n, 0);
     });
 
     it('gives every resident a room, a complete profile and the right hostel', async () => {
@@ -108,20 +129,25 @@ describe('scale dataset', () => {
         const BUDGET_MS = 3000;
 
         it('a supervisor sees only their three blocks', async () => {
-            const r = await timed('/insights/overview', supervisor);
+            const r = await timed('/insights/overview', await t.login('GENSUP02'));
             assert.equal(r.status, 200);
             assert.equal(r.data.blocks.length, 3);
             assert.ok(r.ms < BUDGET_MS, `${r.ms.toFixed(0)} ms`);
         });
 
-        it('the chief warden sees every block, quickly', async () => {
+        it('the chief warden sees every block of their hostel, quickly, and none of the other', async () => {
             for (const path of ['/insights/overview', '/insights/breach-risk', '/insights/recurring', '/analytics/kpi', '/analytics/hotspots', '/autopilot/performance', '/complaints?limit=50']) {
                 const r = await timed(path, chief);
                 assert.equal(r.status, 200, `${path}: ${JSON.stringify(r.data).slice(0, 200)}`);
                 assert.ok(r.ms < BUDGET_MS, `${path} took ${r.ms.toFixed(0)} ms`);
             }
             const overview = await t.api('/insights/overview', { token: chief });
-            assert.ok(overview.data.blocks.length >= 24);
+            const ids = overview.data.blocks.map((b) => b.block_id);
+            assert.ok(ids.length >= 19 && ids.includes('MH_BLOCK') && ids.includes('PRP_BLOCK'), ids.join(','));
+            assert.ok(!ids.some((id) => /^L[A-Z]_BLOCK$/.test(id)), 'no ladies blocks in the men\'s chief warden\'s view');
+            const ladies = await t.api('/insights/overview', { token: await t.login('GENCW02') });
+            const ladyIds = ladies.data.blocks.map((b) => b.block_id);
+            assert.ok(ladyIds.includes('LA_BLOCK') && ladyIds.includes('PRP_BLOCK') && !ladyIds.includes('A_BLOCK') && !ladyIds.includes('MH_BLOCK'), ladyIds.join(','));
         });
 
         it('a student sees only their own tickets, quickly', async () => {
@@ -129,7 +155,17 @@ describe('scale dataset', () => {
             assert.equal(r.status, 200);
             assert.ok(r.ms < BUDGET_MS, `${r.ms.toFixed(0)} ms`);
             const me = (await t.sql(`SELECT user_id FROM users WHERE reg_or_emp_id = '23BCE00001'`)).rows[0].user_id;
-            const mine = new Set((await t.sql(`SELECT complaint_id FROM complaint_reporters WHERE user_id = $1`, [me])).rows.map((x) => x.complaint_id));
+            // Their own reports, and the tickets of the room they live in (a roommate may have reported a fault there).
+            const mine = new Set(
+                (
+                    await t.sql(
+                        `SELECT complaint_id FROM complaint_reporters WHERE user_id = $1
+                         UNION SELECT c.complaint_id FROM complaints c JOIN student_room_allotments a ON a.room_id = c.room_id AND a.is_current
+                         WHERE a.student_id = $1 AND c.ticket_scope = 'ROOM'`,
+                        [me]
+                    )
+                ).rows.map((x) => x.complaint_id)
+            );
             const rows = Array.isArray(r.data) ? r.data : r.data.complaints || r.data.items || [];
             assert.ok(rows.every((x) => mine.has(x.complaint_id)));
         });
@@ -144,7 +180,7 @@ describe('scale dataset', () => {
         it('ranks technicians by their 60-day record', async () => {
             const r = await t.api('/autopilot/performance?specialization=ELECTRICIAN', { token: chief });
             assert.equal(r.status, 200);
-            assert.ok(r.data.length >= 24);
+            assert.ok(r.data.length >= 18);
             assert.ok(r.data.filter((x) => x.rated_jobs >= 8).length > 5, `enough rated jobs for the board to have real figures: ${JSON.stringify(r.data.slice(0, 2))}`);
         });
     });

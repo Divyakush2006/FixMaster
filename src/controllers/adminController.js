@@ -3,7 +3,7 @@ const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { createUser, hashPassword, PUBLIC_USER_COLUMNS } = require('../services/userService');
 const { recordAudit } = require('../services/auditService');
 const { releaseLiveJobs } = require('../services/taskService');
-const { pendingRequests, DECLINE } = require('../services/roomRequestService');
+const { pendingRequests, assertHostelFits, DECLINE } = require('../services/roomRequestService');
 
 // ---- Users -------------------------------------------------------------------
 
@@ -66,13 +66,13 @@ exports.userSummary = asyncHandler(async (req, res) => {
 // POST /api/admin/users - the only way to create STAFF / SUPERVISOR / ADMIN
 // accounts (public registration always creates STUDENT).
 exports.createUser = asyncHandler(async (req, res) => {
-    const { reg_or_emp_id, full_name, email, phone_number, password, role, specialization } = req.body;
-    const user = await createUser({ reg_or_emp_id, full_name, email, phone_number, password, role, specialization });
+    const { reg_or_emp_id, full_name, email, phone_number, password, role, specialization, hostel_type } = req.body;
+    const user = await createUser({ reg_or_emp_id, full_name, email, phone_number, password, role, specialization, hostel_type });
     await recordAudit(null, req, {
         action: 'user.create',
         targetType: 'user',
         targetId: user.user_id,
-        details: { reg_or_emp_id: user.reg_or_emp_id, role: user.role, specialization: user.specialization },
+        details: { reg_or_emp_id: user.reg_or_emp_id, role: user.role, specialization: user.specialization, hostel_type: user.hostel_type },
     });
     res.status(201).json({ message: 'User created', user });
 });
@@ -264,12 +264,13 @@ exports.allotRoom = asyncHandler(async (req, res) => {
 
         // Lock the room so two concurrent allotments can't both take its last bed.
         const room = await client.query(
-            'SELECT bed_capacity, is_active FROM rooms WHERE room_id = $1 FOR UPDATE',
+            'SELECT bed_capacity, is_active, block_id FROM rooms WHERE room_id = $1 FOR UPDATE',
             [room_id]
         );
         if (room.rows.length === 0 || !room.rows[0].is_active) {
             throw new AppError(404, `Room ${room_id} was not found or is inactive.`);
         }
+        await assertHostelFits(client, student_id, room.rows[0].block_id);
         const occupancy = await client.query(
             `SELECT COUNT(*)::int AS n FROM student_room_allotments
              WHERE room_id = $1 AND is_current = TRUE AND student_id <> $2`,

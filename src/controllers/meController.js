@@ -6,9 +6,10 @@ const jwt = require('jsonwebtoken');
 const { signToken } = require('../middleware/auth');
 const { setSessionCookies } = require('../utils/sessionCookies');
 const { countLiveJobs, releaseLiveJobs } = require('../services/taskService');
-const { assertRequestableRoom, recordRoomRequest, requestStatus, WITHDRAW } = require('../services/roomRequestService');
+const { assertRequestableRoom, assertHostelFits, recordRoomRequest, requestStatus, WITHDRAW } = require('../services/roomRequestService');
 const { recordAudit } = require('../services/auditService');
 const { getProfile, saveProfile } = require('../services/profileService');
+const { managedBlocks } = require('../services/scopeService');
 const { PRIVACY_NOTICE_VERSION } = require('../config/identity');
 
 // GET /api/me - the caller's account (password_hash never selected), plus
@@ -17,16 +18,21 @@ exports.getMe = asyncHandler(async (req, res) => {
     const result = await db.query(
         `SELECT ${PUBLIC_USER_COLUMNS}, erasure_requested_at,
                 EXISTS (SELECT 1 FROM student_profiles p WHERE p.user_id = users.user_id) AS profile_complete,
-                CASE WHEN role = 'SUPERVISOR' THEN COALESCE(
-                    (SELECT array_agg(sb.block_id ORDER BY sb.block_id) FROM supervisor_blocks sb WHERE sb.supervisor_user_id = users.user_id),
-                    '{}') END AS managed_blocks
+                (SELECT array_agg(sb.block_id ORDER BY sb.block_id) FROM supervisor_blocks sb WHERE sb.supervisor_user_id = users.user_id AND users.role = 'SUPERVISOR') AS assigned_blocks
          FROM users WHERE user_id = $1`,
         [req.user.userId]
     );
     if (result.rows.length === 0) {
         throw new AppError(404, 'User not found.');
     }
-    const me = result.rows[0];
+    const { assigned_blocks: assigned, ...me } = result.rows[0];
+    if (me.role === 'SUPERVISOR' || me.role === 'CHIEF_WARDEN' || me.role === 'ADMIN') {
+        // Exactly the blocks this manager runs; campus_wide when that is every block.
+        const scope = await managedBlocks(req.user);
+        me.campus_wide = scope === null;
+        me.managed_blocks = scope === null ? [] : scope;
+        me.assigned_blocks = assigned || [];
+    }
     if (me.role === 'STUDENT' && me.profile_complete) {
         // The notice changed since this resident last accepted it: they are asked to read it again.
         const consented = await db.query('SELECT privacy_notice_version FROM student_profiles WHERE user_id = $1', [req.user.userId]);
@@ -95,6 +101,7 @@ exports.requestRoom = asyncHandler(async (req, res) => {
             throw new AppError(409, 'You already have a room. Ask the hostel office if you need to move.');
         }
         const room = await assertRequestableRoom(client, { block_id, floor_number, room_id });
+        await assertHostelFits(client, req.user.userId, room.block_id);
         const open = await requestStatus(client, req.user.userId);
         if (open && open.status === 'PENDING' && open.room_id === room_id) {
             throw new AppError(409, 'This request is already waiting for the hostel office.');

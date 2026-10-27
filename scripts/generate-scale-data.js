@@ -7,16 +7,20 @@
  *   npm run db:scale -- --yes [--days 90] [--tickets-per-student 0.75] [--reset]
  *
  * What it creates (on top of the demo seed, which must already be loaded):
- *   - 24 hostel blocks (A to X), 8 to 10 floors each, half men's and half
- *     ladies' (L-Block is left exactly as the seed has it);
+ *   - two hostels: the men's hostel with blocks A to T except S (L-Block is left
+ *     exactly as the seed has it) and the ladies' hostel with A, B, C, D, E, F,
+ *     G, H, J and S (ids LA_BLOCK ... LS_BLOCK, because both hostels have an
+ *     A-Block); 8 to 10 floors each. MH (the complete men's hostel) and PRP (an
+ *     academic block) come from the seed and get a few tickets of their own;
  *   - about 20 rooms per floor, three beds each, ~92% occupied, with a
  *     resident per occupied bed (roughly 11,000 students, each with a
  *     complete profile and a current allotment);
  *   - common areas on every floor;
  *   - housekeeping, electrical, plumbing, carpentry and AC staff for every
  *     block (11 each, two on most trades so the autopilot has a real choice)
- *     plus a campus pool of 11, supervisors for groups of blocks, and a chief
- *     warden;
+ *     plus a campus pool of 11, supervisors for groups of blocks in each hostel
+ *     (GENSUP01.. for men, GENSUPL01.. for ladies) and a chief warden for each
+ *     hostel (GENCW01 men, GENCW02 ladies);
  *   - `--days` days of ticket history in every state, with assignments by
  *     trade, ratings that differ by technician, and some comments.
  *
@@ -36,7 +40,9 @@ const arg = (name, fallback) => {
     return i >= 0 && process.argv[i + 1] ? Number(process.argv[i + 1]) : fallback;
 };
 
-const BLOCK_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWX'.split('');
+// The campus layout. Both hostels reuse letters, so a ladies' block id is the letter with an L in front.
+const MENS_LETTERS = 'ABCDEFGHIJKLMNOPQRT'.split(''); // A to T without S, which belongs to the ladies' hostel
+const LADIES_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'S'];
 const ROOMS_PER_FLOOR = 20;
 const OCCUPANCY_PCT = 92;
 
@@ -74,13 +80,21 @@ async function generate({ connectionString, days = 90, perStudent = 0.75, reset 
             return false;
         }
 
-        // 1. Blocks: 24, with 8-10 floors, half ladies'.
-        const blocks = BLOCK_LETTERS.map((letter, i) => ({ id: `${letter}_BLOCK`, name: `${letter}-Block`, floors: 8 + (i % 3), type: i % 2 === 1 ? 'LADIES' : 'MENS', isNew: i >= 20, letter }));
-        for (const b of blocks.filter((x) => x.isNew)) {
-            await q(`INSERT INTO hostel_blocks (block_id, block_name, total_floors, hostel_type) VALUES ($1, $2, $3, $4) ON CONFLICT (block_id) DO NOTHING`, [b.id, b.name, b.floors, b.type]);
-        }
-        for (const b of blocks.filter((x) => !x.isNew && x.id !== 'L_BLOCK')) {
-            await q(`UPDATE hostel_blocks SET hostel_type = $2 WHERE block_id = $1`, [b.id, b.type]);
+        // 1. Blocks: the two hostels, 8-10 floors each.
+        const blocks = [
+            ...MENS_LETTERS.map((letter, i) => ({ id: `${letter}_BLOCK`, name: `${letter}-Block`, floors: 8 + (i % 3), type: 'MENS' })),
+            ...LADIES_LETTERS.map((letter, i) => ({ id: `L${letter}_BLOCK`, name: `${letter}-Block (Ladies)`, floors: 8 + (i % 3), type: 'LADIES' })),
+        ];
+        // Blocks a previous run made that are not part of this layout (S as a men's block, U to X ...) go.
+        const layoutIds = ['L_BLOCK', ...blocks.map((b) => b.id)];
+        const stale = await q(`DELETE FROM hostel_blocks WHERE block_id ~ '^L?[A-Z]_BLOCK$' AND block_id <> ALL($1::varchar[]) RETURNING block_id`, [layoutIds]);
+        if (stale.rows.length > 0) log(`removed blocks outside the campus layout: ${stale.rows.map((r) => r.block_id).join(', ')}`);
+        for (const b of blocks.filter((x) => x.id !== 'L_BLOCK')) {
+            await q(
+                `INSERT INTO hostel_blocks (block_id, block_name, total_floors, hostel_type, block_kind) VALUES ($1, $2, $3, $4, 'RESIDENTIAL')
+                 ON CONFLICT (block_id) DO UPDATE SET block_name = EXCLUDED.block_name, hostel_type = EXCLUDED.hostel_type, block_kind = 'RESIDENTIAL'`,
+                [b.id, b.name, b.floors, b.type]
+            );
             await q(
                 `DELETE FROM block_floors WHERE block_id = $1 AND floor_number > $2
                    AND NOT EXISTS (SELECT 1 FROM rooms r WHERE r.block_id = block_floors.block_id AND r.floor_number = block_floors.floor_number)
@@ -146,21 +160,30 @@ async function generate({ connectionString, days = 90, perStudent = 0.75, reset 
             [passwordHash]
         );
 
-        // 4. Supervisors for groups of three blocks, and a chief warden.
-        for (let i = 0; i * 3 < genBlocks.length; i += 1) {
-            const n = String(i + 1).padStart(2, '0');
+        // 4. Each hostel has its own supervisors (groups of three blocks) and its own chief warden.
+        const hostels = [
+            { type: 'MENS', blocks: blocks.filter((b) => b.type === 'MENS' && b.id !== 'L_BLOCK').map((b) => b.id).concat('L_BLOCK').sort(), prefix: 'GENSUP', emailTag: 'sup', extra: ['MH_BLOCK'], cw: ['GENCW01', 'Meenakshi Raman (Chief Warden, Men\'s Hostel)', 'gen.chiefwarden@vit.ac.in', '9600000001'] },
+            { type: 'LADIES', blocks: blocks.filter((b) => b.type === 'LADIES').map((b) => b.id), prefix: 'GENSUPL', emailTag: 'supl', extra: [], cw: ['GENCW02', 'Lakshmi Narayanan (Chief Warden, Ladies\' Hostel)', 'gen.chiefwarden2@vit.ac.in', '9600000002'] },
+        ];
+        for (const [h, hostel] of hostels.entries()) {
+            for (let i = 0; i * 3 < hostel.blocks.length; i += 1) {
+                const n = String(i + 1).padStart(2, '0');
+                const empId = `${hostel.prefix}${n}`;
+                await q(
+                    `INSERT INTO users (user_id, reg_or_emp_id, full_name, email, phone_number, password_hash, role, hostel_type)
+                     VALUES (md5('gen-sup-' || $1::text)::uuid::text, $1, $2, $3, $4, $5, 'SUPERVISOR', $6)`,
+                    [empId, `${FIRST[(i * 3 + h * 5) % FIRST.length]} ${LAST[(i * 7 + h * 3) % LAST.length]} (Supervisor)`, `gen.${hostel.emailTag}${n}@vit.ac.in`, `97${String(h * 50 + i + 1).padStart(8, '0')}`, passwordHash, hostel.type]
+                );
+                const mine = hostel.blocks.slice(i * 3, i * 3 + 3).concat(i === 0 ? hostel.extra : []);
+                await q(`INSERT INTO supervisor_blocks (supervisor_user_id, block_id) SELECT user_id, unnest($2::varchar[]) FROM users WHERE reg_or_emp_id = $1`, [empId, mine]);
+            }
+            const [empId, name, email, phone] = hostel.cw;
             await q(
-                `INSERT INTO users (user_id, reg_or_emp_id, full_name, email, phone_number, password_hash, role)
-                 VALUES (md5('gen-sup-' || $1::text)::uuid::text, $2, $3, $4, $5, $6, 'SUPERVISOR')`,
-                [n, `GENSUP${n}`, `${FIRST[(i * 3) % FIRST.length]} ${LAST[(i * 7) % LAST.length]} (Supervisor)`, `gen.sup${n}@vit.ac.in`, `97${String(i + 1).padStart(8, '0')}`, passwordHash]
+                `INSERT INTO users (user_id, reg_or_emp_id, full_name, email, phone_number, password_hash, role, hostel_type)
+                 VALUES (md5('gen-cw-' || $1::text)::uuid::text, $1, $2, $3, $4, $5, 'CHIEF_WARDEN', $6)`,
+                [empId, name, email, phone, passwordHash, hostel.type]
             );
-            await q(`INSERT INTO supervisor_blocks (supervisor_user_id, block_id) SELECT user_id, unnest($2::varchar[]) FROM users WHERE reg_or_emp_id = $1`, [`GENSUP${n}`, genBlocks.slice(i * 3, i * 3 + 3)]);
         }
-        await q(
-            `INSERT INTO users (user_id, reg_or_emp_id, full_name, email, phone_number, password_hash, role)
-             VALUES (md5('gen-cw-1')::uuid::text, 'GENCW01', 'Meenakshi Raman (Chief Warden)', 'gen.chiefwarden@vit.ac.in', '9600000001', $1, 'CHIEF_WARDEN')`,
-            [passwordHash]
-        );
 
         // 5. Residents: one per occupied bed.
         await q(
@@ -320,6 +343,42 @@ async function generate({ connectionString, days = 90, perStudent = 0.75, reset 
              UNION ALL
              SELECT c.complaint_id, NULL, 'OPEN', c.status, 'Generated history', c.created_at + INTERVAL '10 minutes' FROM gen_c c
              WHERE c.status <> 'OPEN' AND NOT (c.is_area AND c.area_id IS NULL)`
+        );
+
+        // Databases seeded before migration 016 have no shared areas in MH and PRP; the seed's own rows, added if missing.
+        await q(
+            `INSERT INTO common_areas (area_id, block_id, floor_number, area_type, description)
+             SELECT v.area_id, v.block_id, v.floor_number, v.area_type, v.description
+             FROM (VALUES
+                 ('MH-F00-CORR-01', 'MH_BLOCK', 0, 'CORRIDOR', 'Men''s hostel main corridor'),
+                 ('MH-F00-WASH-01', 'MH_BLOCK', 0, 'COMMON_WASHROOM', 'Men''s hostel ground floor washroom'),
+                 ('MH-F00-COOLER-01', 'MH_BLOCK', 0, 'WATER_COOLER', 'Men''s hostel ground floor water cooler'),
+                 ('MH-F01-STUDY-01', 'MH_BLOCK', 1, 'STUDY_HALL', 'Men''s hostel study hall'),
+                 ('PRP-F00-LIFT-01', 'PRP_BLOCK', 0, 'ELEVATOR', 'PRP ground floor lift'),
+                 ('PRP-F00-CORR-01', 'PRP_BLOCK', 0, 'CORRIDOR', 'PRP ground floor corridor'),
+                 ('PRP-F01-WASH-01', 'PRP_BLOCK', 1, 'COMMON_WASHROOM', 'PRP first floor washroom'),
+                 ('PRP-F01-COOLER-01', 'PRP_BLOCK', 1, 'WATER_COOLER', 'PRP first floor water cooler')
+             ) AS v(area_id, block_id, floor_number, area_type, description)
+             WHERE EXISTS (SELECT 1 FROM block_floors f WHERE f.block_id = v.block_id AND f.floor_number = v.floor_number)
+             ON CONFLICT (area_id) DO NOTHING`
+        );
+        // MH (the whole men's hostel) and PRP (academic) have no rooms: a few open tickets against their shared areas,
+        // raised by a man living in the men's hostel (MH) or by anyone (PRP), so those blocks have something to show.
+        await q(
+            `INSERT INTO complaints (complaint_id, ticket_scope, common_area_id, block_id, raised_by_user_id, subcategory_id, description, status, priority, created_at)
+             SELECT md5('gen-shared-' || a.area_id || '-' || s.subcategory_id)::uuid::text, 'COMMON_AREA', a.area_id, a.block_id,
+                    (SELECT u.user_id FROM gen_students g JOIN users u ON u.user_id = md5('gen-student-' || g.seq)::uuid::text
+                      WHERE a.block_id <> 'MH_BLOCK' OR g.hostel_type = 'MENS'
+                      ORDER BY md5(g.seq::text || a.area_id || s.subcategory_id) LIMIT 1),
+                    s.subcategory_id, s.issue_name || ' (generated)', 'OPEN', s.priority_level, NOW() - make_interval(hours => ${pick(`a.area_id || s.subcategory_id`, 60)})
+             FROM common_areas a
+             JOIN complaint_subcategories s ON s.category_id = 6
+             WHERE a.block_id IN ('MH_BLOCK', 'PRP_BLOCK') AND ${pick(`'sh' || a.area_id || s.subcategory_id`, 100)} < 22`
+        );
+        await q(
+            `INSERT INTO complaint_logs (complaint_id, changed_by_user_id, previous_status, new_status, action_note, timestamp)
+             SELECT complaint_id, raised_by_user_id, NULL, 'OPEN', 'Ticket raised', created_at FROM complaints
+             WHERE block_id IN ('MH_BLOCK', 'PRP_BLOCK') AND description LIKE '% (generated)'`
         );
 
         await q('COMMIT');

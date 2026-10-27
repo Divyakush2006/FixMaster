@@ -69,8 +69,14 @@ export interface User {
   /** Staff: the block they are based in (null = campus pool) and their shift. */
   home_block_id?: string | null;
   shift?: StaffShift | null;
-  /** Supervisors (admin user list): blocks they manage; empty = every block. */
+  /** Supervisors (admin user list): the blocks assigned to them; empty = every block of their hostel. GET /me (managers): every block they run. */
   managed_blocks?: string[] | null;
+  /** GET /me (managers): true when they run every block (administrators, and managers with no hostel yet). */
+  campus_wide?: boolean;
+  /** GET /me (supervisors): the blocks assigned to them by name. */
+  assigned_blocks?: string[];
+  /** Supervisors and chief wardens: the hostel they belong to; null = not attached to one. */
+  hostel_type?: HostelType | null;
   /** When this person asked for their data to be erased; null when they have not. */
   erasure_requested_at?: string | null;
   /** Students: the privacy notice changed since they last accepted it. */
@@ -89,6 +95,9 @@ export interface ErasureRequest {
 
 export type StaffShift = 'MORNING' | 'EVENING' | 'NIGHT';
 export type HostelType = 'MENS' | 'LADIES';
+
+/** RESIDENTIAL: floors and rooms. HOSTEL_WIDE: the whole of one hostel (e.g. MH), shared areas only. ACADEMIC: belongs to no hostel (e.g. PRP). */
+export type BlockKind = 'RESIDENTIAL' | 'HOSTEL_WIDE' | 'ACADEMIC';
 
 export interface StaffLeave {
   leave_id: number;
@@ -165,6 +174,8 @@ export interface CreateUserPayload {
   password: string;
   role: Role;
   specialization?: Specialization | null;
+  /** Supervisors and chief wardens: the hostel they belong to. */
+  hostel_type?: HostelType | null;
 }
 
 export interface AdminAllotment {
@@ -197,8 +208,11 @@ export interface AdminBlock {
   block_id: string;
   block_code: string;
   block_name: string;
-  hostel_type: HostelType;
+  /** null for an academic block. */
+  hostel_type: HostelType | null;
+  block_kind: BlockKind;
   total_floors: number;
+  common_area_count: number;
   floor_count: number;
   room_count: number;
   active_room_count: number;
@@ -445,8 +459,23 @@ export interface HostelBlock {
   block_id: string;
   block_name: string;
   total_floors?: number;
-  hostel_type?: HostelType;
+  /** null for an academic block. */
+  hostel_type?: HostelType | null;
+  block_kind?: BlockKind;
 }
+
+/** A shared place (washroom, lift, corridor ...) as the block settings list it. */
+export interface CommonAreaRow {
+  area_id: string;
+  block_id: string;
+  floor_number: number;
+  area_type: CommonAreaType;
+  description: string;
+  is_operational: boolean;
+  open_tickets: number;
+}
+
+export type CommonAreaType = 'WATER_COOLER' | 'COMMON_WASHROOM' | 'SHOWER_ROOM' | 'ELEVATOR' | 'CORRIDOR' | 'STUDY_HALL';
 
 export interface Room {
   room_id: string;

@@ -297,9 +297,9 @@ export const UsersPage: React.FC = () => {
                                 Unlock
                               </Button>
                             )}
-                            {(u.role === 'STAFF' || u.role === 'SUPERVISOR') && (
+                            {(u.role === 'STAFF' || u.role === 'SUPERVISOR' || u.role === 'CHIEF_WARDEN') && (
                               <Button size="sm" variant="secondary" icon={MapPin} onClick={() => setOrganising(u)}>
-                                {u.role === 'STAFF' ? 'Placement' : 'Blocks'}
+                                {u.role === 'STAFF' ? 'Placement' : u.role === 'SUPERVISOR' ? 'Hostel & blocks' : 'Hostel'}
                               </Button>
                             )}
                             <Button size="sm" variant="secondary" icon={KeyRound} onClick={() => setResetting(u)}>
@@ -354,7 +354,12 @@ const CreateUserModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     setForm((f) => ({ ...f, [field]: e.target.value }));
 
   const mutation = useMutation({
-    mutationFn: () => adminApi.createUser({ ...form, specialization: form.role === 'STAFF' ? form.specialization : null }),
+    mutationFn: () =>
+      adminApi.createUser({
+        ...form,
+        specialization: form.role === 'STAFF' ? form.specialization : null,
+        hostel_type: form.role === 'SUPERVISOR' || form.role === 'CHIEF_WARDEN' ? form.hostel_type || null : undefined,
+      }),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       queryClient.invalidateQueries({ queryKey: ['admin-audit'] });
@@ -415,6 +420,16 @@ const CreateUserModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                       {SPECIALIZATION_LABEL[s]}
                     </option>
                   ))}
+                </Select>
+              )}
+            </Field>
+          ) : form.role === 'SUPERVISOR' || form.role === 'CHIEF_WARDEN' ? (
+            <Field label="Hostel" hint="Each hostel has its own chief warden and supervisors.">
+              {(a) => (
+                <Select {...a} value={form.hostel_type || ''} onChange={set('hostel_type')}>
+                  <option value="">Not attached to a hostel</option>
+                  <option value="MENS">Men's hostel</option>
+                  <option value="LADIES">Ladies' hostel</option>
                 </Select>
               )}
             </Field>

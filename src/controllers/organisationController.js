@@ -43,16 +43,64 @@ exports.updateStaffPlacement = asyncHandler(async (req, res) => {
     res.json(user);
 });
 
+// PUT /api/admin/users/:user_id/hostel { hostel_type } (SUPERVISOR, CHIEF_WARDEN)
+// The hostel (MENS or LADIES) a supervisor or chief warden belongs to; null
+// detaches them again. A chief warden runs their whole hostel, a supervisor
+// only blocks of their hostel, so blocks of the other hostel are unassigned.
+exports.setUserHostel = asyncHandler(async (req, res) => {
+    const hostel = req.body.hostel_type ?? null;
+    const outcome = await db.withTransaction(async (client) => {
+        const target = await lockUser(client, req.params.user_id);
+        if (target.role !== 'SUPERVISOR' && target.role !== 'CHIEF_WARDEN') {
+            throw new AppError(400, 'Only supervisors and chief wardens belong to a hostel.');
+        }
+        if (hostel && target.role === 'CHIEF_WARDEN') {
+            const other = await client.query(
+                `SELECT reg_or_emp_id FROM users WHERE role = 'CHIEF_WARDEN' AND hostel_type = $1 AND is_active AND user_id <> $2`,
+                [hostel, target.user_id]
+            );
+            if (other.rows.length > 0) {
+                throw new AppError(409, `${other.rows[0].reg_or_emp_id} is already the chief warden of that hostel. Move them first.`);
+            }
+        }
+        await client.query('UPDATE users SET hostel_type = $2 WHERE user_id = $1', [target.user_id, hostel]);
+        let unassigned = [];
+        if (hostel && target.role === 'SUPERVISOR') {
+            const dropped = await client.query(
+                `DELETE FROM supervisor_blocks sb USING hostel_blocks b
+                 WHERE sb.supervisor_user_id = $1 AND b.block_id = sb.block_id AND b.hostel_type IS NOT NULL AND b.hostel_type <> $2
+                 RETURNING sb.block_id`,
+                [target.user_id, hostel]
+            );
+            unassigned = dropped.rows.map((r) => r.block_id).sort();
+        }
+        await recordAudit(client, req, {
+            action: 'user.set_hostel',
+            targetType: 'user',
+            targetId: target.user_id,
+            details: { reg_or_emp_id: target.reg_or_emp_id, hostel_type: hostel, unassigned_blocks: unassigned },
+        });
+        return { user_id: target.user_id, hostel_type: hostel, unassigned_blocks: unassigned };
+    }, req.user.userId);
+    res.json(outcome);
+});
+
 // PUT /api/admin/users/:user_id/blocks { block_ids } (SUPERVISOR)
-// Replaces the supervisor's blocks. An empty list makes them campus-wide.
+// Replaces the supervisor's blocks. An empty list makes them responsible for
+// their whole hostel (or every block, for a supervisor with no hostel yet).
 exports.setSupervisorBlocks = asyncHandler(async (req, res) => {
     const blockIds = [...new Set(req.body.block_ids)];
     const blocks = await db.withTransaction(async (client) => {
         const target = await lockUser(client, req.params.user_id);
         if (target.role !== 'SUPERVISOR') throw new AppError(400, 'Only supervisors are assigned to blocks.');
         if (blockIds.length > 0) {
-            const known = await client.query('SELECT block_id FROM hostel_blocks WHERE block_id = ANY($1::varchar[])', [blockIds]);
+            const known = await client.query('SELECT block_id, hostel_type FROM hostel_blocks WHERE block_id = ANY($1::varchar[])', [blockIds]);
             if (known.rows.length !== blockIds.length) throw new AppError(404, 'One or more of those blocks do not exist.');
+            const hostel = (await client.query('SELECT hostel_type FROM users WHERE user_id = $1', [target.user_id])).rows[0].hostel_type;
+            const foreign = hostel && known.rows.filter((b) => b.hostel_type && b.hostel_type !== hostel).map((b) => b.block_id);
+            if (foreign && foreign.length > 0) {
+                throw new AppError(400, `${foreign.join(', ')} belong to the other hostel; a supervisor can only run blocks of their own hostel.`);
+            }
         }
         await client.query('DELETE FROM supervisor_blocks WHERE supervisor_user_id = $1', [target.user_id]);
         if (blockIds.length > 0) {

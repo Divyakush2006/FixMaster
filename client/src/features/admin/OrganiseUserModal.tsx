@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarX2, Trash2 } from 'lucide-react';
-import { adminApi } from '../../api/endpoints';
+import { adminApi, infraApi } from '../../api/endpoints';
 import { useToast } from '../../components/ui/Toast';
 import { Modal } from '../../components/ui/Modal';
 import { Alert } from '../../components/ui/Alert';
 import { Button, IconButton } from '../../components/ui/Button';
 import { Field, Input, Select } from '../../components/ui/Form';
-import type { AdminBlock, StaffShift, User } from '../../types';
+import type { AdminBlock, HostelType, StaffShift, User } from '../../types';
+import { HOSTEL_LABEL } from '../../utils/labels';
 
 const SHIFT_LABEL: Record<StaffShift, string> = { MORNING: 'Morning (6–2)', EVENING: 'Evening (2–10)', NIGHT: 'Night (10–6)' };
 
-/** One line for the users table: where a staff member works, or which blocks a supervisor runs. */
+const HOSTEL_SHORT: Record<HostelType, string> = { MENS: "Men's", LADIES: "Ladies'" };
+
+/** One line for the users table: where a staff member works, which hostel and blocks a supervisor runs, or a chief warden's hostel. */
 export function placementSummary(u: User): string | null {
   if (u.role === 'STAFF') {
     const where = u.home_block_id ? u.home_block_id.replace(/_BLOCK$/, '-Block') : 'Campus pool';
@@ -19,8 +22,10 @@ export function placementSummary(u: User): string | null {
   }
   if (u.role === 'SUPERVISOR') {
     const blocks = u.managed_blocks ?? [];
-    return blocks.length === 0 ? 'All blocks' : blocks.map((b) => b.replace(/_BLOCK$/, '')).join(', ');
+    const what = blocks.length === 0 ? (u.hostel_type ? 'Every block' : 'All blocks') : blocks.map((b) => b.replace(/_BLOCK$/, '')).join(', ');
+    return u.hostel_type ? `${HOSTEL_SHORT[u.hostel_type]} · ${what}` : what;
   }
+  if (u.role === 'CHIEF_WARDEN') return u.hostel_type ? HOSTEL_LABEL[u.hostel_type] : 'Every block';
   return null;
 }
 
@@ -28,27 +33,37 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 /**
  * Staff: home block, shift and leave (all used by the dispatch autopilot).
- * Supervisors: the blocks they manage; none ticked means every block.
+ * Supervisors: their hostel and the blocks they manage; none ticked means every
+ * block of their hostel. Chief wardens: their hostel (they run all of it).
  */
 export const OrganiseUserModal: React.FC<{ user: User; onClose: () => void; onSaved: () => void }> = ({ user, onClose, onSaved }) => {
   const isStaff = user.role === 'STAFF';
+  const isSupervisor = user.role === 'SUPERVISOR';
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const { data: blocks = [] } = useQuery({ queryKey: ['admin-blocks'], queryFn: adminApi.listBlocks });
+  const { data: blocks = [] } = useQuery({ queryKey: ['admin-blocks'], queryFn: infraApi.listBlocks });
+  const [hostel, setHostel] = useState<HostelType | ''>(user.hostel_type ?? '');
 
   const [homeBlock, setHomeBlock] = useState(user.home_block_id ?? '');
   const [shift, setShift] = useState<StaffShift | ''>(user.shift ?? '');
   const [managed, setManaged] = useState<string[]>(user.managed_blocks ?? []);
   const [error, setError] = useState<string | null>(null);
 
+  // A supervisor can be given blocks of their own hostel (and the academic blocks both share).
+  const offered = blocks.filter((b) => !hostel || b.hostel_type === null || b.hostel_type === hostel);
+
   const save = useMutation({
     mutationFn: async (): Promise<void> => {
-      if (isStaff) await adminApi.setPlacement(user.user_id, { home_block_id: homeBlock || null, shift: shift || null });
-      else await adminApi.setSupervisorBlocks(user.user_id, managed);
+      if (isStaff) {
+        await adminApi.setPlacement(user.user_id, { home_block_id: homeBlock || null, shift: shift || null });
+        return;
+      }
+      if ((hostel || null) !== (user.hostel_type ?? null)) await adminApi.setUserHostel(user.user_id, hostel || null);
+      if (isSupervisor) await adminApi.setSupervisorBlocks(user.user_id, managed.filter((id) => offered.some((b) => b.block_id === id)));
     },
     onSuccess: () => {
       onSaved();
-      showToast(isStaff ? 'Placement saved' : 'Blocks saved', 'success');
+      showToast(isStaff ? 'Placement saved' : 'Hostel and blocks saved', 'success');
       onClose();
     },
     onError: (err: Error) => setError(err.message),
@@ -60,12 +75,14 @@ export const OrganiseUserModal: React.FC<{ user: User; onClose: () => void; onSa
     <Modal
       isOpen
       onClose={onClose}
-      title={isStaff ? `Placement · ${user.full_name}` : `Blocks · ${user.full_name}`}
+      title={isStaff ? `Placement · ${user.full_name}` : isSupervisor ? `Hostel & blocks · ${user.full_name}` : `Hostel · ${user.full_name}`}
       maxWidth="lg"
       subtitle={
         isStaff
           ? 'The autopilot prefers staff based in the ticket’s block and never picks anyone off shift or on leave.'
-          : 'The supervisor sees and acts on tickets in these blocks only. Leave all unticked for every block.'
+          : isSupervisor
+            ? 'The supervisor sees and acts on tickets in these blocks only. Leave all unticked for every block of their hostel.'
+            : 'The chief warden runs every block of this hostel, plus the academic blocks. Each hostel has one chief warden.'
       }
       footer={
         <>
@@ -111,17 +128,37 @@ export const OrganiseUserModal: React.FC<{ user: User; onClose: () => void; onSa
             <LeavePanel userId={user.user_id} onChanged={() => queryClient.invalidateQueries({ queryKey: ['admin-leave', user.user_id] })} />
           </>
         ) : (
-          <BlockChecklist blocks={blocks} selected={managed} onToggle={toggle} />
+          <>
+            <Field label="Hostel" hint="Detached accounts keep the old behaviour: every block.">
+              {(a) => (
+                <Select {...a} value={hostel} onChange={(e) => setHostel(e.target.value as HostelType | '')}>
+                  <option value="">Not attached to a hostel</option>
+                  <option value="MENS">{HOSTEL_LABEL.MENS}</option>
+                  <option value="LADIES">{HOSTEL_LABEL.LADIES}</option>
+                </Select>
+              )}
+            </Field>
+            {isSupervisor && <BlockChecklist blocks={offered} selected={managed} onToggle={toggle} hostelChosen={!!hostel} />}
+            {isSupervisor && hostel && user.hostel_type && hostel !== user.hostel_type && (
+              <Alert tone="warning">Moving a supervisor to the other hostel takes away any blocks they run in {HOSTEL_LABEL[user.hostel_type]}.</Alert>
+            )}
+          </>
         )}
       </div>
     </Modal>
   );
 };
 
-const BlockChecklist: React.FC<{ blocks: AdminBlock[]; selected: string[]; onToggle: (id: string) => void }> = ({ blocks, selected, onToggle }) => (
+const BlockChecklist: React.FC<{ blocks: AdminBlock[]; selected: string[]; onToggle: (id: string) => void; hostelChosen: boolean }> = ({
+  blocks,
+  selected,
+  onToggle,
+  hostelChosen,
+}) => (
   <fieldset>
     <legend className="mb-2 text-[13px] font-medium text-slate-700">
-      Blocks managed <span className="font-normal text-slate-500">({selected.length === 0 ? 'every block' : `${selected.length} selected`})</span>
+      Blocks managed{' '}
+      <span className="font-normal text-slate-500">({selected.length === 0 ? (hostelChosen ? 'every block of the hostel' : 'every block') : `${selected.length} selected`})</span>
     </legend>
     <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
       {blocks.map((b) => (
@@ -129,6 +166,7 @@ const BlockChecklist: React.FC<{ blocks: AdminBlock[]; selected: string[]; onTog
           <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-brand-600" checked={selected.includes(b.block_id)} onChange={() => onToggle(b.block_id)} />
           <span className="truncate">{b.block_name}</span>
           {b.hostel_type === 'LADIES' && <span className="ml-auto text-[11px] text-slate-500">Ladies</span>}
+          {b.block_kind !== 'RESIDENTIAL' && <span className="ml-auto text-[11px] text-slate-500">{b.block_kind === 'ACADEMIC' ? 'Academic' : 'Whole hostel'}</span>}
         </label>
       ))}
     </div>

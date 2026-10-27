@@ -71,11 +71,17 @@ describe('database migrations', () => {
                 const col = await c.query("SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'is_active'");
                 assert.equal(col.rows.length, 1);
 
-                // Blocks A-T added alongside the original three; original rows untouched.
+                // Blocks A-T added alongside the original three; original rows untouched. Migration 016 then
+                // makes two hostels: S goes (nothing was ever built in it) and the ladies' A-H, J and S arrive.
                 const blocks = await c.query('SELECT COUNT(*)::int AS n FROM hostel_blocks');
-                assert.equal(blocks.rows[0].n, 22, 'A-T plus PRP and MH');
-                const l = await c.query("SELECT block_name, total_floors FROM hostel_blocks WHERE block_id = 'L_BLOCK'");
-                assert.deepEqual(l.rows[0], { block_name: 'L-Block (Ladies/Mens Hostel)', total_floors: 10 });
+                assert.equal(blocks.rows[0].n, 22 - 1 + 10, 'A-T without S, PRP and MH, and ten ladies blocks');
+                const kinds = await c.query("SELECT block_id, block_kind, hostel_type FROM hostel_blocks WHERE block_id IN ('PRP_BLOCK', 'MH_BLOCK', 'S_BLOCK', 'LS_BLOCK', 'LA_BLOCK') ORDER BY block_id");
+                assert.deepEqual(
+                    kinds.rows.map((r) => [r.block_id, r.block_kind, r.hostel_type]),
+                    [['LA_BLOCK', 'RESIDENTIAL', 'LADIES'], ['LS_BLOCK', 'RESIDENTIAL', 'LADIES'], ['MH_BLOCK', 'HOSTEL_WIDE', 'MENS'], ['PRP_BLOCK', 'ACADEMIC', null]]
+                );
+                const l = await c.query("SELECT block_name, total_floors, hostel_type FROM hostel_blocks WHERE block_id = 'L_BLOCK'");
+                assert.deepEqual(l.rows[0], { block_name: 'L-Block', total_floors: 10, hostel_type: 'MENS' });
                 const floors = await c.query("SELECT COUNT(*)::int AS n FROM block_floors WHERE block_id = 'L_BLOCK'");
                 assert.equal(floors.rows[0].n, 11, 'Ground + 1..10 backfilled for an existing block');
 
@@ -115,7 +121,14 @@ describe('database migrations', () => {
                     await c.query(m.sql);
                     await c.query('INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)', [m.version, m.checksum]);
                 }
-                await c.query(fs.readFileSync(path.join(__dirname, '..', 'database', 'seed_data.sql'), 'utf8'));
+                // The seed is written for the current schema; at version 006 blocks have no hostel or kind yet.
+                const seed = fs
+                    .readFileSync(path.join(__dirname, '..', 'database', 'seed_data.sql'), 'utf8')
+                    .replace(
+                        /INSERT INTO hostel_blocks \(block_id, block_name, total_floors, hostel_type, block_kind\) VALUES[\s\S]*?ON CONFLICT \(block_id\) DO NOTHING;/,
+                        "INSERT INTO hostel_blocks (block_id, block_name, total_floors) VALUES ('L_BLOCK', 'L-Block', 10), ('PRP_BLOCK', 'PRP', 8), ('MH_BLOCK', 'MH', 2) ON CONFLICT (block_id) DO NOTHING;"
+                    );
+                await c.query(seed);
                 // Seed has L-843 room cleaning IN_PROGRESS (Vihaan). Two more
                 // live requests for the same thing from his roommates:
                 await c.query(`

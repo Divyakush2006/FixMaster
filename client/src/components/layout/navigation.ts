@@ -64,6 +64,12 @@ const autopilot: NavSection = {
   ],
 };
 
+/** Floors, rooms and shared areas of the blocks this manager runs (administrators have Blocks & rooms instead). */
+const blockSettings: NavSection = {
+  heading: 'Hostel',
+  items: [{ label: 'Block settings', to: '/supervisor/blocks', icon: Building2 }],
+};
+
 const account: NavSection = {
   heading: 'Account',
   items: [{ label: 'My account', to: '/account', icon: UserCircle2 }],
@@ -87,7 +93,7 @@ export function navigationFor(role: Role): NavSection[] {
       return [{ heading: 'Workspace', items: [{ label: 'My work queue', to: '/staff', icon: ClipboardList, end: true }] }, account];
     case 'SUPERVISOR':
     case 'CHIEF_WARDEN':
-      return [operations('/supervisor'), autopilot, account];
+      return [operations('/supervisor'), autopilot, blockSettings, account];
     case 'ADMIN':
       return [
         operations('/admin/dashboard'),

@@ -25,7 +25,7 @@ async function register(page: Page, regNo: string, room: { block: string; floor:
 test.describe('registration, room requests and allotment', () => {
   test('a new student registers, asks for a room, and gets room tickets only after the office approves', async ({ page }) => {
     const regNo = uniqueReg();
-    await register(page, regNo, { block: 'L-Block (Ladies/Mens Hostel)', floor: 'Floor 1', room: 'L-101' });
+    await register(page, regNo, { block: 'L-Block', floor: 'Floor 1', room: 'L-101' });
 
     // Registered, verified and onboarded: the request is pending and grants nothing yet.
     await expect(page).toHaveURL(/\/student$/);
@@ -52,7 +52,7 @@ test.describe('registration, room requests and allotment', () => {
 
   test('a student can withdraw a waiting request, and ask again for another room', async ({ page }) => {
     const regNo = uniqueReg();
-    await register(page, regNo, { block: 'L-Block (Ladies/Mens Hostel)', floor: 'Floor 2', room: 'L-201' });
+    await register(page, regNo, { block: 'L-Block', floor: 'Floor 2', room: 'L-201' });
     await expect(page).toHaveURL(/\/student$/);
     await page.getByRole('button', { name: 'Withdraw request' }).click();
     await expect(page.getByText(/no room has been allotted to your account yet/i)).toBeVisible();
@@ -72,7 +72,7 @@ test.describe('registration, room requests and allotment', () => {
     await page.getByLabel('Full name').fill('E2E Unconfirmed');
     await page.getByLabel(/^Email\s*\*?$/).fill(studentEmail(regNo));
     await page.getByLabel('Mobile number').fill('9876543210');
-    await page.getByLabel('Block').selectOption({ label: 'L-Block (Ladies/Mens Hostel)' });
+    await page.getByLabel('Block').selectOption({ label: 'L-Block' });
     await page.getByLabel('Floor').selectOption({ label: 'Floor 3' });
     await page.getByLabel('Room').selectOption('L-305');
     await page.getByLabel(/^Password\s*\*?$/).fill(NEW_PASSWORD);

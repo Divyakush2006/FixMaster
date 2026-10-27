@@ -31,6 +31,10 @@ describe('labels', () => {
   it('formats block ids, initials and greetings', () => {
     expect(blockLabel('C_BLOCK')).toBe('C-Block');
     expect(blockLabel('PRP')).toBe('PRP');
+    expect(blockLabel('PRP_BLOCK')).toBe('PRP');
+    expect(blockLabel('MH_BLOCK')).toBe('MH');
+    expect(blockLabel('LA_BLOCK')).toBe('A-Block (Ladies)');
+    expect(blockLabel('L_BLOCK')).toBe('L-Block');
     expect(initials('Vihaan  Sharma')).toBe('VS');
     expect(initials('Admin')).toBe('A');
     expect(initials('Suresh Kumar (Electrician)')).toBe('SK');
