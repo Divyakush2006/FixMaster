@@ -223,25 +223,25 @@ npm run dev                       # web app on http://localhost:3000
 Open http://localhost:3000/login for students and staff, or http://localhost:3000/admin
 for administrators.
 
-### Demo accounts
+### Accounts
 
-Every seeded account uses the password `Password@123`.
+There are no built-in or shared logins. Accounts are created with a random password each:
 
-| Role | Sign-in ID | Portal |
-|---|---|---|
-| Student (room L-843) | `21BCE0843` | `/login` → Student |
-| Roommates in L-843 | `22BCE1187`, `23BCE0456` | `/login` → Student |
-| Technician (electrician) | `EMP_ELEC_01` | `/login` → Staff |
-| Supervisor (L-Block) | `SUP_LBLOCK_01` | `/login` → Staff |
-| Administrator | `ADMIN_ESTATES_01` | `/admin` |
+```bash
+npm run db:provision -- --yes --admin-only      # a real deployment: just the first administrator
+npm run db:provision -- --yes                   # a sample roster: 2 admins, 2 chief wardens, 12 supervisors,
+                                                # 82 technicians and 200 residents (100 men, 100 women), with rooms
+```
 
-More seeded students (`21BCE1042`, `21BCE1523`, `22BCE0190`) are available, and 17
-technicians in five trades: housekeeping `EMP_CLN_01`–`06`, electrical `EMP_ELEC_01`–`03`,
-plumbing `EMP_PLB_01`–`03`, AC `EMP_AC_01`–`03` and carpentry `EMP_CARP_01`–`02`.
-Sign in as two of the L-843 roommates to see a shared room ticket from both sides.
+Both write a credentials file (`credentials/fixmaster-credentials-<time>.txt`, git-ignored, readable only by its
+owner) with every ID, password and role. Add `--require-change` (on by default with `NODE_ENV=production`) to make
+each person choose their own password at first sign-in. The script only creates what is missing, so it is safe to
+repeat; `--rotate` issues new passwords. Sign in at `/login` (Student or Staff tab) or `/admin`.
 
-> The demo password is for local development only. No signing secret is shipped:
-> generate your own `JWT_SECRET` per environment (with none set, local development
+The demo dataset of the course project (`npm run db:seed`, one shared password) still exists for local development and
+the automated tests; it is refused when `NODE_ENV=production` and the sign-in pages never list it.
+
+> No signing secret is shipped: generate your own `JWT_SECRET` per environment (with none set, local development
 > uses a random one per run). In production the API refuses to start without a
 > strong secret, and it rejects the secret published in this repository's early history.
 
@@ -253,7 +253,9 @@ docker compose up -d --build
 ```
 
 The app is served on http://localhost:8080. The API container applies pending migrations
-on start. To load demo data, run the one-shot `seed` service (`docker compose --profile demo run --rm seed`).
+on start. Create the first administrator with `docker compose --profile setup run --rm provision` (the password is written
+to `./credentials/admin-credentials.txt`; change it at first sign-in). To load demo data instead, run the one-shot `seed`
+service (`docker compose --profile demo run --rm seed`).
 
 ## Configuration
 

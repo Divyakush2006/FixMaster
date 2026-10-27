@@ -48,7 +48,7 @@ export const RoomRequestPanel: React.FC = () => {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!choice.blockId || !choice.floor || !choice.roomId) return setError('Choose a block, a floor and a room.');
+    if (!choice.blockId || !choice.floor || !choice.roomId) return setError(!choice.blockId || !choice.floor || !choice.roomNo ? 'Choose a block and enter your floor and room number.' : 'That room does not exist in this block. Check the floor and the number on your door.');
     send.mutate();
   };
 

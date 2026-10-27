@@ -71,24 +71,3 @@ export const AuthHeading: React.FC<{ title: string; subtitle: React.ReactNode }>
   </div>
 );
 
-/** Development-only helper listing seeded demo accounts. */
-export const DemoAccounts: React.FC<{ accounts: { id: string; who: string }[]; onPick: (id: string) => void }> = ({ accounts, onPick }) => (
-  <div className="mt-6 rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-3">
-    <p className="text-xs font-medium text-slate-600">
-      Demo accounts <span className="font-normal text-slate-500">· development only · password Password@123</span>
-    </p>
-    <div className="mt-2 flex flex-wrap gap-1.5">
-      {accounts.map((d) => (
-        <button
-          key={d.id}
-          type="button"
-          onClick={() => onPick(d.id)}
-          title={d.who}
-          className="rounded border border-slate-300 bg-white px-2 py-1 font-mono text-[11px] text-slate-700 transition-colors hover:border-brand-400 hover:text-brand-700"
-        >
-          {d.id}
-        </button>
-      ))}
-    </div>
-  </div>
-);

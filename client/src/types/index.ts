@@ -63,6 +63,8 @@ export interface User {
   locked_until?: string | null;
   /** Self-registered students go PENDING_VERIFICATION -> PENDING_PROFILE -> ACTIVE. */
   account_status?: AccountStatus;
+  /** The password was set by someone else: it must be changed before anything else. */
+  must_change_password?: boolean;
   email_verified_at?: string | null;
   /** GET /me only: whether a student has saved their resident profile. */
   profile_complete?: boolean;
@@ -176,6 +178,8 @@ export interface CreateUserPayload {
   specialization?: Specialization | null;
   /** Supervisors and chief wardens: the hostel they belong to. */
   hostel_type?: HostelType | null;
+  /** The person must replace this password the first time they sign in. */
+  must_change_password?: boolean;
 }
 
 export interface AdminAllotment {

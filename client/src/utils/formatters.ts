@@ -61,6 +61,14 @@ export function floorLabel(floorNumber: number | null | undefined): string {
   return floorNumber === 0 ? 'Ground floor' : `Floor ${floorNumber}`;
 }
 
+/**
+ * The room a resident means when they type the number on their door: "205" on floor 2, or just "5" (the
+ * number on the floor) which is the same room. Ground-floor rooms are G01...; 0 is the ground floor.
+ */
+export function doorNumber(floorNumber: number, typed: number): string {
+  return floorNumber > 0 && typed >= 100 ? String(typed) : roomNumberFor(floorNumber, typed);
+}
+
 export function roomNumberFor(floorNumber: number, seq: number): string {
   return `${floorCode(floorNumber)}${String(seq).padStart(2, '0')}`;
 }

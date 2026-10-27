@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -48,6 +48,8 @@ function setup() {
 }
 
 const select = (name: RegExp) => screen.getByRole('combobox', { name });
+const floorBox = () => screen.getByLabelText(/^floor/i) as HTMLInputElement;
+const roomBox = () => screen.getByLabelText(/^room number/i) as HTMLInputElement;
 
 async function fillProfile(user: ReturnType<typeof userEvent.setup>, password = 'Corridor7Lamp', confirm = password) {
   await user.type(screen.getByLabelText(/registration number/i), '24BCE0001');
@@ -67,34 +69,44 @@ describe('RegisterScreen', () => {
   });
   afterEach(cleanup);
 
-  it('offers only the configured blocks, and floors and rooms follow the choice', async () => {
+  it('offers only the configured blocks; floor and room number are typed as whole numbers and checked against the block', async () => {
     const user = userEvent.setup();
     setup();
     await screen.findByRole('option', { name: 'X Block' });
-    expect((select(/^floor/i) as HTMLSelectElement).disabled).toBe(true);
-    expect((select(/^room/i) as HTMLSelectElement).disabled).toBe(true);
+    expect(floorBox().disabled).toBe(true);
+    expect(roomBox().disabled).toBe(true);
+    expect(floorBox().inputMode).toBe('numeric');
 
     await user.selectOptions(select(/^block/i), 'X_BLOCK');
-    await waitFor(() => expect(within(select(/^floor/i)).getByRole('option', { name: 'Ground floor' })).toBeTruthy());
-    expect(within(select(/^floor/i)).getAllByRole('option').map((o) => o.textContent)).toEqual(['Select floor', 'Ground floor', 'Floor 1']);
+    await user.type(floorBox(), '1x');
+    expect(floorBox().value).toBe('1');
+    await user.type(roomBox(), '101');
+    expect(await screen.findByText('Room X-101')).toBeTruthy();
 
-    await user.selectOptions(select(/^floor/i), '1');
-    expect(within(select(/^room/i)).getAllByRole('option').map((o) => o.textContent)).toEqual(['Select room', '101']);
+    // The ground floor is 0, and a room can be typed as the number on the floor.
+    await user.clear(floorBox());
+    await user.type(floorBox(), '0');
+    await user.clear(roomBox());
+    await user.type(roomBox(), '1');
+    expect(await screen.findByText('Room X-G01')).toBeTruthy();
+
+    await user.clear(roomBox());
+    await user.type(roomBox(), '77');
+    expect(await screen.findByText(/there is no room 77 on ground floor/i)).toBeTruthy();
   });
 
-  it('clears the dependent choices when a parent choice changes', async () => {
+  it('clears the floor and room when the block changes', async () => {
     const user = userEvent.setup();
     setup();
     await screen.findByRole('option', { name: 'X Block' });
     await user.selectOptions(select(/^block/i), 'X_BLOCK');
-    await waitFor(() => within(select(/^floor/i)).getByRole('option', { name: 'Floor 1' }));
-    await user.selectOptions(select(/^floor/i), '1');
-    await user.selectOptions(select(/^room/i), 'X-101');
-    expect((select(/^room/i) as HTMLSelectElement).value).toBe('X-101');
+    await user.type(floorBox(), '1');
+    await user.type(roomBox(), '101');
+    expect(await screen.findByText('Room X-101')).toBeTruthy();
 
     await user.selectOptions(select(/^block/i), 'Y_BLOCK');
-    expect((select(/^floor/i) as HTMLSelectElement).value).toBe('');
-    expect((select(/^room/i) as HTMLSelectElement).value).toBe('');
+    expect(floorBox().value).toBe('');
+    expect(roomBox().value).toBe('');
   });
 
   it('blocks submission with inline messages and never calls the API', async () => {
@@ -114,9 +126,9 @@ describe('RegisterScreen', () => {
     await screen.findByRole('option', { name: 'X Block' });
     await fillProfile(user, 'Corridor7Lamp', 'Corridor7Lamq');
     await user.selectOptions(select(/^block/i), 'X_BLOCK');
-    await waitFor(() => within(select(/^floor/i)).getByRole('option', { name: 'Floor 1' }));
-    await user.selectOptions(select(/^floor/i), '1');
-    await user.selectOptions(select(/^room/i), 'X-101');
+    await user.type(floorBox(), '1');
+    await user.type(roomBox(), '101');
+    await screen.findByText('Room X-101');
     await user.click(screen.getByRole('button', { name: /create account/i }));
 
     expect(await screen.findByText(/do not match/i)).toBeTruthy();
@@ -146,9 +158,9 @@ describe('RegisterScreen', () => {
     await screen.findByRole('option', { name: 'X Block' });
     await fillProfile(user);
     await user.selectOptions(select(/^block/i), 'X_BLOCK');
-    await waitFor(() => within(select(/^floor/i)).getByRole('option', { name: 'Floor 1' }));
-    await user.selectOptions(select(/^floor/i), '1');
-    await user.selectOptions(select(/^room/i), 'X-101');
+    await user.type(floorBox(), '1');
+    await user.type(roomBox(), '101');
+    await screen.findByText('Room X-101');
     await user.dblClick(screen.getByRole('button', { name: /create account/i }));
 
     expect(await screen.findByText('Code entry page')).toBeTruthy();
@@ -164,9 +176,9 @@ describe('RegisterScreen', () => {
     await screen.findByRole('option', { name: 'X Block' });
     await fillProfile(user);
     await user.selectOptions(select(/^block/i), 'Y_BLOCK');
-    await waitFor(() => within(select(/^floor/i)).getByRole('option', { name: 'Floor 3' }));
-    await user.selectOptions(select(/^floor/i), '3');
-    await user.selectOptions(select(/^room/i), 'Y-301');
+    await user.type(floorBox(), '3');
+    await user.type(roomBox(), '301');
+    await screen.findByText('Room Y-301');
     await user.click(screen.getByRole('button', { name: /create account/i }));
 
     expect((await screen.findAllByText(/already exists/i)).length).toBeGreaterThan(0);

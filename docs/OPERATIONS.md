@@ -157,6 +157,20 @@ database.
 CPU only by design: `scripts/local-ai/README.md`. `LOCAL_AI_NUM_GPU=0` keeps a
 model off any GPU. Nothing local runs unless its address is configured.
 
+## First deployment checklist
+
+1. **Secrets** (`.env`): a random `JWT_SECRET` (32+ characters), `POSTGRES_PASSWORD`, `CORS_ORIGIN` (the web origin), `TRUST_PROXY` (1 behind one proxy), `METRICS_TOKEN` if `/api/metrics` is scraped. The API refuses to start without a strong secret and `CORS_ORIGIN`.
+2. **Database**: `npm run db:migrate` (the API container does it on start). A fresh database already holds the blocks (A-T men's, A-H/J/S ladies', MH, PRP) and the issue catalogue (migration 018); rooms and shared areas are added by the hostel office under Block settings, or as a sample with `npm run db:provision -- --yes`.
+3. **First administrator**: `docker compose --profile setup run --rm provision` (or `npm run db:provision -- --yes --admin-only`). The password is random, written to `credentials/` and must be changed at first sign-in. Create everyone else under Users and access, with "must choose their own password" ticked.
+4. **Email** (`SMTP_URL`, `MAIL_FROM`, `APP_URL`): without it, resident self-registration and "Forgot password" report themselves unavailable instead of pretending to send; the hostel office then creates resident accounts. Set it before opening sign-up.
+5. **AI keys** (`GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, several allowed): optional; every AI feature has a non-AI path.
+6. **HTTPS** at the proxy (cookies are `Secure`, HSTS is sent), backups copied off the host (`backup` service), `npm audit` clean, `npm test` green.
+7. **After the first sign-in**: delete the credentials file, switch the autopilot on per block (Autopilot, Dispatch settings), and check `/api/health`.
+
+## Accounts
+
+`scripts/provision-accounts.js` (see its header and the README) creates accounts with random 14-character passwords and writes them to a git-ignored file. Passwords are shown only there; the database holds bcrypt hashes. Placeholder email addresses use the reserved domain `fixmaster.example` (override with `--email-domain`). An account flagged `must_change_password` can do nothing but change its password until it has (`403 PASSWORD_CHANGE_REQUIRED`); administrators can set the flag when creating an account or resetting a password.
+
 ## Deploying
 
 1. `npm run db:migrate` (versioned, checksummed, safe to repeat).

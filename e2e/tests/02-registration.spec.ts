@@ -11,8 +11,8 @@ async function register(page: Page, regNo: string, room: { block: string; floor:
   await page.getByLabel('Mobile number').fill('9876543210');
   if (room) {
     await page.getByLabel('Block').selectOption({ label: room.block });
-    await page.getByLabel('Floor').selectOption({ label: room.floor });
-    await page.getByLabel('Room').selectOption(room.room);
+    await page.getByLabel('Floor').fill(room.floor);
+    await page.getByLabel('Room number').fill(room.room);
   }
   await page.getByLabel(/^Password\s*\*?$/).fill(NEW_PASSWORD);
   await page.getByLabel('Confirm password').fill(NEW_PASSWORD);
@@ -25,7 +25,7 @@ async function register(page: Page, regNo: string, room: { block: string; floor:
 test.describe('registration, room requests and allotment', () => {
   test('a new student registers, asks for a room, and gets room tickets only after the office approves', async ({ page }) => {
     const regNo = uniqueReg();
-    await register(page, regNo, { block: 'L-Block', floor: 'Floor 1', room: 'L-101' });
+    await register(page, regNo, { block: 'L-Block', floor: '1', room: '101' });
 
     // Registered, verified and onboarded: the request is pending and grants nothing yet.
     await expect(page).toHaveURL(/\/student$/);
@@ -52,7 +52,7 @@ test.describe('registration, room requests and allotment', () => {
 
   test('a student can withdraw a waiting request, and ask again for another room', async ({ page }) => {
     const regNo = uniqueReg();
-    await register(page, regNo, { block: 'L-Block', floor: 'Floor 2', room: 'L-201' });
+    await register(page, regNo, { block: 'L-Block', floor: '2', room: '201' });
     await expect(page).toHaveURL(/\/student$/);
     await page.getByRole('button', { name: 'Withdraw request' }).click();
     await expect(page.getByText(/no room has been allotted to your account yet/i)).toBeVisible();
@@ -73,8 +73,8 @@ test.describe('registration, room requests and allotment', () => {
     await page.getByLabel(/^Email\s*\*?$/).fill(studentEmail(regNo));
     await page.getByLabel('Mobile number').fill('9876543210');
     await page.getByLabel('Block').selectOption({ label: 'L-Block' });
-    await page.getByLabel('Floor').selectOption({ label: 'Floor 3' });
-    await page.getByLabel('Room').selectOption('L-305');
+    await page.getByLabel('Floor').fill('3');
+    await page.getByLabel('Room number').fill('305');
     await page.getByLabel(/^Password\s*\*?$/).fill(NEW_PASSWORD);
     await page.getByLabel('Confirm password').fill(NEW_PASSWORD);
     await page.getByRole('button', { name: 'Create account' }).click();

@@ -16,7 +16,8 @@
     "ai:keys": "node scripts/ai-keys-check.js",
     "ai:bench": "node scripts/ai-benchmark/run.js",
     "db:drill": "node scripts/backup-drill.js",
-    "db:bundle": "node scripts/build-sql-bundles.js"
+    "db:bundle": "node scripts/build-sql-bundles.js",
+    "db:provision": "node scripts/provision-accounts.js"
   },
   "repository": {
     "type": "git",

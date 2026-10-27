@@ -6,9 +6,12 @@ import { ErrorBoundary } from '../ErrorBoundary';
 import { PageLoader } from '../ui/PageLoader';
 import { IdleSignOut } from './IdleSignOut';
 import { PrivacyNoticeBanner } from './PrivacyNoticeBanner';
+import { useAuth } from '../../context/AuthContext';
+import { ForcePasswordChange } from '../../features/auth/ForcePasswordChange';
 
 export const AppShell: React.FC = () => {
   const location = useLocation();
+  const { user } = useAuth();
   const [navOpen, setNavOpen] = useState(false);
 
   // A route change closes the mobile navigation and starts the page at the top.
@@ -16,6 +19,9 @@ export const AppShell: React.FC = () => {
     setNavOpen(false);
     window.scrollTo(0, 0);
   }, [location.pathname]);
+
+  // A password somebody else chose is replaced before the app (its menus included) opens up.
+  if (user?.must_change_password) return <ForcePasswordChange />;
 
   return (
     <div className="min-h-screen bg-canvas">

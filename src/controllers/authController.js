@@ -78,6 +78,7 @@ function issueSession(req, res, user, portal) {
             full_name: user.full_name,
             role: user.role,
             account_status: user.account_status || 'ACTIVE',
+            must_change_password: user.must_change_password === true,
         },
     };
     if (wantsCookies(req)) {
@@ -311,7 +312,7 @@ exports.loginFor = (portal) =>
         const { reg_or_emp_id, password } = req.body;
 
         const result = await db.query(
-            `SELECT user_id, reg_or_emp_id, full_name, email, role, password_hash, is_active, locked_until, credentials_changed_at, account_status
+            `SELECT user_id, reg_or_emp_id, full_name, email, role, password_hash, is_active, locked_until, credentials_changed_at, account_status, must_change_password
              FROM users WHERE UPPER(reg_or_emp_id) = UPPER($1)`,
             [reg_or_emp_id]
         );

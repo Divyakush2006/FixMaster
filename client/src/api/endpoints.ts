@@ -337,10 +337,10 @@ export const adminApi = {
       body: JSON.stringify({ reason }),
     }),
 
-  resetPassword: (userId: string, new_password: string) =>
+  resetPassword: (userId: string, new_password: string, must_change_password = false) =>
     apiFetch<{ message: string }>(`/admin/users/${userId}/reset-password`, {
       method: 'POST',
-      body: JSON.stringify({ new_password }),
+      body: JSON.stringify({ new_password, must_change_password }),
     }),
 
   listAudit: (filters: { action?: string; actor?: string; target_id?: string; limit: number; offset: number }) =>

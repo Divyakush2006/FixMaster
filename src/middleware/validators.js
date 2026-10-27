@@ -365,6 +365,7 @@ const adminCreateUserValidators = [
     ...userProfileRules, // same rules as registration...
     body('role').exists().withMessage('role is required.'), // ...but role is mandatory here
     body('hostel_type').optional({ values: 'null' }).isIn(['MENS', 'LADIES']).withMessage('hostel_type must be MENS or LADIES.'),
+    body('must_change_password').optional().isBoolean({ strict: true }).withMessage('must_change_password must be true or false.'),
     // Students are students whoever creates the account: same identity rules.
     ...studentIdentityRules(body('role').equals('STUDENT')),
     handleValidation,
@@ -411,7 +412,12 @@ const adminUpdateUserValidators = [
     handleValidation,
 ];
 
-const adminResetPasswordValidators = [userIdParam, newPassword('new_password'), handleValidation];
+const adminResetPasswordValidators = [
+    userIdParam,
+    newPassword('new_password'),
+    body('must_change_password').optional().isBoolean({ strict: true }).withMessage('must_change_password must be true or false.'),
+    handleValidation,
+];
 
 const adminAllotValidators = [
     body('student_id').trim().notEmpty().withMessage('student_id is required.'),

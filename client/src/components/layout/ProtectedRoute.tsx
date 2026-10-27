@@ -3,6 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Role } from '../../types';
 import { PageLoader } from '../ui/PageLoader';
+import { ForcePasswordChange } from '../../features/auth/ForcePasswordChange';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -27,6 +28,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
     const signIn = location.pathname.startsWith('/admin') ? '/admin' : '/login';
     return <Navigate to={signIn} state={{ from: location }} replace />;
   }
+
+  // A password somebody else chose has to be replaced before anything else.
+  if (user.must_change_password) return <ForcePasswordChange />;
 
   if (needsOnboarding(user) && !allowIncompleteProfile) {
     return <Navigate to="/onboarding" replace />;

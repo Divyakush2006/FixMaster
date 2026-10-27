@@ -33,3 +33,6 @@ database/backups/
 # Ticket photos written at runtime
 uploads/
 .bench/
+
+# Generated account credentials (plain-text passwords): never commit
+credentials/

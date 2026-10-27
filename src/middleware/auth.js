@@ -34,7 +34,7 @@ async function loadActiveUser(decoded) {
     // or predates server-side sign-out, and is refused.
     if (!decoded || typeof decoded.userId !== 'string' || typeof decoded.jti !== 'string') return null;
     const { rows } = await db.query(
-        `SELECT user_id, role, reg_or_emp_id, is_active, credentials_changed_at, account_status,
+        `SELECT user_id, role, reg_or_emp_id, is_active, credentials_changed_at, account_status, must_change_password,
                 EXISTS (SELECT 1 FROM revoked_tokens WHERE jti = $2) AS revoked
          FROM users WHERE user_id = $1`,
         [decoded.userId, decoded.jti]
@@ -51,7 +51,7 @@ async function loadActiveUser(decoded) {
     if (!portal || decoded.portal !== portal || decoded.aud !== audienceFor(portal)) {
         return null;
     }
-    return { userId: user.user_id, role: user.role, regOrEmpId: user.reg_or_emp_id, portal, accountStatus: user.account_status };
+    return { userId: user.user_id, role: user.role, regOrEmpId: user.reg_or_emp_id, portal, accountStatus: user.account_status, mustChangePassword: user.must_change_password };
 }
 
 // 401 = "sign in (again)": no token, a bad/expired/revoked one, a token from
@@ -64,6 +64,14 @@ async function loadActiveUser(decoded) {
 // request, reference data and sign-out. Every other route refuses with 403
 // PROFILE_INCOMPLETE, so the default is closed: a route opts in to incomplete
 // accounts by using authenticateOnboarding.
+// An account that has to choose its own password first may do three things: see who it is, change the
+// password, and sign out. Everything else is refused until it has.
+const PASSWORD_CHANGE_ALLOWED = new Set(['GET /api/me', 'PATCH /api/me/password', 'POST /api/auth/logout']);
+const isPasswordChangeCall = (req) => {
+    const path = `${req.baseUrl}${req.path}`;
+    return PASSWORD_CHANGE_ALLOWED.has(`${req.method} ${path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path}`);
+};
+
 const makeAuthenticate = ({ allowIncompleteProfile }) =>
     asyncHandler(async (req, res, next) => {
         const credentials = credentialsOf(req);
@@ -83,6 +91,9 @@ const makeAuthenticate = ({ allowIncompleteProfile }) =>
         // Checked after the session itself so a missing session is still a 401.
         if (!credentials.csrfOk) {
             return res.status(403).json({ error: 'Request blocked: the security token is missing or wrong. Reload the page and try again.', code: 'CSRF' });
+        }
+        if (user.mustChangePassword && !isPasswordChangeCall(req)) {
+            return res.status(403).json({ error: 'Choose a new password before you continue.', code: 'PASSWORD_CHANGE_REQUIRED' });
         }
         if (user.accountStatus === 'PENDING_VERIFICATION') {
             // Sessions are only issued after verification; this is defence in depth.

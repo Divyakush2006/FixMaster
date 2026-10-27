@@ -66,13 +66,13 @@ exports.userSummary = asyncHandler(async (req, res) => {
 // POST /api/admin/users - the only way to create STAFF / SUPERVISOR / ADMIN
 // accounts (public registration always creates STUDENT).
 exports.createUser = asyncHandler(async (req, res) => {
-    const { reg_or_emp_id, full_name, email, phone_number, password, role, specialization, hostel_type } = req.body;
-    const user = await createUser({ reg_or_emp_id, full_name, email, phone_number, password, role, specialization, hostel_type });
+    const { reg_or_emp_id, full_name, email, phone_number, password, role, specialization, hostel_type, must_change_password } = req.body;
+    const user = await createUser({ reg_or_emp_id, full_name, email, phone_number, password, role, specialization, hostel_type, must_change_password });
     await recordAudit(null, req, {
         action: 'user.create',
         targetType: 'user',
         targetId: user.user_id,
-        details: { reg_or_emp_id: user.reg_or_emp_id, role: user.role, specialization: user.specialization, hostel_type: user.hostel_type },
+        details: { reg_or_emp_id: user.reg_or_emp_id, role: user.role, specialization: user.specialization, hostel_type: user.hostel_type, must_change_password: user.must_change_password },
     });
     res.status(201).json({ message: 'User created', user });
 });
@@ -185,9 +185,9 @@ exports.resetPassword = asyncHandler(async (req, res) => {
         // A reset also clears any sign-in lockout.
         const result = await client.query(
             `UPDATE users SET password_hash = $1, credentials_changed_at = CURRENT_TIMESTAMP,
-                              failed_login_count = 0, locked_until = NULL
+                              failed_login_count = 0, locked_until = NULL, must_change_password = $3
              WHERE user_id = $2 RETURNING user_id, reg_or_emp_id`,
-            [passwordHash, req.params.user_id]
+            [passwordHash, req.params.user_id, req.body.must_change_password === true]
         );
         if (result.rows.length === 0) {
             throw new AppError(404, 'User not found.');
@@ -196,7 +196,7 @@ exports.resetPassword = asyncHandler(async (req, res) => {
             action: 'user.reset_password',
             targetType: 'user',
             targetId: req.params.user_id,
-            details: { reg_or_emp_id: result.rows[0].reg_or_emp_id },
+            details: { reg_or_emp_id: result.rows[0].reg_or_emp_id, must_change_password: req.body.must_change_password === true },
         });
     }, req.user.userId);
     res.json({ message: 'Password reset. The user has been signed out of all sessions.' });

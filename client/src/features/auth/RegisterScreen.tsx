@@ -69,8 +69,9 @@ export const RegisterScreen: React.FC = () => {
     if (pwProblem) errs.password = pwProblem;
     else if (confirm !== password) errs.confirm = 'The two passwords do not match.';
     if (!room.blockId) errs.block = 'Choose your hostel block.';
-    else if (!room.floor) errs.floor = 'Choose your floor.';
-    else if (!room.roomId) errs.room = 'Choose your room.';
+    else if (!room.floor) errs.floor = 'Enter your floor (0 for the ground floor).';
+    else if (!room.roomNo) errs.room = 'Enter the number on your door.';
+    else if (!room.roomId) errs.room = 'That room does not exist in this block. Check the floor and the number on your door.';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };

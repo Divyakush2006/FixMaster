@@ -7,7 +7,7 @@ const BCRYPT_COST = 12;
 // Columns that are safe to return to any client. password_hash never leaves
 // the database layer.
 const PUBLIC_USER_COLUMNS =
-    'user_id, reg_or_emp_id, full_name, email, phone_number, role, specialization, is_available, is_active, created_at, last_login_at, locked_until, account_status, email_verified_at, home_block_id, shift, hostel_type';
+    'user_id, reg_or_emp_id, full_name, email, phone_number, role, specialization, is_available, is_active, created_at, last_login_at, locked_until, account_status, email_verified_at, home_block_id, shift, hostel_type, must_change_password';
 
 const hashPassword = (password) => bcrypt.hash(password, BCRYPT_COST);
 
@@ -17,7 +17,7 @@ const hashPassword = (password) => bcrypt.hash(password, BCRYPT_COST);
  * only checks that role and specialization are consistent (the database
  * enforces the same thing via chk_staff_specialization).
  */
-async function createUser({ reg_or_emp_id, full_name, email, phone_number, password, role, specialization, hostel_type = null, account_status = 'ACTIVE' }, executor = db) {
+async function createUser({ reg_or_emp_id, full_name, email, phone_number, password, role, specialization, hostel_type = null, account_status = 'ACTIVE', must_change_password = false }, executor = db) {
     if (hostel_type && role !== 'SUPERVISOR' && role !== 'CHIEF_WARDEN') {
         throw new AppError(400, 'Only supervisors and chief wardens belong to a hostel.');
     }
@@ -41,10 +41,10 @@ async function createUser({ reg_or_emp_id, full_name, email, phone_number, passw
 
     const password_hash = await hashPassword(password);
     const result = await executor.query(
-        `INSERT INTO users (reg_or_emp_id, full_name, email, phone_number, password_hash, role, specialization, account_status, hostel_type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `INSERT INTO users (reg_or_emp_id, full_name, email, phone_number, password_hash, role, specialization, account_status, hostel_type, must_change_password)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING ${PUBLIC_USER_COLUMNS}`,
-        [reg_or_emp_id, full_name, email, phone_number, password_hash, role, spec, account_status, hostel_type]
+        [reg_or_emp_id, full_name, email, phone_number, password_hash, role, spec, account_status, hostel_type, must_change_password === true]
     );
     return result.rows[0];
 }

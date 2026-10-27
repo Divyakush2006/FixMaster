@@ -4,6 +4,9 @@
 #   cp .env.example .env            # then set JWT_SECRET (and POSTGRES_PASSWORD)
 #   docker compose up -d --build    # http://localhost:8080
 #
+# First start of a real deployment: create the administrator (random password, written to ./credentials):
+#   docker compose --profile setup run --rm provision
+#
 # Optional demo data (shared demo passwords - never on a real deployment):
 #   docker compose --profile demo run --rm seed
 
@@ -93,6 +96,22 @@ services:
       retries: 1
       start_period: 5m
     restart: unless-stopped
+
+  # One-shot: the first administrator, with a random password that must be changed at first sign-in.
+  # The credentials file lands in ./credentials/ (git-ignored); sign in at /admin, then create the other
+  # accounts under Users and access. For a larger sample roster, see docs/OPERATIONS.md ("Accounts").
+  provision:
+    build: .
+    profiles: ["setup"]
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://fix_master:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (a random value)}@db:5432/fix_master_db
+    volumes:
+      - ./credentials:/out
+    command: ["node", "scripts/provision-accounts.js", "--yes", "--admin-only", "--out", "/out/admin-credentials.txt", "--web-url", "${APP_URL:-http://localhost:8080}"]
 
   seed:
     build: .

@@ -58,7 +58,7 @@ export async function completeOnboarding(page: Page) {
   await page.getByLabel('School').fill('SCOPE');
   await page.getByLabel('Programme').fill('B.Tech Computer Science');
   await page.getByRole('button', { name: 'Continue' }).click();
-  await page.getByLabel('Gender').selectOption('FEMALE');
+  await page.getByLabel('Gender').selectOption('MALE');
   await page.getByLabel('Date of birth').fill('2006-04-12');
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByLabel('Parent or guardian').fill('R. Iyer');

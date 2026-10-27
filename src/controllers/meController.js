@@ -151,7 +151,7 @@ exports.changePassword = asyncHandler(async (req, res) => {
         throw new AppError(400, 'The new password must be different from the current one.');
     }
     const updated = await db.query(
-        `UPDATE users SET password_hash = $1, credentials_changed_at = CURRENT_TIMESTAMP
+        `UPDATE users SET password_hash = $1, credentials_changed_at = CURRENT_TIMESTAMP, must_change_password = FALSE
          WHERE user_id = $2
          RETURNING user_id, role, reg_or_emp_id, credentials_changed_at`,
         [await hashPassword(new_password), req.user.userId]

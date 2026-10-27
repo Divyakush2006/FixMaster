@@ -3,17 +3,21 @@ import { useQuery } from '@tanstack/react-query';
 import { metaApi } from '../../api/endpoints';
 import { Alert } from '../ui/Alert';
 import { Button } from '../ui/Button';
-import { Field, Select } from '../ui/Form';
+import { Field, Input, Select } from '../ui/Form';
 import { BlockOptions } from './BlockOptions';
-import { floorLabel } from '../../utils/formatters';
+import { doorNumber, floorLabel } from '../../utils/formatters';
 
 export interface RoomChoice {
   blockId: string;
+  /** The floor as typed: digits, 0 for the ground floor. */
   floor: string;
+  /** The room number as typed: the number on the door ("205"), or the number on the floor ("5"). */
+  roomNo: string;
+  /** The room this resolves to, '' until it names a room that exists. */
   roomId: string;
 }
 
-export const EMPTY_ROOM_CHOICE: RoomChoice = { blockId: '', floor: '', roomId: '' };
+export const EMPTY_ROOM_CHOICE: RoomChoice = { blockId: '', floor: '', roomNo: '', roomId: '' };
 
 interface RoomPickerProps {
   value: RoomChoice;
@@ -23,10 +27,13 @@ interface RoomPickerProps {
   onAvailability?: (hasInfrastructure: boolean) => void;
 }
 
+const digits = (s: string) => s.replace(/\D/g, '').slice(0, 4);
+
 /**
- * Block -> floor -> room selection driven entirely by the hostel infrastructure
- * the administrators configured. Choosing a parent clears the choices below
- * it, so a stale room is never submitted.
+ * Block (a list: there are a few dozen) then floor and room NUMBER, typed as
+ * whole numbers. The room is looked up among the block's rooms as soon as it is
+ * typed, and the form says so ("Room L-205") or says it does not exist.
+ * Changing the block clears the numbers, so a stale room is never submitted.
  */
 export const RoomPicker: React.FC<RoomPickerProps> = ({ value, onChange, errors = {}, onAvailability }) => {
   const {
@@ -41,16 +48,25 @@ export const RoomPicker: React.FC<RoomPickerProps> = ({ value, onChange, errors 
     enabled: !!value.blockId,
   });
 
-  const floors = useMemo(() => [...new Set(rooms.map((r) => r.floor_number))].sort((a, b) => a - b), [rooms]);
-  const floorRooms = useMemo(
-    () =>
-      rooms
-        .filter((r) => String(r.floor_number) === value.floor)
-        .sort((a, b) => a.room_number.localeCompare(b.room_number, undefined, { numeric: true })),
-    [rooms, value.floor]
-  );
+  const byNumber = useMemo(() => new Map(rooms.map((r) => [`${r.floor_number}|${r.room_number}`, r])), [rooms]);
+  const lookup = (floor: string, roomNo: string) => {
+    if (floor === '' || roomNo === '') return '';
+    return byNumber.get(`${Number(floor)}|${doorNumber(Number(floor), Number(roomNo))}`)?.room_id ?? '';
+  };
+
+  // Rooms may arrive after the numbers were typed (a slow connection): resolve again then.
+  React.useEffect(() => {
+    const id = lookup(value.floor, value.roomNo);
+    if (id !== value.roomId) onChange({ ...value, roomId: id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [byNumber]);
+
   const noInfrastructure = !loadingBlocks && !blocksFailed && blocks.length === 0;
   React.useEffect(() => onAvailability?.(!noInfrastructure), [noInfrastructure, onAvailability]);
+
+  const typed = value.floor !== '' && value.roomNo !== '';
+  const ready = !!value.blockId && !loadingRooms;
+  const status = !typed || !ready ? null : value.roomId ? { ok: true, text: `Room ${value.roomId}` } : { ok: false, text: `There is no room ${value.roomNo} on ${floorLabel(Number(value.floor)).toLowerCase()} of this block.` };
 
   return (
     <>
@@ -80,45 +96,55 @@ export const RoomPicker: React.FC<RoomPickerProps> = ({ value, onChange, errors 
               {...a}
               value={value.blockId}
               disabled={loadingBlocks || blocks.length === 0}
-              onChange={(e) => onChange({ blockId: e.target.value, floor: '', roomId: '' })}
+              onChange={(e) => onChange({ blockId: e.target.value, floor: '', roomNo: '', roomId: '' })}
             >
               <option value="">{loadingBlocks ? 'Loading…' : 'Select block'}</option>
               <BlockOptions blocks={blocks.filter((b) => !b.block_kind || b.block_kind === 'RESIDENTIAL')} />
             </Select>
           )}
         </Field>
-        <Field label="Floor" required error={errors.floor}>
+        <Field label="Floor" required error={errors.floor} hint="0 for the ground floor">
           {(a) => (
-            <Select
+            <Input
               {...a}
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={2}
+              placeholder="e.g. 2"
               value={value.floor}
-              disabled={!value.blockId || loadingRooms}
-              onChange={(e) => onChange({ ...value, floor: e.target.value, roomId: '' })}
-            >
-              <option value="">
-                {!value.blockId ? 'Choose a block first' : loadingRooms ? 'Loading…' : floors.length ? 'Select floor' : 'No rooms yet'}
-              </option>
-              {floors.map((f) => (
-                <option key={f} value={f}>
-                  {floorLabel(f)}
-                </option>
-              ))}
-            </Select>
+              disabled={!value.blockId}
+              onChange={(e) => {
+                const floor = digits(e.target.value).slice(0, 2);
+                onChange({ ...value, floor, roomId: lookup(floor, value.roomNo) });
+              }}
+            />
           )}
         </Field>
-        <Field label="Room" required error={errors.room}>
+        <Field label="Room number" required error={errors.room} hint="The number on your door">
           {(a) => (
-            <Select {...a} value={value.roomId} disabled={!value.floor} onChange={(e) => onChange({ ...value, roomId: e.target.value })}>
-              <option value="">{value.floor ? 'Select room' : 'Choose a floor first'}</option>
-              {floorRooms.map((r) => (
-                <option key={r.room_id} value={r.room_id}>
-                  {r.room_number}
-                </option>
-              ))}
-            </Select>
+            <Input
+              {...a}
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={4}
+              placeholder="e.g. 205"
+              value={value.roomNo}
+              disabled={!value.blockId}
+              onChange={(e) => {
+                const roomNo = digits(e.target.value);
+                onChange({ ...value, roomNo, roomId: lookup(value.floor, roomNo) });
+              }}
+            />
           )}
         </Field>
       </div>
+      {status && (
+        <p role="status" className={status.ok ? 'mt-2 text-xs font-medium text-emerald-700' : 'mt-2 text-xs font-medium text-rose-700'}>
+          {status.text}
+        </p>
+      )}
     </>
   );
 };

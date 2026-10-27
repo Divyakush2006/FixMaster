@@ -348,6 +348,7 @@ const CreateUserModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     password: '',
     role: 'STAFF',
     specialization: 'CLEANING',
+    must_change_password: true,
   });
   const [error, setError] = useState<string | null>(null);
   const set = (field: keyof CreateUserPayload) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -458,9 +459,13 @@ const CreateUserModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               />
             )}
           </Field>
-          <Field label="Initial password" required className="sm:col-span-2" hint={`${PASSWORD_HINT} Share it securely and ask the person to change it from My account.`}>
+          <Field label="Initial password" required className="sm:col-span-2" hint={`${PASSWORD_HINT} Share it securely.`}>
             {(a) => <PasswordInput {...a} autoComplete="new-password" value={form.password} onChange={set('password')} />}
           </Field>
+          <label className="flex items-start gap-2 text-[13px] text-slate-700 sm:col-span-2">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600" checked={form.must_change_password === true} onChange={(e) => setForm((f) => ({ ...f, must_change_password: e.target.checked }))} />
+            <span>They must choose their own password the first time they sign in</span>
+          </label>
         </div>
         <button type="submit" className="hidden" aria-hidden tabIndex={-1} />
       </form>
@@ -471,9 +476,10 @@ const CreateUserModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 const ResetPasswordModal: React.FC<{ user: User; onClose: () => void }> = ({ user, onClose }) => {
   const { showToast } = useToast();
   const [password, setPassword] = useState('');
+  const [mustChange, setMustChange] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mutation = useMutation({
-    mutationFn: () => adminApi.resetPassword(user.user_id, password),
+    mutationFn: () => adminApi.resetPassword(user.user_id, password, mustChange),
     onSuccess: () => {
       showToast('Password reset', 'success', `${user.full_name} has been signed out on every device.`);
       onClose();
@@ -512,6 +518,10 @@ const ResetPasswordModal: React.FC<{ user: User; onClose: () => void }> = ({ use
         <Field label="New password" required hint={`${PASSWORD_HINT} Resetting also unlocks the account and signs the person out everywhere.`}>
           {(a) => <PasswordInput {...a} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />}
         </Field>
+        <label className="flex items-start gap-2 text-[13px] text-slate-700">
+          <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600" checked={mustChange} onChange={(e) => setMustChange(e.target.checked)} />
+          <span>They must choose their own password the next time they sign in</span>
+        </label>
       </form>
     </Modal>
   );

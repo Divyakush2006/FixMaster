@@ -10,25 +10,15 @@ import { Alert } from '../../components/ui/Alert';
 import { Button } from '../../components/ui/Button';
 import { Field, Input, PasswordInput } from '../../components/ui/Form';
 import { Segmented } from '../../components/ui/Tabs';
-import { AuthHeading, AuthLayout, DemoAccounts } from './AuthLayout';
+import { AuthHeading, AuthLayout } from './AuthLayout';
 
 type PublicPortal = 'student' | 'staff';
 
 const PORTAL_UI: Record<PublicPortal, { label: string; idLabel: string; placeholder: string; icon: React.ElementType }> = {
   student: { label: 'Student', idLabel: 'Registration number', placeholder: 'e.g. 21BCE0843', icon: GraduationCap },
-  staff: { label: 'Staff', idLabel: 'Employee ID', placeholder: 'e.g. EMP_ELEC_01', icon: HardHat },
+  staff: { label: 'Staff', idLabel: 'Employee ID', placeholder: 'Your employee ID', icon: HardHat },
 };
 
-// Demo credentials are only ever shown in development builds (or when a
-// deployment explicitly opts in for a demo), never on a production sign-in page.
-const SHOW_DEMO = import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO_ACCOUNTS === 'true';
-const DEMO_ACCOUNTS: Record<PublicPortal, { id: string; who: string }[]> = {
-  student: [{ id: '21BCE0843', who: 'Student, room L-843' }],
-  staff: [
-    { id: 'EMP_ELEC_01', who: 'Electrician' },
-    { id: 'SUP_LBLOCK_01', who: 'L-Block supervisor' },
-  ],
-};
 
 /**
  * /login - two separate sign-ins on one page: Student and Staff (technicians
@@ -188,15 +178,6 @@ export const LoginScreen: React.FC = () => {
         )}
       </p>
 
-      {SHOW_DEMO && (
-        <DemoAccounts
-          accounts={DEMO_ACCOUNTS[portal]}
-          onPick={(id) => {
-            setRegOrEmpId(id);
-            setPassword('Password@123');
-          }}
-        />
-      )}
 
       <div className="mt-8 border-t border-slate-200 pt-6 text-center text-[13px] text-slate-600">
         {portal === 'student' ? (

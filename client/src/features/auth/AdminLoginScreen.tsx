@@ -6,9 +6,8 @@ import { useToast } from '../../components/ui/Toast';
 import { Alert } from '../../components/ui/Alert';
 import { Button } from '../../components/ui/Button';
 import { Field, Input, PasswordInput } from '../../components/ui/Form';
-import { AuthHeading, AuthLayout, DemoAccounts } from './AuthLayout';
+import { AuthHeading, AuthLayout } from './AuthLayout';
 
-const SHOW_DEMO = import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO_ACCOUNTS === 'true';
 
 /**
  * /admin - the administrator sign-in, separate from the student/staff page.
@@ -111,15 +110,6 @@ export const AdminLoginScreen: React.FC = () => {
         </Button>
       </form>
 
-      {SHOW_DEMO && (
-        <DemoAccounts
-          accounts={[{ id: 'ADMIN_ESTATES_01', who: 'Estates administrator' }]}
-          onPick={(id) => {
-            setAdminId(id);
-            setPassword('Password@123');
-          }}
-        />
-      )}
     </AuthLayout>
   );
 };
