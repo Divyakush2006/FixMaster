@@ -78,7 +78,8 @@ describe('AI providers: wire formats', () => {
             assert.equal(req.body.model, 'openai/gpt-oss-20b');
             assert.deepEqual(req.body.messages, [{ role: 'system', content: 'Be brief.' }, { role: 'user', content: '{"q":"hi"}' }]);
             assert.deepEqual(req.body.response_format, { type: 'json_object' });
-            assert.equal(req.body.max_tokens, 50);
+            assert.equal(req.body.reasoning_effort, 'low', 'gpt-oss models are told to think briefly');
+            assert.equal(req.body.max_tokens, 50 + 256, 'and given room for that thinking on top of the answer');
             assert.ok(req.body.temperature <= 0.2, 'low temperature for structured answers');
             const row = (await t.sql(`SELECT input_tokens, output_tokens, outcome FROM ai_calls WHERE provider = 'groq' ORDER BY call_id DESC LIMIT 1`)).rows[0];
             assert.deepEqual(row, { input_tokens: 11, output_tokens: 5, outcome: 'OK' });
@@ -265,6 +266,18 @@ describe('AI providers: wire formats', () => {
             const rows = (await t.sql(`SELECT row_to_json(c)::text AS j FROM ai_calls c`)).rows;
             assert.ok(rows.every((r) => !/gk-[123]/.test(r.j)));
             assert.ok(!JSON.stringify(await gateway().health()).includes('gk-'));
+        });
+
+        it('treats a Gemini 403 (no free tier for the key project) as a refused key and tries the next', async () => {
+            process.env.AI_ROUTE_ASK = 'gemini:g1';
+            process.env.GEMINI_API_KEY = 'ga-1,ga-2';
+            try {
+                behave = (req) => (req.headers['x-goog-api-key'] === 'ga-1' ? { status: 403, body: { error: { status: 'PERMISSION_DENIED', message: 'free tier not available' } } } : { body: geminiReply('{"answer":"second gemini key"}') });
+                assert.equal((await run()).data.answer, 'second gemini key');
+                assert.deepEqual(requests.map((q) => q.headers['x-goog-api-key']), ['ga-1', 'ga-2']);
+            } finally {
+                process.env.GEMINI_API_KEY = 'gem-key-789';
+            }
         });
 
         it('does not set aside a provider that has only one key', async () => {

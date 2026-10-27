@@ -176,7 +176,7 @@ async function run({ task, promptVersion, system, user, schema, userId = null, f
         } catch (err) {
             recordResult(provider, false);
             const kind = err instanceof providers.ProviderError ? err.kind : 'ERROR';
-            await logCall({ ...base, outcome: kind, latencyMs: Date.now() - started, errorCode: err.status ? `HTTP ${err.status}` : err.message });
+            await logCall({ ...base, outcome: kind, latencyMs: Date.now() - started, errorCode: err.message });
         } finally {
             clearTimeout(timer);
         }

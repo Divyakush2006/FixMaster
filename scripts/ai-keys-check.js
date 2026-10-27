@@ -11,7 +11,7 @@ const { apiKeys } = require('../src/config/ai');
 
 const OPENAI_STYLE = {
     groq: { url: `${(process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/+$/, '')}/chat/completions`, model: 'openai/gpt-oss-20b' },
-    openrouter: { url: `${(process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, '')}/chat/completions`, model: 'openai/gpt-oss-20b:free' },
+    openrouter: { url: `${(process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, '')}/chat/completions`, model: 'google/gemma-4-31b-it:free' },
 };
 const GEMINI_BASE = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '');
 const GEMINI_MODEL = 'gemini-flash-lite-latest';

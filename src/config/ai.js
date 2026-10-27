@@ -38,14 +38,15 @@ const int = (value, fallback) => {
 };
 
 // Defaults chosen per task (docs/ROADMAP.md section 7): the high-volume,
-// latency-sensitive student assistant starts on Groq's small models; the
-// low-volume writing tasks start on Gemini; OpenRouter's free models are the
-// last resort because their daily allowance is the smallest.
+// latency-sensitive tasks start on Groq (verified live, several keys); the
+// writing tasks use its larger model; OpenRouter's free models are next
+// because their daily allowance is the smallest; Gemini is last because its
+// free tier is not available in every Google project.
 const DEFAULT_ROUTES = {
-    INTAKE: 'groq:openai/gpt-oss-20b,gemini:gemini-flash-lite-latest,openrouter:openai/gpt-oss-20b:free',
-    FEEDBACK_TAGS: 'gemini:gemini-flash-lite-latest,groq:openai/gpt-oss-20b',
-    BRIEFING: 'gemini:gemini-flash-latest,groq:openai/gpt-oss-120b,openrouter:openai/gpt-oss-20b:free',
-    ASK: 'groq:openai/gpt-oss-120b,gemini:gemini-flash-latest',
+    INTAKE: 'groq:openai/gpt-oss-20b,openrouter:google/gemma-4-31b-it:free,gemini:gemini-flash-lite-latest',
+    FEEDBACK_TAGS: 'groq:openai/gpt-oss-20b,openrouter:google/gemma-4-31b-it:free,gemini:gemini-flash-lite-latest',
+    BRIEFING: 'groq:openai/gpt-oss-120b,openrouter:google/gemma-4-31b-it:free,gemini:gemini-flash-latest',
+    ASK: 'groq:openai/gpt-oss-120b,openrouter:google/gemma-4-31b-it:free,gemini:gemini-flash-latest',
 };
 
 const TASKS = Object.keys(DEFAULT_ROUTES);

@@ -21,11 +21,14 @@ class ProviderError extends Error {
     }
 }
 
-// 401 = key refused, 402 = no credit left (OpenRouter). A refused key will not
+// 401 = key refused, 402 = no credit left (OpenRouter), 403 on Gemini = no free tier. A refused key will not
 // recover on its own soon, so it is set aside for an hour.
+// Tokens left over for gpt-oss thinking (low effort used 27-36 in live tests).
+const GPT_OSS_THINKING_HEADROOM = 256;
+
 const KEY_REFUSED_COOLDOWN_MS = 60 * 60 * 1000;
 
-async function postJson(url, headers, body, signal) {
+async function postJson(url, headers, body, signal, refusalStatuses = [401, 402]) {
     let res;
     try {
         res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal });
@@ -40,7 +43,7 @@ async function postJson(url, headers, body, signal) {
     }
     if (!res.ok) {
         const detail = payload && (payload.error?.message || payload.error || payload.message);
-        const refused = res.status === 401 || res.status === 402;
+        const refused = refusalStatuses.includes(res.status);
         throw new ProviderError('ERROR', `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 200)}` : ''}`, res.status, {
             rotate: refused,
             retryAfterMs: refused ? KEY_REFUSED_COOLDOWN_MS : undefined,
@@ -86,6 +89,14 @@ const openAiCompatible = (base, extraHeaders = {}) => async (provider, { model, 
         max_tokens: maxTokens,
         response_format: { type: 'json_object' },
     };
+    // Groq's gpt-oss models think before they answer, and the thinking counts
+    // against max_tokens: a small budget is used up before the JSON is complete
+    // and Groq answers 400 "Failed to validate JSON". Keep the thinking short and
+    // leave room for it (found by running against the live service).
+    if (provider === 'groq' && /gpt-oss/.test(model)) {
+        body.reasoning_effort = 'low';
+        body.max_tokens = maxTokens + GPT_OSS_THINKING_HEADROOM;
+    }
     const url = `${typeof base === 'function' ? base() : base}/chat/completions`;
     // A local server may have no key at all; a hosted provider rotates through its keys.
     const payload = keyPool.status(provider).total
@@ -96,6 +107,9 @@ const openAiCompatible = (base, extraHeaders = {}) => async (provider, { model, 
     return { text, inputTokens: payload.usage?.prompt_tokens ?? null, outputTokens: payload.usage?.completion_tokens ?? null };
 };
 
+// Gemini answers 403 PERMISSION_DENIED when a key's project has no free tier or the key is restricted.
+const GEMINI_REFUSALS = [401, 402, 403];
+
 async function gemini(provider, { model, system, user, maxTokens, signal }) {
     const base = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '');
     const body = {
@@ -104,7 +118,7 @@ async function gemini(provider, { model, system, user, maxTokens, signal }) {
         generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
     };
     const payload = await withKeys(provider, (key) =>
-        postJson(`${base}/models/${encodeURIComponent(model)}:generateContent`, { 'x-goog-api-key': key }, body, signal)
+        postJson(`${base}/models/${encodeURIComponent(model)}:generateContent`, { 'x-goog-api-key': key }, body, signal, GEMINI_REFUSALS)
     );
     const text = payload?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('');
     if (!text || !text.trim()) throw new ProviderError('ERROR', 'The provider returned no content.');
