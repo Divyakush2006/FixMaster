@@ -64,6 +64,32 @@ does it themselves). Erasure is an administrator action: Administration,
 Privacy requests. It is refused while the resident still has a room or an open
 ticket, and says why.
 
+**A student cannot sign in with the university button.** The sign-in page says why
+(the reason also appears as `?sso=<reason>` in the address): `no_account` means no
+FixMaster student account has that mailbox (they sign up first); `domain` means the
+address is outside `OIDC_ALLOWED_DOMAINS` or the university does not call it
+verified; `failed` means the provider's answer did not check out (look for
+`[sso] sign-in refused` in the logs, which names the check); `unavailable` means the
+provider could not be reached or its address is not https.
+
+## Single sign-on
+
+University sign-in is OpenID Connect (authorization code with PKCE), so it works
+with Google Workspace, Microsoft Entra ID or Keycloak. It is off until
+`OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` are all set; then the
+student sign-in page shows "Sign in with your university account". Ask the
+university's IT office to register an application with the redirect address
+`<site>/api/auth/sso/callback` (or set `OIDC_REDIRECT_URI`), the scopes
+`openid email profile`, and give you the three values. For Microsoft use the
+issuer with the tenant id, `https://login.microsoftonline.com/<tenant-id>/v2.0`.
+
+It signs an **existing** student in; it never creates an account, because the
+registration number and room request come from the sign-up form. It also stands
+in for the emailed code: a student who signed up and is still waiting for a code
+is confirmed when the university vouches for the mailbox. Staff and
+administrators keep their own sign-in. Every sign-in is written to the audit log
+(`auth.sso_sign_in`).
+
 ## Data
 
 **Retention.** A daily job removes what is past its period: model-call log 90
@@ -107,6 +133,6 @@ model off any GPU. Nothing local runs unless its address is configured.
 
 ## Not covered here
 
-University single sign-on, photo storage on object storage instead of local
-disk, and tracing are not set up. Photos live on the API's disk
-(`UPLOAD_DIR`), so with more than one instance mount shared storage there.
+Photo storage on object storage instead of local disk and tracing are not set
+up. Photos live on the API's disk (`UPLOAD_DIR`), so with more than one instance
+mount shared storage there.

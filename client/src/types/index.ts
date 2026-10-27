@@ -147,6 +147,8 @@ export interface AuthCapabilities {
   student_signup?: boolean;
   student_email_domains?: string[];
   privacy_notice_version?: string;
+  /** University single sign-on, when this deployment has it; `label` names the provider on the button. */
+  sso?: { label: string } | null;
 }
 
 export interface RegisterResponse {

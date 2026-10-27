@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/ui/Toast';
 import { ApiError } from '../../api/client';
 import { Alert } from '../../components/ui/Alert';
-import { Button } from '../../components/ui/Button';
+import { Button, buttonClasses } from '../../components/ui/Button';
 import { Field, Input, PasswordInput } from '../../components/ui/Form';
 import { Segmented } from '../../components/ui/Tabs';
 import { AuthHeading, AuthLayout, DemoAccounts } from './AuthLayout';
@@ -30,6 +30,17 @@ const DEMO_ACCOUNTS: Record<PublicPortal, { id: string; who: string }[]> = {
   ],
 };
 
+// Why a university sign-in came back without a session (?sso=<reason>, set by the API).
+const SSO_MESSAGES: Record<string, string> = {
+  denied: 'Sign-in with your university account was cancelled.',
+  no_account: 'There is no FixMaster student account for that university address yet. Create your account first; after that you can use this button.',
+  domain: 'That is not a VIT student mailbox, or the university has not verified it.',
+  disabled: 'This account has been deactivated. Please contact the hostel office.',
+  expired: 'That sign-in took too long, or was started in another browser. Please try again.',
+  failed: 'The university sign-in could not be completed. Please try again, or use your registration number and password.',
+  unavailable: 'University sign-in is not available right now. Use your registration number and password.',
+};
+
 /**
  * /login - two separate sign-ins on one page: Student and Staff (technicians
  * and supervisors). Each tab calls its own API endpoint, which only accepts
@@ -50,6 +61,8 @@ export const LoginScreen: React.FC = () => {
   const isExpired = searchParams.get('expired') === '1';
   const isIdle = searchParams.get('idle') === '1';
   const ui = PORTAL_UI[portal];
+  const ssoReason = searchParams.get('sso');
+  const ssoMessage = ssoReason ? (SSO_MESSAGES[ssoReason] ?? SSO_MESSAGES.failed) : null;
   // Offered only when this deployment can actually send the email.
   const { data: capabilities } = useQuery({ queryKey: ['auth-capabilities'], queryFn: authApi.capabilities, staleTime: 5 * 60_000, retry: false });
 
@@ -127,6 +140,7 @@ export const LoginScreen: React.FC = () => {
             Please sign in again to continue.
           </Alert>
         )}
+        {ssoMessage && !errorMsg && <Alert tone="danger">{ssoMessage}</Alert>}
         {errorMsg && (
           <Alert
             tone="danger"
@@ -142,6 +156,20 @@ export const LoginScreen: React.FC = () => {
           </Alert>
         )}
       </div>
+
+      {portal === 'student' && capabilities?.sso && (
+        <div className="mt-4">
+          {/* A full page navigation: the university's own page takes over, then brings the browser back. */}
+          <a href={`${import.meta.env.VITE_API_BASE_URL || '/api'}/auth/sso/start`} className={buttonClasses('secondary', 'lg', 'w-full')}>
+            Sign in with {capabilities.sso.label}
+          </a>
+          <p className="my-4 flex items-center gap-3 text-xs text-slate-400">
+            <span className="h-px flex-1 bg-slate-200" />
+            or use your registration number
+            <span className="h-px flex-1 bg-slate-200" />
+          </p>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="mt-4 space-y-4" aria-label={`${ui.label} sign-in`} noValidate>
         <Field label={ui.idLabel} required>

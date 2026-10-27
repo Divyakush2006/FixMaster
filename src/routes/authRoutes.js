@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../controllers/authController');
+const sso = require('../controllers/ssoController');
 const {
     loginLimiters,
     registerLimiter,
@@ -29,6 +30,11 @@ router.post('/staff/login', loginLimiters.staff, loginValidators, auth.loginFor(
 router.post('/admin/login', loginLimiters.admin, loginValidators, auth.loginFor('admin'));
 
 router.get('/capabilities', auth.capabilities);
+
+// University single sign-on (OpenID Connect); off unless OIDC_* is configured.
+router.get('/sso/start', sso.start);
+router.get('/sso/callback', sso.callback);
+router.get('/session', authenticateOnboarding, sso.session);
 router.post('/forgot-password', forgotPasswordLimiters, forgotPasswordValidators, auth.forgotPassword);
 router.post('/reset-password', resetPasswordLimiter, resetPasswordValidators, auth.resetPassword);
 

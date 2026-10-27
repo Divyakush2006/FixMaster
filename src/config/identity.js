@@ -34,6 +34,9 @@ function isAllowedStudentEmail(email) {
     return studentEmailDomains().includes(String(email).slice(at + 1).toLowerCase());
 }
 
+/** Where the web app lives, for links in emails and redirects (APP_URL, else the first CORS origin). */
+const appBaseUrl = () => (process.env.APP_URL || (process.env.CORS_ORIGIN || '').split(',')[0] || 'http://localhost:3000').trim().replace(/\/+$/, '');
+
 const regNoPattern = () => new RegExp(process.env.STUDENT_REG_NO_PATTERN || '^[0-9]{2}[A-Z]{3}[0-9]{4}$');
 
 const isValidStudentRegNo = (regNo) => regNoPattern().test(String(regNo || '').toUpperCase());
@@ -49,6 +52,7 @@ function maskEmail(email) {
 const PRIVACY_NOTICE_VERSION = '2026-10';
 
 module.exports = {
+    appBaseUrl,
     studentEmailDomains,
     isAllowedStudentEmail,
     isValidStudentRegNo,
