@@ -45,8 +45,8 @@ const int = (value, fallback) => {
 const DEFAULT_ROUTES = {
     INTAKE: 'groq:openai/gpt-oss-20b,openrouter:google/gemma-4-31b-it:free,gemini:gemini-flash-lite-latest',
     FEEDBACK_TAGS: 'groq:openai/gpt-oss-20b,openrouter:google/gemma-4-31b-it:free,gemini:gemini-flash-lite-latest',
-    BRIEFING: 'groq:openai/gpt-oss-120b,openrouter:google/gemma-4-31b-it:free,gemini:gemini-flash-latest',
-    ASK: 'groq:openai/gpt-oss-120b,openrouter:google/gemma-4-31b-it:free,gemini:gemini-flash-latest',
+    BRIEFING: 'groq:openai/gpt-oss-120b,openrouter:google/gemma-4-31b-it:free,gemini:gemini-flash-lite-latest',
+    ASK: 'groq:openai/gpt-oss-120b,openrouter:google/gemma-4-31b-it:free,gemini:gemini-flash-lite-latest',
 };
 
 const TASKS = Object.keys(DEFAULT_ROUTES);

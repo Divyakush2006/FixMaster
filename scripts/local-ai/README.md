@@ -53,7 +53,7 @@ LOCAL_AI_NUM_GPU=0
 LOCAL_AI_TIMEOUT_MS=45000
 AI_ROUTE_INTAKE="ollama:qwen2.5:3b-instruct,groq:openai/gpt-oss-20b,gemini:gemini-flash-lite-latest"
 AI_ROUTE_FEEDBACK_TAGS="ollama:qwen2.5:1.5b-instruct,gemini:gemini-flash-lite-latest"
-AI_ROUTE_BRIEFING="ollama:qwen2.5:7b-instruct,gemini:gemini-flash-latest"
+AI_ROUTE_BRIEFING="ollama:qwen2.5:7b-instruct,gemini:gemini-flash-lite-latest"
 AI_ROUTE_ASK="ollama:qwen2.5:7b-instruct,groq:openai/gpt-oss-120b"
 ```
 
