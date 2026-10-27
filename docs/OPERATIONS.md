@@ -90,6 +90,26 @@ is confirmed when the university vouches for the mailbox. Staff and
 administrators keep their own sign-in. Every sign-in is written to the audit log
 (`auth.sso_sign_in`).
 
+## Photo storage
+
+Ticket photos are written to local disk (`UPLOAD_DIR`) unless `S3_BUCKET` is set,
+in which case they live in an S3-compatible bucket (Amazon S3, Cloudflare R2,
+MinIO, SeaweedFS ...) and any number of API instances share them. Requests are
+signed with AWS Signature Version 4 by the API itself; nothing extra is installed.
+Settings are in `.env.example`. Use a **private** bucket, in India for DPDP
+purposes if the data must stay in the country, with encryption at rest
+(`S3_SSE=true` asks for it; some stores always encrypt). A photo is only ever
+served through the API, after it has checked who may see the ticket, so the bucket
+needs no public access and no CORS rules. Photos already on disk are not moved
+automatically: copy `UPLOAD_DIR` into the bucket under the prefix (default
+`ticket-photos/`), keeping the file names (`<ticket id>.jpg|png`). Back up the
+bucket the way you back up the database (versioning or a replica).
+
+`tests/object_storage_real.test.js` runs the photo journey against a real server
+when `TEST_S3_ENDPOINT`, `TEST_S3_BUCKET`, `TEST_S3_ACCESS_KEY` and
+`TEST_S3_SECRET_KEY` are set (it was run against SeaweedFS, which checks
+signatures itself).
+
 ## Data
 
 **Retention.** A daily job removes what is past its period: model-call log 90
@@ -133,6 +153,4 @@ model off any GPU. Nothing local runs unless its address is configured.
 
 ## Not covered here
 
-Photo storage on object storage instead of local disk and tracing are not set
-up. Photos live on the API's disk (`UPLOAD_DIR`), so with more than one instance
-mount shared storage there.
+Tracing is not set up.

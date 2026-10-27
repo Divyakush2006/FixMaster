@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const objects = require('./objectStorage');
 
 // Photos attached to tickets. The database may not gain a table, so each photo
 // is a file named after its ticket (`<ticket id>.jpg|png`) in UPLOAD_DIR, and
@@ -15,8 +16,10 @@ const crypto = require('crypto');
 // The browser is told the type, forbidden to guess, and sandboxed (see the
 // controller), so a hostile file cannot run as a page.
 //
-// Photos live on the host's disk: with more than one API instance, UPLOAD_DIR
-// must be a shared volume, and it must be backed up with the database.
+// Where the files live: on the host's disk (UPLOAD_DIR) by default - with more than
+// one API instance that must be a shared volume, backed up with the database - or,
+// when S3_BUCKET is set, in an S3-compatible bucket (services/objectStorage.js), which
+// any number of instances share. Either way a photo is only served through the API.
 
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 const TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png' };
@@ -98,8 +101,18 @@ function sanitizeImage(buf, declaredType) {
 
 const fileFor = (complaintId, ext) => path.join(uploadDir(), `${complaintId}.${ext}`);
 
+const objectKey = (complaintId, ext) => `${complaintId}.${ext}`;
+const contentTypeOf = (ext) => Object.keys(TYPES).find((type) => TYPES[type] === ext);
+
 /** Writes the photo atomically, replacing any earlier one for the ticket (whatever its type). */
 async function savePhoto(complaintId, buffer, ext) {
+    if (objects.isEnabled()) {
+        await objects.put(objectKey(complaintId, ext), buffer, contentTypeOf(ext));
+        for (const other of Object.values(TYPES)) {
+            if (other !== ext) await objects.remove(objectKey(complaintId, other));
+        }
+        return;
+    }
     await fs.promises.mkdir(uploadDir(), { recursive: true });
     const tmp = path.join(uploadDir(), `.${complaintId}.${crypto.randomBytes(6).toString('hex')}.tmp`);
     await fs.promises.writeFile(tmp, buffer, { mode: 0o640 });
@@ -110,11 +123,22 @@ async function savePhoto(complaintId, buffer, ext) {
 }
 
 async function removePhoto(complaintId) {
+    if (objects.isEnabled()) {
+        for (const ext of Object.values(TYPES)) await objects.remove(objectKey(complaintId, ext));
+        return;
+    }
     for (const ext of Object.values(TYPES)) await fs.promises.rm(fileFor(complaintId, ext), { force: true });
 }
 
-/** { file, contentType } for a stored photo, or null. */
+/** { contentType, ext, file } (on disk) or { contentType, ext, buffer } (in a bucket) for a stored photo, or null. */
 async function findPhoto(complaintId) {
+    if (objects.isEnabled()) {
+        for (const [contentType, ext] of Object.entries(TYPES)) {
+            const found = await objects.get(objectKey(complaintId, ext));
+            if (found) return { buffer: found.buffer, contentType, ext };
+        }
+        return null;
+    }
     for (const [contentType, ext] of Object.entries(TYPES)) {
         const file = fileFor(complaintId, ext);
         try {
@@ -127,4 +151,10 @@ async function findPhoto(complaintId) {
     return null;
 }
 
-module.exports = { MAX_PHOTO_BYTES, TYPES, photoUrl, isStoredPhotoUrl, sanitizeImage, savePhoto, removePhoto, findPhoto, uploadDir };
+/** Sends a photo found by findPhoto; the caller has already set the headers. */
+function sendPhoto(res, photo) {
+    if (photo.buffer) return res.send(photo.buffer);
+    return res.sendFile(photo.file, { dotfiles: 'deny' });
+}
+
+module.exports = { MAX_PHOTO_BYTES, TYPES, photoUrl, isStoredPhotoUrl, sanitizeImage, savePhoto, removePhoto, findPhoto, sendPhoto, uploadDir };

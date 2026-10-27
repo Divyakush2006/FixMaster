@@ -2,7 +2,7 @@ const db = require('../config/db');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { recordAudit } = require('../services/auditService');
 const { slaDueSql, slaStatusSql } = require('../services/slaService');
-const { photoUrl, sanitizeImage, savePhoto, removePhoto, findPhoto } = require('../services/attachmentService');
+const { photoUrl, sanitizeImage, savePhoto, removePhoto, findPhoto, sendPhoto } = require('../services/attachmentService');
 const { managedBlocks, scopeCondition, inScope, assertTicketInScope } = require('../services/scopeService');
 const { MANAGER_ROLES } = require('../config/roles');
 const { autoDispatchIfEnabled } = require('../services/autopilot');
@@ -564,7 +564,7 @@ exports.getPhoto = asyncHandler(async (req, res) => {
         'Content-Disposition': `inline; filename="ticket-photo.${photo.ext}"`,
         'Cache-Control': 'private, max-age=300',
     });
-    res.sendFile(photo.file, { dotfiles: 'deny' });
+    sendPhoto(res, photo);
 });
 
 // GET /api/complaints/:id/logs - audit trail, same visibility as the detail view.
