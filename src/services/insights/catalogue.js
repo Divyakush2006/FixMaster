@@ -1,5 +1,6 @@
 const base = require('./reports');
 const more = require('./moreReports');
+const extra = require('./extraReports');
 
 // The closed list of reports. Everything that can answer a question - the
 // dashboards, the briefing and "Ask FixMaster" - comes from here, and a
@@ -16,8 +17,137 @@ const more = require('./moreReports');
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const where = (p) => (p.blockId ? ` in ${p.blockId}` : '');
 const hours = (h) => `${h} hour${h === 1 ? '' : 's'}`;
+const clock = (h) => `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? 'am' : 'pm'}`;
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const ROOM_TYPES = { AC: 'AC rooms', NON_AC: 'non-AC rooms', DELUXE_AC: 'deluxe AC rooms' };
 
 const CATALOGUE = {
+    // Specific phrases first: the keyword router takes the first entry with a hit.
+    stale_tickets: {
+        title: 'Tickets nobody has touched',
+        about: 'open tickets with no update for three days or more',
+        keywords: ['stale', 'untouched', 'no update', 'not touched', 'gone quiet', 'forgotten', 'no activity'],
+        run: extra.staleTickets,
+        answer: (rows, p) =>
+            rows.length === 0
+                ? `Every open ticket${where(p)} has had some activity in the last three days.`
+                : `${plural(rows.length, 'open ticket')}${where(p)} ${rows.length === 1 ? 'has' : 'have'} had no update for three days or more. Quietest: ${rows[0].issue_name} at ${rows[0].location} (${rows[0].block_id}), ${rows[0].days_quiet} days.`,
+    },
+    upcoming_leave: {
+        title: 'Technician leave starting soon',
+        about: 'technicians whose leave starts in the next two weeks, and the open jobs they hold now',
+        keywords: ['upcoming leave', 'leave next', 'leave coming', 'going on leave', 'next two weeks', 'on leave soon', 'planned leave'],
+        run: extra.upcomingLeave,
+        answer: (rows, p) =>
+            rows.length === 0
+                ? `No technician${where(p)} has leave starting in the next two weeks.`
+                : `${plural(rows.length, 'technician')}${where(p)} ${rows.length === 1 ? 'has' : 'have'} leave starting in the next two weeks. First: ${rows[0].full_name} (${rows[0].specialization.toLowerCase().replace('_', ' ')}) from ${rows[0].starts_on}, holding ${plural(rows[0].open_jobs, 'open job')}.`,
+    },
+    first_response: {
+        title: 'How quickly a technician is sent',
+        about: 'how long it takes from a ticket being raised to a technician being sent, by priority',
+        usesDays: true,
+        keywords: ['first response', 'first reply', 'how quickly', 'how fast', 'time to assign', 'time to respond', 'respond'],
+        run: extra.firstResponse,
+        answer: (rows, p) => {
+            if (rows.length === 0) return `No technician was sent to a ticket${where(p)} in the last ${p.days} days.`;
+            const slowest = [...rows].sort((a, b) => b.median_hours - a.median_hours)[0];
+            return `In the last ${p.days} days${where(p)}, a technician was sent after a median of ${hours(slowest.median_hours)} for ${slowest.priority.toLowerCase()}-priority tickets (nine in ten within ${hours(slowest.p90_hours)}), the slowest group.`;
+        },
+    },
+    reassignments: {
+        title: 'Jobs declined or moved',
+        about: 'how often a job was declined or passed to a different technician before it was done',
+        usesDays: true,
+        keywords: ['reassign', 'declined', 'turned down', 'moved to someone', 'passed on', 'handed over'],
+        run: extra.reassignments,
+        answer: (r, p) =>
+            r.tickets_assigned === 0
+                ? `No tickets${where(p)} were assigned in the last ${p.days} days.`
+                : `Of ${plural(r.tickets_assigned, 'assigned ticket')}${where(p)} in the last ${p.days} days, ${r.moved} (${r.moved_pct}%) went to more than one technician, and ${plural(r.declined, 'job')} ${r.declined === 1 ? 'was' : 'were'} declined.`,
+    },
+    rework_by_category: {
+        title: 'Work most often sent back, by kind',
+        about: 'which kinds of work residents most often say were not fixed',
+        usesDays: true,
+        keywords: ['rework rate', 'sent back most', 'redone most', 'kinds of work sent back', 'not fixed most'],
+        run: extra.reworkByCategory,
+        answer: (rows, p) =>
+            rows.length === 0
+                ? `No resident has given a verdict on finished work${where(p)} in the last ${p.days} days.`
+                : `${rows[0].category_name} is sent back most${where(p)}: ${rows[0].sent_back} of ${rows[0].verdicts} verdicts (${rows[0].sent_back_pct}%) in the last ${p.days} days.`,
+    },
+    sla_by_priority: {
+        title: 'Deadlines met, by priority',
+        about: 'the share of finished tickets that met their deadline for each priority level',
+        usesDays: true,
+        keywords: ['by priority', 'per priority', 'each priority', 'priority level'],
+        run: extra.slaByPriority,
+        answer: (rows, p) => {
+            const scored = rows.filter((r) => r.compliance_pct !== null);
+            if (scored.length === 0) return `No tickets${where(p)} finished in the last ${p.days} days.`;
+            const worst = [...scored].sort((a, b) => a.compliance_pct - b.compliance_pct)[0];
+            return `Deadlines were met least often for ${worst.priority.toLowerCase()}-priority tickets${where(p)}: ${worst.compliance_pct}% (${worst.met} met, ${worst.breached} missed) in the last ${p.days} days.`;
+        },
+    },
+    peak_hours: {
+        title: 'Busiest hours of the day',
+        about: 'what time of day tickets are raised',
+        usesDays: true,
+        keywords: ['peak hour', 'busy hour', 'time of day', 'which hour', 'hours of the day', 'what time'],
+        run: extra.peakHours,
+        answer: (rows, p) =>
+            rows.length === 0
+                ? `No tickets were raised${where(p)} in the last ${p.days} days.`
+                : `Most tickets${where(p)} are raised around ${clock(rows[0].hour)} (${rows[0].tickets} in the last ${p.days} days)${rows[1] ? `, then ${clock(rows[1].hour)}` : ''}.`,
+    },
+    weekday_pattern: {
+        title: 'Busiest days of the week',
+        about: 'which days of the week tickets are raised on',
+        usesDays: true,
+        keywords: ['weekday', 'day of the week', 'which day', 'busiest day', 'weekend'],
+        run: extra.weekdayPattern,
+        answer: (rows, p) => {
+            if (rows.length === 0) return `No tickets were raised${where(p)} in the last ${p.days} days.`;
+            const top = [...rows].sort((a, b) => b.tickets - a.tickets)[0];
+            const quiet = [...rows].sort((a, b) => a.tickets - b.tickets)[0];
+            return `${WEEKDAYS[top.weekday - 1]} is the busiest day${where(p)} (${top.tickets} tickets in the last ${p.days} days) and ${WEEKDAYS[quiet.weekday - 1]} the quietest (${quiet.tickets}).`;
+        },
+    },
+    room_type_faults: {
+        title: 'Faults by room type',
+        about: 'tickets per 100 rooms for AC, non-AC and deluxe AC rooms',
+        usesDays: true,
+        keywords: ['room type', 'ac room', 'non-ac', 'air condition', 'deluxe'],
+        run: extra.roomTypeFaults,
+        answer: (rows, p) =>
+            rows.length === 0 || rows[0].tickets === 0
+                ? `No room tickets${where(p)} in the last ${p.days} days.`
+                : `${ROOM_TYPES[rows[0].room_type] || rows[0].room_type} raise the most tickets${where(p)}: ${rows[0].per_100_rooms} per 100 rooms in the last ${p.days} days (${rows[0].tickets} across ${rows[0].rooms} rooms).`,
+    },
+    top_rooms: {
+        title: 'Rooms with the most tickets',
+        about: 'individual rooms that have raised the most tickets',
+        usesDays: true,
+        keywords: ['which rooms', 'worst rooms', 'top rooms', 'problem rooms', 'rooms with the most', 'specific room'],
+        run: extra.topRooms,
+        answer: (rows, p) =>
+            rows.length === 0
+                ? `No room${where(p)} raised two or more tickets in the last ${p.days} days.`
+                : `${plural(rows.length, 'room')}${where(p)} raised two or more tickets in the last ${p.days} days. Most: ${rows[0].room_number} in ${rows[0].block_id} (floor ${rows[0].floor_number}) with ${rows[0].tickets}, across ${plural(rows[0].kinds, 'kind')} of problem.`,
+    },
+    occupancy: {
+        title: 'Beds and residents',
+        about: 'how many beds each block has and how full they are',
+        keywords: ['occupancy', 'occupied', 'beds', 'vacant', 'vacancy', 'how full', 'residents live'],
+        run: extra.occupancy,
+        answer: (rows, p) => {
+            const beds = rows.reduce((s, r) => s + r.beds, 0);
+            const residents = rows.reduce((s, r) => s + r.residents, 0);
+            if (beds === 0) return `No beds are set up${where(p)}.`;
+            return `${plural(residents, 'resident')} in ${plural(beds, 'bed')}${where(p)} (${Math.round((1000 * residents) / beds) / 10}% full). Fullest: ${rows[0].block_id} at ${rows[0].occupancy_pct}%.`;
+        },
+    },
     emergencies: {
         title: 'Open emergencies',
         about: 'emergency-priority tickets that are still open',

@@ -485,11 +485,146 @@ describe('insights', () => {
                 ['Show me open emergencies', 'emergencies'],
                 ['Which floors have the most tickets?', 'busiest_floors'],
                 ['How are ratings trending?', 'rating_trend'],
+                // The newer reports, and the older questions above still reaching the older reports.
+                ['Which rooms have the most tickets?', 'top_rooms'],
+                ['What are the peak hours?', 'peak_hours'],
+                ['Which day of the week is busiest?', 'weekday_pattern'],
+                ['How full are the hostels?', 'occupancy'],
+                ['Do AC rooms have more faults?', 'room_type_faults'],
+                ['How quickly do we respond to emergencies?', 'first_response'],
+                ['Show deadlines met by priority', 'sla_by_priority'],
+                ['How often are jobs declined?', 'reassignments'],
+                ['Is any technician going on leave soon?', 'upcoming_leave'],
+                ['Which tickets have gone quiet?', 'stale_tickets'],
+                ['Which kind of work is redone most?', 'rework_by_category'],
             ];
             for (const [question, report] of cases) {
                 const r = await t.api('/insights/ask', { method: 'POST', token: admin, body: { question } });
                 assert.equal(r.data.report, report, question);
             }
+        });
+
+        // ---- The third group of reports ---------------------------------------------
+        describe('the newer reports', () => {
+            let evening; // 9 pm campus time, three days ago
+            const run = async (name, query = '') => (await t.api(`/insights/report/${name}${query}`, { token: admin })).data;
+
+            before(async () => {
+                evening = (await t.sql(`SELECT ((date_trunc('day', NOW() AT TIME ZONE 'Asia/Kolkata') - INTERVAL '3 days' + INTERVAL '21 hours') AT TIME ZONE 'Asia/Kolkata') AS t`)).rows[0].t;
+                // 55 evening tickets in T-Block, all inside one clock hour: the busiest hour, day and room there.
+                await insertHistory({ block: 'T_BLOCK', room: 'T-101', sub: SEED.sub.fan, n: 55, at: evening, priority: 'LOW' });
+            });
+
+            it('there are now more than thirty', async () => {
+                const list = await t.api('/insights/reports', { token: admin });
+                assert.ok(list.data.length >= 30, `${list.data.length} reports`);
+            });
+
+            it('finds the busiest hour, weekday and room', async () => {
+                const hours = await run('peak_hours', '?days=30&block_id=T_BLOCK');
+                assert.equal(hours.rows[0].hour, 21);
+                assert.match(hours.answer, /around 9pm/);
+                const expectedDay = (await t.sql(`SELECT EXTRACT(ISODOW FROM $1::timestamptz AT TIME ZONE 'Asia/Kolkata')::int AS d`, [evening])).rows[0].d;
+                const days = await run('weekday_pattern', '?days=60&block_id=T_BLOCK');
+                assert.equal(days.rows.sort((a, b) => b.tickets - a.tickets)[0].weekday, expectedDay);
+                const rooms = await run('top_rooms', '?days=90&block_id=T_BLOCK');
+                assert.equal(rooms.rows[0].room_id, 'T-101');
+                assert.ok(rooms.rows[0].tickets >= 55);
+            });
+
+            it('compares room types fairly, per 100 rooms', async () => {
+                const r = await run('room_type_faults', '?days=90&block_id=T_BLOCK');
+                const row = r.rows.find((x) => x.room_type === 'NON_AC');
+                assert.equal(row.rooms, 1);
+                assert.ok(row.tickets >= 55);
+                assert.equal(row.per_100_rooms, Math.round((1000 * row.tickets) / row.rooms) / 10);
+            });
+
+            it('counts beds and residents', async () => {
+                const r = await run('occupancy');
+                const l = r.rows.find((x) => x.block_id === 'L_BLOCK');
+                assert.ok(l.beds > 0 && l.residents > 0);
+                assert.equal(l.occupancy_pct, Math.round((1000 * l.residents) / l.beds) / 10);
+                const live = (await t.sql(`SELECT COUNT(*)::int AS n FROM student_room_allotments a JOIN rooms r ON r.room_id = a.room_id WHERE a.is_current AND r.block_id = 'L_BLOCK'`)).rows[0].n;
+                assert.equal(l.residents, live);
+            });
+
+            it('deadlines by priority add up to the overall figure', async () => {
+                const byPriority = await run('sla_by_priority', '?days=90');
+                const overall = await run('sla_compliance', '?days=90');
+                assert.equal(byPriority.rows.reduce((s, x) => s + x.met, 0), overall.rows.met);
+                assert.equal(byPriority.rows.reduce((s, x) => s + x.breached, 0), overall.rows.breached);
+            });
+
+            it('measures how quickly technicians are sent and how often jobs move', async () => {
+                const tickets = await insertHistory({ block: 'T_BLOCK', room: 'T-101', sub: SEED.sub.mcb, n: 5, at: new Date(Date.now() - 5 * 86400000).toISOString(), priority: 'HIGH' });
+                const staff = (await t.sql(`SELECT user_id FROM users WHERE role = 'STAFF' AND specialization = 'ELECTRICIAN' ORDER BY user_id LIMIT 2`)).rows;
+                for (const [i, tk] of tickets.entries()) {
+                    // Two of the five are declined by the first technician and given to the second.
+                    if (i < 2) {
+                        await t.sql(
+                            `INSERT INTO complaint_assignments (complaint_id, staff_user_id, assigned_at, current_state)
+                             SELECT complaint_id, $2, created_at + INTERVAL '2 hours', 'DECLINED' FROM complaints WHERE complaint_id = $1`,
+                            [tk.complaint_id, staff[0].user_id]
+                        );
+                    }
+                    await t.sql(
+                        `INSERT INTO complaint_assignments (complaint_id, staff_user_id, assigned_at, current_state)
+                         SELECT complaint_id, $2, created_at + INTERVAL '${i < 2 ? 3 : 2} hours', 'DONE' FROM complaints WHERE complaint_id = $1`,
+                        [tk.complaint_id, staff[1].user_id]
+                    );
+                }
+                const first = await run('first_response', '?days=30&block_id=T_BLOCK');
+                const high = first.rows.find((x) => x.priority === 'HIGH');
+                assert.equal(high.tickets, 5);
+                assert.equal(high.median_hours, 2);
+                assert.ok(high.p90_hours >= high.median_hours);
+                const moved = await run('reassignments', '?days=30&block_id=T_BLOCK');
+                assert.deepEqual(
+                    { assigned: moved.rows.tickets_assigned, moved: moved.rows.moved, declined: moved.rows.declined, pct: moved.rows.moved_pct },
+                    { assigned: 5, moved: 2, declined: 2, pct: 40 }
+                );
+            });
+
+            it('shows which kind of work is sent back most', async () => {
+                const tickets = await insertHistory({ block: 'T_BLOCK', room: 'T-101', sub: SEED.sub.tap, n: 3, at: new Date(Date.now() - 6 * 86400000).toISOString() });
+                for (const tk of tickets) {
+                    await t.sql(`INSERT INTO complaint_feedback (complaint_id, student_id, is_satisfactorily_resolved, rating, verified_at) VALUES ($1, $2, FALSE, 2, NOW() - INTERVAL '5 days')`, [tk.complaint_id, studentId]);
+                }
+                const r = await run('rework_by_category', '?days=60&block_id=T_BLOCK');
+                assert.ok(r.rows[0].sent_back >= 3);
+                assert.equal(r.rows[0].sent_back_pct, Math.round((1000 * r.rows[0].sent_back) / r.rows[0].verdicts) / 10);
+                assert.equal(r.rows[0].sent_back_pct, 100, 'a kind of work where every verdict was "not fixed" comes first');
+            });
+
+            it('lists leave that starts soon, and tickets nobody has touched', async () => {
+                const tech = (await t.sql(`SELECT user_id, full_name FROM users WHERE reg_or_emp_id = $1`, [SEED.electrician])).rows[0];
+                await t.sql(`INSERT INTO staff_leave (staff_user_id, starts_on, ends_on) VALUES ($1, CURRENT_DATE + 5, CURRENT_DATE + 8), ($1, CURRENT_DATE + 40, CURRENT_DATE + 42)`, [tech.user_id]);
+                const leave = await run('upcoming_leave');
+                const mine = leave.rows.filter((x) => x.full_name === tech.full_name);
+                assert.equal(mine.length, 1, 'only leave starting within two weeks');
+
+                await insertHistory({ block: 'T_BLOCK', room: 'T-101', sub: SEED.sub.switchBoard, n: 1, at: new Date(Date.now() - 5 * 86400000).toISOString(), status: 'OPEN' });
+                const stale = await run('stale_tickets', '?block_id=T_BLOCK');
+                assert.ok(stale.rows.length >= 1 && stale.rows[0].days_quiet >= 4);
+                assert.equal(stale.rows[0].block_id, 'T_BLOCK');
+            });
+
+            it('a block supervisor sees nothing from a block outside their scope', async () => {
+                const uid = (await t.sql('SELECT user_id FROM users WHERE reg_or_emp_id = $1', [SEED.supervisor])).rows[0].user_id;
+                await t.sql('INSERT INTO supervisor_blocks (supervisor_user_id, block_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [uid, 'L_BLOCK']);
+                try {
+                    for (const name of ['top_rooms', 'peak_hours', 'occupancy', 'stale_tickets', 'room_type_faults']) {
+                        const r = await t.api(`/insights/report/${name}?days=90`, { token: sup });
+                        assert.equal(r.status, 200, name);
+                        assert.ok(!JSON.stringify(r.data.rows).includes('T_BLOCK'), `${name} leaked T_BLOCK`);
+                    }
+                    const asked = await t.api('/insights/report/top_rooms?days=90&block_id=T_BLOCK', { token: sup });
+                    assert.deepEqual(asked.data.rows, []);
+                } finally {
+                    await t.sql('DELETE FROM supervisor_blocks WHERE supervisor_user_id = $1', [uid]);
+                }
+            });
         });
     });
 });
