@@ -46,6 +46,10 @@ function hint(err) {
         console.error('No mail server is configured. Set SMTP_HOST, SMTP_USER and SMTP_PASS (or SMTP_URL), and MAIL_FROM, in .env.');
         process.exit(1);
     }
+    // Placeholders such as <your-key> in the docs are not part of the value.
+    for (const k of ['SMTP_URL', 'SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'MAIL_FROM', 'APP_URL']) {
+        if (/^<.*>$/.test(process.env[k] || '')) console.error(`Warning: ${k} is wrapped in < >. Remove the angle brackets in .env: they are not part of the value.`);
+    }
     const from = process.env.MAIL_FROM || '';
     console.log(`Mail server: ${describe(settings)}`);
     console.log(`Sender:      ${from || '(MAIL_FROM is not set: the provider will refuse most senders)'}`);
