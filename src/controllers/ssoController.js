@@ -6,6 +6,7 @@ const { signToken } = require('../middleware/auth');
 const { recordAudit } = require('../services/auditService');
 const { parseCookies, setSessionCookies } = require('../utils/sessionCookies');
 const { appBaseUrl } = require('../config/identity');
+const { hashPassword } = require('../services/userService');
 const oidc = require('../services/oidc');
 
 // University single sign-on (see services/oidc.js for the settings).
@@ -97,19 +98,29 @@ exports.callback = asyncHandler(async (req, res) => {
         if (!user || user.role !== 'STUDENT') return { reason: 'no_account' };
         if (!user.is_active) return { reason: 'disabled' };
         let status = user.account_status;
-        if (status === 'PENDING_VERIFICATION') status = user.has_profile ? 'ACTIVE' : 'PENDING_PROFILE';
-        await client.query(
+        const confirming = status === 'PENDING_VERIFICATION';
+        if (confirming) status = user.has_profile ? 'ACTIVE' : 'PENDING_PROFILE';
+        // Whoever signed this account up chose its password before the mailbox was proven, and may not
+        // be the mailbox's owner (anyone can type someone else's address into the sign-up form). So
+        // confirming it here also retires that password: the owner signs in with the university from
+        // now on, or sets their own through "Forgot your password?", and any earlier session ends.
+        const retired = confirming ? await hashPassword(crypto.randomBytes(32).toString('hex')) : null;
+        const { rows: updated } = await client.query(
             `UPDATE users SET account_status = $2, email_verified_at = COALESCE(email_verified_at, NOW()), last_login_at = NOW(),
-                              failed_login_count = 0, locked_until = NULL
-             WHERE user_id = $1`,
-            [user.user_id, status]
+                              failed_login_count = 0, locked_until = NULL,
+                              password_hash = COALESCE($3, password_hash),
+                              credentials_changed_at = CASE WHEN $3::text IS NULL THEN credentials_changed_at ELSE CURRENT_TIMESTAMP END
+             WHERE user_id = $1
+             RETURNING credentials_changed_at`,
+            [user.user_id, status, retired]
         );
+        user.credentials_changed_at = updated[0].credentials_changed_at;
         await recordAudit(client, req, {
             actorUserId: user.user_id,
             action: 'auth.sso_sign_in',
             targetType: 'user',
             targetId: user.user_id,
-            details: { provider: oidc.config().issuer, confirmed_email: user.account_status === 'PENDING_VERIFICATION' },
+            details: { provider: oidc.config().issuer, confirmed_email: confirming, password_retired: confirming },
         });
         return { user: { ...user, account_status: status } };
     });

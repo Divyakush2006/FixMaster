@@ -214,6 +214,40 @@ describe('university single sign-on', () => {
         assert.equal((await fetch(`${t.base}/complaints`, { headers: { cookie: session } })).status, 403, 'still limited to onboarding');
     });
 
+    it('retires the password of an account signed up before its mailbox was proven, so a pre-registration cannot be hijacked', async () => {
+        // An attacker types a victim's university address into the sign-up form with a password of their own.
+        const body = student(8, { password: 'Attacker-Chosen-1' });
+        await t.registerStudent(body, { verify: false });
+        const early = await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: body.reg_or_emp_id, password: 'Attacker-Chosen-1' } });
+        assert.equal(early.status, 403, 'unconfirmed accounts cannot sign in');
+
+        // The real owner signs in with the university, which confirms the mailbox.
+        idp.email = body.email;
+        const res = await signIn();
+        assert.equal(landedOn(res), 'http://app.test/auth/sso/done');
+        const session = cookiesOf(res).find((c) => c.startsWith('fm_session='));
+        assert.equal((await fetch(`${t.base}/auth/session`, { headers: { cookie: session } })).status, 200, 'the owner is in');
+
+        // The attacker's password no longer works anywhere.
+        const after = await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: body.reg_or_emp_id, password: 'Attacker-Chosen-1' } });
+        assert.equal(after.status, 401);
+        const audit = await t.sql(`SELECT details FROM audit_log WHERE action = 'auth.sso_sign_in' AND target_id = (SELECT user_id FROM users WHERE reg_or_emp_id = $1)`, [body.reg_or_emp_id]);
+        assert.equal(audit.rows[0].details.password_retired, true);
+
+        // The owner can still set their own through the normal email link.
+        const forgot = await t.api('/auth/forgot-password', { method: 'POST', body: { reg_or_emp_id: body.reg_or_emp_id } });
+        assert.equal(forgot.status, 202);
+    });
+
+    it('leaves the password of an already confirmed account alone', async () => {
+        const body = student(9);
+        await t.registerStudent(body);
+        idp.email = body.email;
+        assert.equal(landedOn(await signIn()), 'http://app.test/auth/sso/done');
+        const still = await t.api('/auth/student/login', { method: 'POST', body: { reg_or_emp_id: body.reg_or_emp_id, password: SEED_PASSWORD } });
+        assert.equal(still.status, 200);
+    });
+
     it('never creates an account and says nothing about which ones exist', async () => {
         idp.email = 'nobody.here@vitstudent.ac.in';
         refusedWith(await signIn(), 'no_account');

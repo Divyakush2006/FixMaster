@@ -86,7 +86,10 @@ issuer with the tenant id, `https://login.microsoftonline.com/<tenant-id>/v2.0`.
 It signs an **existing** student in; it never creates an account, because the
 registration number and room request come from the sign-up form. It also stands
 in for the emailed code: a student who signed up and is still waiting for a code
-is confirmed when the university vouches for the mailbox. Staff and
+is confirmed when the university vouches for the mailbox. Because anyone can type
+someone else's address into the sign-up form, confirming an account this way also
+retires the password chosen at sign-up and ends any earlier session; the owner
+uses the university button, or sets their own with "Forgot your password?". Staff and
 administrators keep their own sign-in. Every sign-in is written to the audit log
 (`auth.sso_sign_in`).
 
