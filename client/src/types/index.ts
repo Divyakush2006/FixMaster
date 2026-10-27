@@ -526,6 +526,9 @@ export interface UserSummary {
 export interface AiProviderHealth {
   provider: string;
   configured: boolean;
+  /** API keys set for the provider, and how many are usable now (the rest hit a limit and rest). */
+  keys_total?: number;
+  keys_available?: number;
   breaker_open: boolean;
   used_today: number;
   daily_limit: number;

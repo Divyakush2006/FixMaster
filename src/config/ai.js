@@ -6,6 +6,11 @@
  * then uses its non-AI path).
  *
  *   GROQ_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY   (never committed)
+ *                     Each takes one key or several, comma-separated
+ *                     (GROQ_API_KEY="gsk_a,gsk_b,gsk_c"); a *_API_KEYS name works too.
+ *                     Keys are used in order; when one is rate limited or
+ *                     refused, the same request goes to the next (see
+ *                     src/services/ai/keyPool.js).
  *
  *   AI_ROUTE_<TASK>   comma-separated provider:model chain, e.g.
  *                     AI_ROUTE_INTAKE="groq:openai/gpt-oss-20b,gemini:gemini-flash-lite-latest"
@@ -69,15 +74,27 @@ function routeFor(task) {
 // Local runtimes have no allowance; the limit only guards against a runaway loop.
 const DEFAULT_DAILY_LIMITS = { groq: 12000, gemini: 400, openrouter: 45, ollama: 200000, local: 200000, fake: 1000000 };
 
-const dailyLimit = (provider) => int(process.env[`AI_DAILY_LIMIT_${provider.toUpperCase()}`], DEFAULT_DAILY_LIMITS[provider] || 100);
+/**
+ * Every key of a provider, in the order written. <PROVIDER>_API_KEYS and
+ * <PROVIDER>_API_KEY both accept one key or several separated by commas (or
+ * spaces / new lines); the two lists are joined and repeats dropped.
+ */
+function apiKeys(provider) {
+    const name = provider === 'local' ? 'LOCAL_AI' : provider.toUpperCase();
+    const text = [process.env[`${name}_API_KEYS`], process.env[`${name}_API_KEY`]].filter(Boolean).join(',');
+    const keys = text
+        .split(/[\s,]+/)
+        .map((k) => k.replace(/^["']|["']$/g, ''))
+        .filter(Boolean);
+    return [...new Set(keys)];
+}
 
-const apiKey = (provider) =>
-    ({
-        groq: process.env.GROQ_API_KEY,
-        gemini: process.env.GEMINI_API_KEY,
-        openrouter: process.env.OPENROUTER_API_KEY,
-        local: process.env.LOCAL_AI_API_KEY,
-    })[provider];
+const apiKey = (provider) => apiKeys(provider)[0];
+
+// AI_DAILY_LIMIT_<PROVIDER> is the allowance of one key (one account); with
+// several keys the provider as a whole may be used that many times over.
+const dailyLimit = (provider) =>
+    int(process.env[`AI_DAILY_LIMIT_${provider.toUpperCase()}`], DEFAULT_DAILY_LIMITS[provider] || 100) * Math.max(1, apiKeys(provider).length);
 
 // A model on a CPU answers far slower than a hosted API.
 const LOCAL_PROVIDERS = new Set(['ollama', 'local']);
@@ -88,6 +105,7 @@ module.exports = {
     parseRoute,
     dailyLimit,
     apiKey,
+    apiKeys,
     timeoutMs: (provider) =>
         LOCAL_PROVIDERS.has(provider) ? int(process.env.LOCAL_AI_TIMEOUT_MS, 45000) : int(process.env.AI_TIMEOUT_MS, 8000),
     userDailyLimit: () => int(process.env.AI_USER_DAILY_LIMIT, 40),

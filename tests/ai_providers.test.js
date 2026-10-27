@@ -33,6 +33,7 @@ describe('AI providers: wire formats', () => {
                 const out = behave(record);
                 res.statusCode = out.status || 200;
                 res.setHeader('Content-Type', 'application/json');
+                for (const [name, value] of Object.entries(out.headers || {})) res.setHeader(name, value);
                 if (out.delay) return setTimeout(() => res.end(JSON.stringify(out.body)), out.delay);
                 res.end(typeof out.body === 'string' ? out.body : JSON.stringify(out.body));
             });
@@ -165,6 +166,114 @@ describe('AI providers: wire formats', () => {
             behave = () => ({ status: 429, body: { error: { code: 429, message: 'Resource has been exhausted', status: 'RESOURCE_EXHAUSTED' } } });
             assert.equal((await run()).ok, false);
             assert.equal((await t.sql(`SELECT outcome FROM ai_calls WHERE provider = 'gemini' ORDER BY call_id DESC LIMIT 1`)).rows[0].outcome, 'RATE_LIMITED');
+        });
+    });
+
+    describe('several keys for one provider', () => {
+        const savedKeys = {};
+        const keyOf = (req) => (req.headers.authorization || '').replace('Bearer ', '');
+        before(() => {
+            for (const k of ['GROQ_API_KEY', 'OPENROUTER_API_KEY']) savedKeys[k] = process.env[k];
+        });
+        beforeEach(() => {
+            process.env.AI_ROUTE_ASK = 'groq:m1';
+            process.env.GROQ_API_KEY = 'gk-1, gk-2 ,gk-3';
+        });
+        after(() => {
+            Object.assign(process.env, savedKeys);
+        });
+
+        it('reads comma-separated keys, joins *_API_KEYS, and drops repeats', () => {
+            const { apiKeys } = require('../src/config/ai');
+            assert.deepEqual(apiKeys('groq'), ['gk-1', 'gk-2', 'gk-3']);
+            process.env.GROQ_API_KEYS = '"gk-3"\ngk-4';
+            assert.deepEqual(apiKeys('groq'), ['gk-3', 'gk-4', 'gk-1', 'gk-2']);
+            delete process.env.GROQ_API_KEYS;
+        });
+
+        it('uses the first key until it is rate limited, then repeats the identical request with the next', async () => {
+            behave = (req) => (keyOf(req) === 'gk-1' ? { status: 429, body: { error: { message: 'limit' } } } : { body: openAiReply('{"answer":"from key 2"}') });
+            const logged = async () => (await t.sql(`SELECT COUNT(*)::int AS n FROM ai_calls WHERE provider = 'groq'`)).rows[0].n;
+            const before = await logged();
+            const r = await run();
+            assert.deepEqual(r, { ok: true, data: { answer: 'from key 2' }, provider: 'groq', model: 'm1' });
+            assert.deepEqual(requests.map(keyOf), ['gk-1', 'gk-2']);
+            assert.deepEqual(requests[0].body, requests[1].body, 'the retry carries exactly the same context');
+            assert.equal((await logged()) - before, 1, 'one logged attempt: the rotation is invisible to the quota ledger');
+            assert.equal((await t.sql(`SELECT outcome FROM ai_calls WHERE provider = 'groq' ORDER BY call_id DESC LIMIT 1`)).rows[0].outcome, 'OK');
+        });
+
+        it('keeps going with the working key without asking the spent one again', async () => {
+            behave = (req) => (keyOf(req) === 'gk-1' ? { status: 429, body: {} } : { body: openAiReply('{"answer":"ok"}') });
+            await run();
+            requests = [];
+            await run();
+            await run();
+            assert.deepEqual(requests.map(keyOf), ['gk-2', 'gk-2']);
+        });
+
+        it('honours Retry-After: the spent key comes back when its rest is over', async () => {
+            let first = true;
+            behave = (req) => {
+                if (keyOf(req) === 'gk-1' && first) {
+                    first = false;
+                    return { status: 429, body: {}, headers: { 'retry-after': '1' } };
+                }
+                return { body: openAiReply('{"answer":"ok"}') };
+            };
+            await run();
+            requests = [];
+            await run();
+            assert.deepEqual(requests.map(keyOf), ['gk-2'], 'still resting');
+            await new Promise((r) => setTimeout(r, 1100));
+            requests = [];
+            await run();
+            assert.deepEqual(requests.map(keyOf), ['gk-1'], 'back in service, first in order');
+        });
+
+        it('moves on from a refused key (401) or an empty account (402), but not from other errors', async () => {
+            behave = (req) => (keyOf(req) === 'gk-1' ? { status: 401, body: { error: { message: 'bad key' } } } : { body: openAiReply('{"answer":"ok"}') });
+            assert.equal((await run()).ok, true);
+            assert.deepEqual(requests.map(keyOf), ['gk-1', 'gk-2']);
+
+            gateway()._resetBreakers();
+            requests = [];
+            behave = () => ({ status: 500, body: { error: 'boom' } });
+            assert.equal((await run()).ok, false);
+            assert.deepEqual(requests.map(keyOf), ['gk-1'], 'a server error is not a key problem: no rotation');
+        });
+
+        it('fails over to the next provider only when every key has been turned away, then skips it without calling', async () => {
+            process.env.AI_ROUTE_ASK = 'groq:m1,gemini:m3';
+            behave = (req) => (req.url.startsWith('/groq') ? { status: 429, body: {} } : { body: geminiReply('{"answer":"gemini took over"}') });
+            const r = await run();
+            assert.equal(r.provider, 'gemini');
+            assert.deepEqual(requests.filter((q) => q.url.startsWith('/groq')).map(keyOf), ['gk-1', 'gk-2', 'gk-3']);
+            requests = [];
+            assert.equal((await run()).provider, 'gemini');
+            assert.ok(requests.every((q) => !q.url.startsWith('/groq')), 'all keys resting: groq is not called at all');
+            const h = (await gateway().health()).providers.find((p) => p.provider === 'groq');
+            assert.equal(h.keys_total, 3);
+            assert.equal(h.keys_available, 0);
+        });
+
+        it('multiplies the daily allowance by the number of keys, and never reports a key', async () => {
+            const { dailyLimit } = require('../src/config/ai');
+            process.env.AI_DAILY_LIMIT_GROQ = '100';
+            assert.equal(dailyLimit('groq'), 300);
+            delete process.env.AI_DAILY_LIMIT_GROQ;
+            const rows = (await t.sql(`SELECT row_to_json(c)::text AS j FROM ai_calls c`)).rows;
+            assert.ok(rows.every((r) => !/gk-[123]/.test(r.j)));
+            assert.ok(!JSON.stringify(await gateway().health()).includes('gk-'));
+        });
+
+        it('does not set aside a provider that has only one key', async () => {
+            process.env.GROQ_API_KEY = 'solo';
+            behave = () => ({ status: 429, body: {} });
+            await run();
+            requests = [];
+            await run();
+            assert.equal(requests.length, 1, 'still tried: there is nothing to rotate to');
         });
     });
 

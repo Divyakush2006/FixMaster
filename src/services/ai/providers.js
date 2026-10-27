@@ -1,4 +1,4 @@
-const { apiKey } = require('../../config/ai');
+const keyPool = require('./keyPool');
 
 // Provider adapters. Each takes { model, system, user, maxTokens, signal } and
 // returns { text, inputTokens, outputTokens } or throws a ProviderError whose
@@ -10,12 +10,20 @@ const { apiKey } = require('../../config/ai');
 // promises.
 
 class ProviderError extends Error {
-    constructor(kind, message, status) {
+    constructor(kind, message, status, { rotate = false, retryAfterMs } = {}) {
         super(message);
         this.kind = kind;
         this.status = status;
+        // True when the key itself was turned away (rate limited, refused,
+        // out of credit): another key may succeed with the identical request.
+        this.rotate = rotate;
+        this.retryAfterMs = retryAfterMs;
     }
 }
+
+// 401 = key refused, 402 = no credit left (OpenRouter). A refused key will not
+// recover on its own soon, so it is set aside for an hour.
+const KEY_REFUSED_COOLDOWN_MS = 60 * 60 * 1000;
 
 async function postJson(url, headers, body, signal) {
     let res;
@@ -26,32 +34,63 @@ async function postJson(url, headers, body, signal) {
         throw new ProviderError('ERROR', `Network error: ${err.message}`);
     }
     const payload = await res.json().catch(() => null);
-    if (res.status === 429) throw new ProviderError('RATE_LIMITED', 'The provider is rate limiting us.', 429);
+    if (res.status === 429) {
+        const retryAfterMs = keyPool.parseRetryAfter(res.headers.get('retry-after')) ?? keyPool.DEFAULT_COOLDOWN_MS;
+        throw new ProviderError('RATE_LIMITED', 'The provider is rate limiting us.', 429, { rotate: true, retryAfterMs });
+    }
     if (!res.ok) {
         const detail = payload && (payload.error?.message || payload.error || payload.message);
-        throw new ProviderError('ERROR', `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 200)}` : ''}`, res.status);
+        const refused = res.status === 401 || res.status === 402;
+        throw new ProviderError('ERROR', `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 200)}` : ''}`, res.status, {
+            rotate: refused,
+            retryAfterMs: refused ? KEY_REFUSED_COOLDOWN_MS : undefined,
+        });
     }
     return payload;
 }
 
+/**
+ * Runs `attempt(key)` with the provider's first usable key; if the provider
+ * turns that key away, sets it aside and repeats the same call with the next
+ * one. Any other failure (timeout, server error, bad output) is not a key
+ * problem and is thrown as is. When every key has been turned away, the last
+ * refusal is thrown so the gateway records it and moves down its chain.
+ */
+async function withKeys(provider, attempt) {
+    const keys = keyPool.available(provider);
+    if (keys.length === 0) {
+        throw new ProviderError('RATE_LIMITED', 'Every key for this provider is set aside after hitting a limit.', 429);
+    }
+    let last;
+    for (const key of keys) {
+        try {
+            return await attempt(key);
+        } catch (err) {
+            if (!(err instanceof ProviderError) || !err.rotate) throw err;
+            keyPool.cooldown(provider, key, err.retryAfterMs);
+            last = err;
+        }
+    }
+    throw last;
+}
+
 /** Groq and OpenRouter both speak the OpenAI chat-completions dialect. */
 const openAiCompatible = (base, extraHeaders = {}) => async (provider, { model, system, user, maxTokens, signal }) => {
-    const key = apiKey(provider);
-    const payload = await postJson(
-        `${typeof base === 'function' ? base() : base}/chat/completions`,
-        { ...(key ? { Authorization: `Bearer ${key}` } : {}), ...extraHeaders },
-        {
-            model,
-            messages: [
-                { role: 'system', content: system },
-                { role: 'user', content: user },
-            ],
-            temperature: 0.1,
-            max_tokens: maxTokens,
-            response_format: { type: 'json_object' },
-        },
-        signal
-    );
+    const body = {
+        model,
+        messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+        ],
+        temperature: 0.1,
+        max_tokens: maxTokens,
+        response_format: { type: 'json_object' },
+    };
+    const url = `${typeof base === 'function' ? base() : base}/chat/completions`;
+    // A local server may have no key at all; a hosted provider rotates through its keys.
+    const payload = keyPool.status(provider).total
+        ? await withKeys(provider, (key) => postJson(url, { Authorization: `Bearer ${key}`, ...extraHeaders }, body, signal))
+        : await postJson(url, extraHeaders, body, signal);
     const text = payload?.choices?.[0]?.message?.content;
     if (typeof text !== 'string' || !text.trim()) throw new ProviderError('ERROR', 'The provider returned no content.');
     return { text, inputTokens: payload.usage?.prompt_tokens ?? null, outputTokens: payload.usage?.completion_tokens ?? null };
@@ -59,15 +98,13 @@ const openAiCompatible = (base, extraHeaders = {}) => async (provider, { model, 
 
 async function gemini(provider, { model, system, user, maxTokens, signal }) {
     const base = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '');
-    const payload = await postJson(
-        `${base}/models/${encodeURIComponent(model)}:generateContent`,
-        { 'x-goog-api-key': apiKey(provider) },
-        {
-            systemInstruction: { parts: [{ text: system }] },
-            contents: [{ role: 'user', parts: [{ text: user }] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
-        },
-        signal
+    const body = {
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts: [{ text: user }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
+    };
+    const payload = await withKeys(provider, (key) =>
+        postJson(`${base}/models/${encodeURIComponent(model)}:generateContent`, { 'x-goog-api-key': key }, body, signal)
     );
     const text = payload?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('');
     if (!text || !text.trim()) throw new ProviderError('ERROR', 'The provider returned no content.');
@@ -149,8 +186,11 @@ function isAvailable(provider) {
     // Local runtimes are opt-in by address, so nothing calls them by accident.
     if (provider === 'ollama') return !!process.env.OLLAMA_BASE_URL;
     if (provider === 'local') return !!process.env.LOCAL_AI_BASE_URL;
-    return !!ADAPTERS[provider] && !!apiKey(provider);
+    return !!ADAPTERS[provider] && keyPool.status(provider).total > 0;
 }
+
+/** Keys configured and keys usable now (not set aside after a limit); both 0 for keyless providers. */
+const keyStatus = (provider) => keyPool.status(provider);
 
 function call(provider, request) {
     return ADAPTERS[provider](provider, request);
@@ -159,6 +199,8 @@ function call(provider, request) {
 module.exports = {
     ProviderError,
     isAvailable,
+    keyStatus,
+    resetKeys: keyPool.reset,
     call,
     setFakeResponder: (fn) => {
         fakeResponder = fn;

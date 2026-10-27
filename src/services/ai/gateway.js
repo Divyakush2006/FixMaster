@@ -138,6 +138,9 @@ async function run({ task, promptVersion, system, user, schema, userId = null, f
     const runId = crypto.randomUUID();
     for (const { provider, model } of routeFor(task)) {
         if (!providers.isAvailable(provider) || breakerOpen(provider)) continue;
+        // Every key of this provider was turned away a moment ago: skip it without a call.
+        const keys = providers.keyStatus(provider);
+        if (keys.total > 0 && keys.available === 0) continue;
         const base = { runId, task, provider, model, promptVersion, userId, flaggedInjection };
         if ((await usedToday(provider)) >= dailyLimit(provider)) {
             await logCall({ ...base, outcome: 'QUOTA', errorCode: 'daily limit reached' });
@@ -205,6 +208,8 @@ async function health() {
         return {
             provider,
             configured: providers.isAvailable(provider),
+            keys_total: providers.keyStatus(provider).total,
+            keys_available: providers.keyStatus(provider).available,
             breaker_open: breakerOpen(provider),
             used_today: r.used_today,
             daily_limit: dailyLimit(provider),
@@ -215,7 +220,7 @@ async function health() {
         };
     });
     const drillState = await drill();
-    const usable = list.filter((p) => p.configured && !p.breaker_open && p.used_today < p.daily_limit);
+    const usable = list.filter((p) => p.configured && !p.breaker_open && p.used_today < p.daily_limit && (p.keys_total === 0 || p.keys_available > 0));
     let status;
     if (drillState) status = 'DOWN';
     else if (!list.some((p) => p.configured)) status = 'DISABLED';
@@ -225,4 +230,7 @@ async function health() {
     return { status, drill: drillState, providers: list, routes: Object.fromEntries(TASKS.map((t) => [t, routeFor(t)])) };
 }
 
-module.exports = { run, health, setDrill, _resetBreakers: () => breakers.clear() };
+module.exports = { run, health, setDrill, _resetBreakers: () => {
+        breakers.clear();
+        providers.resetKeys();
+    } };
