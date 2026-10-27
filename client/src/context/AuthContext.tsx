@@ -13,8 +13,6 @@ interface AuthContextType {
   register: (payload: RegisterPayload) => Promise<RegisterResponse>;
   /** Confirms the emailed sign-up code; opens the session. */
   verifyEmail: (reg_or_emp_id: string, code: string) => Promise<User>;
-  /** After university sign-in: reads the session the browser was just given and starts the app from it. */
-  completeSso: () => Promise<User>;
   /** Merges fresh account details (e.g. account_status after onboarding) into the session. */
   updateUser: (patch: Partial<User>) => void;
   logout: () => void;
@@ -94,14 +92,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return res.user;
   };
 
-  const completeSso = async (): Promise<User> => {
-    const res = await authApi.session();
-    queryClient.clear();
-    saveSession(res.user, res.expires_at);
-    setUser(res.user);
-    return res.user;
-  };
-
   const updateUser = useCallback((patch: Partial<User>) => {
     updateStoredUser(patch);
     setUser((current) => (current ? { ...current, ...patch } : current));
@@ -128,7 +118,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         register,
         verifyEmail,
-        completeSso,
         updateUser,
         logout,
         renewSession,

@@ -14,7 +14,8 @@
  *     complete profile and a current allotment);
  *   - common areas on every floor;
  *   - housekeeping, electrical, plumbing, carpentry and AC staff for every
- *     block plus a campus pool, supervisors for groups of blocks, and a chief
+ *     block (11 each, two on most trades so the autopilot has a real choice)
+ *     plus a campus pool of 11, supervisors for groups of blocks, and a chief
  *     warden;
  *   - `--days` days of ticket history in every state, with assignments by
  *     trade, ratings that differ by technician, and some comments.
@@ -132,7 +133,7 @@ async function generate({ connectionString, days = 90, perStudent = 0.75, reset 
                  ('CLEANING', 'MORNING', 1), ('CLEANING', 'EVENING', 1), ('ELECTRICIAN', 'MORNING', 1),
                  ('PLUMBER', 'MORNING', 1), ('CARPENTER', 'MORNING', 1), ('AC_TECH', 'MORNING', 1),
                  ('CLEANING', 'MORNING', 2), ('ELECTRICIAN', 'EVENING', 2), ('PLUMBER', 'EVENING', 2), ('CARPENTER', 'EVENING', 2), ('AC_TECH', 'EVENING', 2)
-             ) AS s(trade, shift, k) ON (b.block_id IS NOT NULL AND s.k = 1) OR (b.block_id IS NULL)`,
+             ) AS s(trade, shift, k) ON TRUE`,
             [genBlocks]
         );
         await q(

@@ -74,9 +74,6 @@ export const authApi = {
   // finish even when the page is navigating away.
   logout: () => apiFetch<void>('/auth/logout', { method: 'POST', keepalive: true }),
 
-  /** The session the browser holds, right after university sign-in brought it back with a cookie. */
-  session: () => apiFetch<AuthResponse>('/auth/session', { method: 'GET' }),
-
   /** What this deployment can do, e.g. whether password-reset email is set up. */
   capabilities: () => apiFetch<AuthCapabilities>('/auth/capabilities', { method: 'GET' }),
 

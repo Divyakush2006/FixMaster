@@ -13,7 +13,6 @@ const { hashPassword } = require('../services/userService');
 const { issueResetToken, readResetToken, matchesCurrentPassword, TTL_MINUTES } = require('../services/passwordResetService');
 const verification = require('../services/emailVerificationService');
 const { maskEmail, EMAIL_CODE_TTL_MINUTES, studentEmailDomains, PRIVACY_NOTICE_VERSION, appBaseUrl } = require('../config/identity');
-const oidc = require('../services/oidc');
 
 // A real bcrypt hash (cost 12) of a throwaway string. Login compares against
 // it when the ID doesn't exist, so an unknown ID costs the same ~250ms as a
@@ -217,7 +216,6 @@ exports.capabilities = (req, res) => {
         student_signup: mailer.isConfigured(),
         student_email_domains: studentEmailDomains(),
         privacy_notice_version: PRIVACY_NOTICE_VERSION,
-        sso: oidc.isEnabled() ? { label: oidc.config().label } : null,
     });
 };
 

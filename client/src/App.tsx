@@ -19,7 +19,6 @@ const named = <T extends Record<string, React.ComponentType<any>>>(loader: () =>
 const LoginScreen = named(() => import('./features/auth/LoginScreen'), 'LoginScreen');
 const RegisterScreen = named(() => import('./features/auth/RegisterScreen'), 'RegisterScreen');
 const VerifyEmailScreen = named(() => import('./features/auth/VerifyEmailScreen'), 'VerifyEmailScreen');
-const SsoDonePage = named(() => import('./features/auth/SsoDonePage'), 'SsoDonePage');
 const OnboardingPage = named(() => import('./features/onboarding/OnboardingPage'), 'OnboardingPage');
 const ForgotPasswordScreen = named(() => import('./features/auth/PasswordResetScreens'), 'ForgotPasswordScreen');
 const ResetPasswordScreen = named(() => import('./features/auth/PasswordResetScreens'), 'ResetPasswordScreen');
@@ -71,7 +70,6 @@ export const App: React.FC = () => {
                     <Route path="/login" element={<LoginScreen />} />
                     <Route path="/register" element={<RegisterScreen />} />
                     <Route path="/verify-email" element={<VerifyEmailScreen />} />
-                    <Route path="/auth/sso/done" element={<SsoDonePage />} />
                     {/* Public: a student reads it before they have an account. */}
                     <Route path="/privacy" element={<PrivacyNoticePage />} />
 

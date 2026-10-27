@@ -8,8 +8,7 @@
  * seed, builds the web app, starts the API and a static server for the built
  * app on spare ports (5878 and 3878), runs Playwright with software rendering
  * only (no GPU), then stops everything. It never touches the development
- * database. Sign-in with the university account goes to a stand-in identity
- * provider (e2e/mock-idp.js). Mail goes to a small built-in catcher (e2e/mail-catcher.js) that
+ * database. Mail goes to a small built-in catcher (e2e/mail-catcher.js) that
  * answers the same calls as Mailpit, so the sign-up and password-reset tests
  * run here too.
  */
@@ -46,19 +45,12 @@ async function waitFor(url, what) {
     // Mail goes to a catcher that answers the same calls as Mailpit, so the sign-up and password-reset tests run too.
     // It runs as its own process: Playwright is started synchronously below, which would stop a catcher living in this one.
     const mail = { smtpPort: 2578, httpPort: 8078 };
-    // The university sign-in is a stand-in provider, also its own process (see mock-idp.js).
-    const idp = { port: 7078, clientId: 'fixmaster-e2e', clientSecret: 'e2e-not-a-real-secret' };
     const env = {
         ...process.env,
         SMTP_URL: `smtp://127.0.0.1:${mail.smtpPort}`,
         MAIL_FROM: 'FixMaster <no-reply@fixmaster.test>',
         E2E_MAIL_URL: `http://127.0.0.1:${mail.httpPort}`,
-        OIDC_ISSUER: `http://127.0.0.1:${idp.port}`,
-        OIDC_CLIENT_ID: idp.clientId,
-        OIDC_CLIENT_SECRET: idp.clientSecret,
-        OIDC_REDIRECT_URI: `http://127.0.0.1:${WEB_PORT}/api/auth/sso/callback`,
         APP_URL: `http://127.0.0.1:${WEB_PORT}`,
-        E2E_SSO: '1',
         NODE_ENV: 'development',
         PORT: String(API_PORT),
         DATABASE_URL: helpers.TEST_DB_URL,
@@ -74,11 +66,6 @@ async function waitFor(url, what) {
     delete env.OLLAMA_BASE_URL;
     const children = [
         spawn(process.execPath, [path.join(__dirname, 'mail-catcher.js')], { cwd: root, env: { ...env, MAIL_SMTP_PORT: String(mail.smtpPort), MAIL_HTTP_PORT: String(mail.httpPort) }, stdio: 'inherit' }),
-        spawn(process.execPath, [path.join(__dirname, 'mock-idp.js')], {
-            cwd: root,
-            env: { ...env, MOCK_IDP_PORT: String(idp.port), MOCK_IDP_CLIENT_ID: idp.clientId, MOCK_IDP_CLIENT_SECRET: idp.clientSecret },
-            stdio: 'inherit',
-        }),
         spawn(process.execPath, ['src/server.js'], { cwd: root, env, stdio: 'inherit' }),
         spawn(npx, ['vite', 'preview', '--port', String(WEB_PORT), '--strictPort', '--host', '127.0.0.1'], { cwd: path.join(root, 'client'), env, stdio: 'inherit', shell: process.platform === 'win32' }),
     ];
