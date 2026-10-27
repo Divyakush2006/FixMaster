@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, MailCheck } from 'lucide-react';
 import { authApi } from '../../api/endpoints';
@@ -74,16 +74,22 @@ export const ForgotPasswordScreen: React.FC = () => {
 
 const STRENGTH_BAR = ['', 'bg-rose-500', 'bg-amber-500', 'bg-emerald-500'];
 
-/** The token lives in the URL fragment (never sent to a server); read it once, then remove it from the address bar. */
-function takeTokenFromUrl(): string {
+/**
+ * The token lives in the URL fragment (never sent to a server). Reading it must have no side
+ * effect: React may render this component again (for example while a lazy chunk loads), and a
+ * second render must still find the token. It is removed from the address bar in an effect.
+ */
+function readTokenFromUrl(): string {
   const match = /(?:^#|&)token=([\w.-]+)/.exec(window.location.hash);
-  if (match) window.history.replaceState(null, '', window.location.pathname);
   return match ? match[1] : '';
 }
 
 /** /reset-password#token=... - choose a new password. */
 export const ResetPasswordScreen: React.FC = () => {
-  const [token] = useState(takeTokenFromUrl);
+  const [token] = useState(readTokenFromUrl);
+  useEffect(() => {
+    if (window.location.hash) window.history.replaceState(null, '', window.location.pathname);
+  }, []);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);

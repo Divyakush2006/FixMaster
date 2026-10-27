@@ -44,7 +44,9 @@ export function mapApiError(rawError: unknown): string {
     return 'The ID or password is incorrect. Check both and try again.';
   }
 
-  if (message.includes('JWT') || message.includes('expired') || message.includes('token')) {
+  // The API's wording for a missing, bad or lapsed session. Not any message that merely says "expired":
+  // an expired reset link or email code has its own, clearer wording from the server.
+  if (/jwt|no token provided|invalid or expired token|session is no longer valid/i.test(message)) {
     return 'Your session has expired. Please log in again.';
   }
 

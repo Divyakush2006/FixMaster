@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -54,6 +55,28 @@ describe('password reset screens', () => {
     await user.click(screen.getByRole('button', { name: /email me a reset link/i }));
     await screen.findByText(/check your email/i);
     expect(forgotPassword).toHaveBeenCalledWith('21bce0843');
+  });
+
+  it('still has the token when React renders the page a second time (a lazy chunk suspending, StrictMode)', async () => {
+    window.location.hash = '#token=abc.def-ghi';
+    resetPassword.mockResolvedValue({ message: 'ok' });
+    const user = userEvent.setup();
+    render(
+      <React.StrictMode>
+        <MemoryRouter initialEntries={['/reset-password']}>
+          <Routes>
+            <Route path="/reset-password" element={<ResetPasswordScreen />} />
+            <Route path="/login" element={<p>sign-in page</p>} />
+          </Routes>
+        </MemoryRouter>
+      </React.StrictMode>
+    );
+    expect(screen.queryByText(/link is incomplete/i)).toBeNull();
+    await user.type(screen.getByLabelText(/^new password/i), GOOD);
+    await user.type(screen.getByLabelText(/confirm new password/i), GOOD);
+    await user.click(screen.getByRole('button', { name: /change password/i }));
+    await screen.findByText('sign-in page');
+    expect(resetPassword).toHaveBeenCalledWith('abc.def-ghi', GOOD);
   });
 
   it('reads the token from the URL fragment, removes it from the address bar and submits it once', async () => {

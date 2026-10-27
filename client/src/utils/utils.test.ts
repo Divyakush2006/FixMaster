@@ -20,6 +20,17 @@ describe('mapApiError', () => {
       'Room L-843 does not belong to block PRP_BLOCK.'
     );
   });
+  it('keeps the server wording for an expired reset link or email code, which are not session problems', () => {
+    const reset = 'This reset link is invalid or has expired. Request a new one.';
+    const code = 'That code is wrong or has expired. Check the latest email, or ask for a new code.';
+    expect(mapApiError({ error: reset })).toBe(reset);
+    expect(mapApiError({ error: code })).toBe(code);
+  });
+  it('still explains a lapsed session', () => {
+    for (const error of ['Invalid or expired token.', 'Access denied. No token provided.', 'jwt expired']) {
+      expect(mapApiError({ error })).toMatch(/session has expired/i);
+    }
+  });
   it('never shows raw database text', () => {
     expect(mapApiError({ error: 'insert or update on table "complaints" violates foreign key constraint' })).not.toMatch(/violates/);
   });
