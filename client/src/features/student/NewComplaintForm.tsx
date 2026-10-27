@@ -117,13 +117,13 @@ export const NewComplaintForm: React.FC = () => {
   const selectedSubcategory = subcategories.find((s) => s.subcategory_id === subcategoryId);
   const selectedArea = commonAreas.find((a) => a.area_id === commonAreaId);
 
-  // The issue sets a default priority. A student may lower it, or raise it
-  // by one level (the server enforces the same rule).
+  // The issue sets a default priority. A student may choose within one level
+  // either side of it (the server enforces the same rule).
   useEffect(() => {
     if (selectedSubcategory) setPriority(selectedSubcategory.priority_level);
   }, [selectedSubcategory]);
   const allowedPriorities = selectedSubcategory
-    ? PRIORITIES.slice(0, Math.min(PRIORITIES.indexOf(selectedSubcategory.priority_level) + 2, PRIORITIES.length))
+    ? PRIORITIES.slice(Math.max(PRIORITIES.indexOf(selectedSubcategory.priority_level) - 1, 0), Math.min(PRIORITIES.indexOf(selectedSubcategory.priority_level) + 2, PRIORITIES.length))
     : PRIORITIES;
 
   const mutation = useMutation({
@@ -346,7 +346,7 @@ export const NewComplaintForm: React.FC = () => {
                 label="Priority"
                 hint={
                   selectedSubcategory
-                    ? `Default for this issue: ${PRIORITY_LABEL[selectedSubcategory.priority_level]}. You can raise it by one level if the situation is worse than usual.`
+                    ? `Default for this issue: ${PRIORITY_LABEL[selectedSubcategory.priority_level]}. You can move it one level up or down if the situation is worse or milder than usual.`
                     : 'Choose the issue first; its usual priority is filled in for you.'
                 }
               >

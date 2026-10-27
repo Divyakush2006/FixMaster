@@ -59,7 +59,7 @@ the whole loop: intake, dispatch, on-site work, student verification and analyti
 - Raise a ticket for their room or a common area, choosing from 6 categories and 25 issue types.
 - If a roommate already reported the same thing, they are added to that ticket instead of opening a second one.
 - See every ticket for their room, not only their own, and who reported it.
-- Priority defaults from the issue type; a student can raise it by at most one level.
+- Priority defaults from the issue type; a student can move it one level up or down at most.
 - Follow each ticket on a timeline, then accept the fix with a rating or reject it. Any resident of the room can do this.
 - Withdraw a request until a technician is assigned.
 

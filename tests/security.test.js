@@ -145,6 +145,29 @@ describe('security and operational controls', () => {
             assert.match(r.data.error, /highest priority you can choose is Medium/);
         });
 
+        it('a student can choose only one level either side of the issue default', () => {
+            const { _resolvePriority: resolve } = require('../src/controllers/complaintController');
+            const order = ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'];
+            for (const [d, fallback] of order.entries()) {
+                for (const [r, requested] of order.entries()) {
+                    const call = () => resolve(requested, fallback, 'STUDENT');
+                    if (Math.abs(r - d) <= 1) assert.equal(call(), requested, `${fallback} issue may be filed as ${requested}`);
+                    else assert.throws(call, /priority you can choose/, `${fallback} issue may not be filed as ${requested}`);
+                    assert.equal(resolve(requested, fallback, 'SUPERVISOR'), requested, 'a supervisor may set any');
+                }
+                assert.equal(resolve(undefined, fallback, 'STUDENT'), fallback, 'no request means the issue default');
+            }
+            assert.throws(() => resolve('LOW', 'HIGH', 'STUDENT'), /lowest priority you can choose is Medium/);
+            assert.throws(() => resolve('EMERGENCY', 'LOW', 'STUDENT'), /highest priority you can choose is Medium/);
+        });
+
+        it('over the API, a hazard cannot be filed as routine work', async () => {
+            const student = await t.login(SEED.student2);
+            const low = await raise(student, { subcategory_id: SEED.sub.socket, priority: 'LOW' });
+            assert.equal(low.status, 400);
+            assert.match(low.data.error, /lowest priority you can choose is Medium/);
+        });
+
         it('a student may raise priority by one level, and the default comes from the issue', async () => {
             const student = await t.login(SEED.student2);
             const up = await raise(student, { subcategory_id: SEED.sub.socket, priority: 'EMERGENCY' });

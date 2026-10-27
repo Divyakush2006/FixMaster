@@ -64,6 +64,9 @@ async function waitFor(url, what) {
         API_PROXY_TARGET: `http://127.0.0.1:${API_PORT}`,
     };
     delete env.OLLAMA_BASE_URL;
+    // The browser tests must not call real AI providers: answers would vary run to run and spend free-tier quota.
+    // Empty (not deleted) so the server's dotenv cannot fill them in from a developer's .env.
+    for (const name of ['GROQ', 'GEMINI', 'OPENROUTER']) env[`${name}_API_KEY`] = env[`${name}_API_KEYS`] = '';
     const children = [
         spawn(process.execPath, [path.join(__dirname, 'mail-catcher.js')], { cwd: root, env: { ...env, MAIL_SMTP_PORT: String(mail.smtpPort), MAIL_HTTP_PORT: String(mail.httpPort) }, stdio: 'inherit' }),
         spawn(process.execPath, ['src/server.js'], { cwd: root, env, stdio: 'inherit' }),

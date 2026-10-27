@@ -93,22 +93,29 @@ function withViewerFlags(row, { role }) {
 }
 
 // Priority policy. Every issue type has a default priority. Supervisors and
-// administrators may set any priority; a student may raise it by at most one
-// level (e.g. a sparking socket, HIGH, can be reported as an EMERGENCY) but
-// cannot turn routine work such as room cleaning into an emergency to jump
-// every technician's queue.
+// administrators may set any priority; a student may choose within one level
+// either side of it. A sparking socket (HIGH) can be reported as an EMERGENCY,
+// or as MEDIUM when it is minor, but room cleaning (LOW) can only be LOW or
+// MEDIUM: it can never become an emergency that jumps every technician's
+// queue, and a hazard can never be filed as routine work.
 const PRIORITY_ORDER = ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'];
 const PRIORITY_LABEL = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', EMERGENCY: 'Emergency' };
 
 function resolvePriority(requested, issueDefault, role) {
     if (!requested) return issueDefault;
     if (role !== 'STUDENT') return requested;
-    const ceiling = Math.min(PRIORITY_ORDER.indexOf(issueDefault) + 1, PRIORITY_ORDER.length - 1);
-    if (PRIORITY_ORDER.indexOf(requested) > ceiling) {
+    const at = PRIORITY_ORDER.indexOf(issueDefault);
+    const floor = Math.max(at - 1, 0);
+    const ceiling = Math.min(at + 1, PRIORITY_ORDER.length - 1);
+    const asked = PRIORITY_ORDER.indexOf(requested);
+    if (asked > ceiling) {
         throw new AppError(
             400,
             `For this issue the highest priority you can choose is ${PRIORITY_LABEL[PRIORITY_ORDER[ceiling]]}. A supervisor can raise it further if needed.`
         );
+    }
+    if (asked < floor) {
+        throw new AppError(400, `For this issue the lowest priority you can choose is ${PRIORITY_LABEL[PRIORITY_ORDER[floor]]}. A supervisor can lower it if needed.`);
     }
     return requested;
 }
@@ -234,6 +241,8 @@ async function nameOf(client, userId) {
 
 const isLiveDuplicateViolation = (err) =>
     err && err.code === '23505' && typeof err.constraint === 'string' && err.constraint.startsWith('uq_live_');
+
+exports._resolvePriority = resolvePriority; // for the unit test of the priority window
 
 // POST /api/complaints (STUDENT, SUPERVISOR, ADMIN)
 //
