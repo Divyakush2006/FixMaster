@@ -8,8 +8,9 @@
  * seed, builds the web app, starts the API and a static server for the built
  * app on spare ports (5878 and 3878), runs Playwright with software rendering
  * only (no GPU), then stops everything. It never touches the development
- * database. The tests that need a mail catcher (password reset, sign-up) are
- * the ones that still need the Docker stack; run those with docker-compose.e2e.yml.
+ * database. Mail goes to a small built-in catcher (e2e/mail-catcher.js) that
+ * answers the same calls as Mailpit, so the sign-up and password-reset tests
+ * run here too.
  */
 const { spawn, spawnSync } = require('child_process');
 const path = require('path');
@@ -41,8 +42,14 @@ async function waitFor(url, what) {
     const build = spawnSync(npm, ['run', 'build'], { cwd: path.join(root, 'client'), stdio: 'inherit', shell: process.platform === 'win32' });
     if (build.status !== 0) throw new Error('the web app did not build');
 
+    // Mail goes to a catcher that answers the same calls as Mailpit, so the sign-up and password-reset tests run too.
+    // It runs as its own process: Playwright is started synchronously below, which would stop a catcher living in this one.
+    const mail = { smtpPort: 2578, httpPort: 8078 };
     const env = {
         ...process.env,
+        SMTP_URL: `smtp://127.0.0.1:${mail.smtpPort}`,
+        MAIL_FROM: 'FixMaster <no-reply@fixmaster.test>',
+        E2E_MAIL_URL: `http://127.0.0.1:${mail.httpPort}`,
         NODE_ENV: 'development',
         PORT: String(API_PORT),
         DATABASE_URL: helpers.TEST_DB_URL,
@@ -57,6 +64,7 @@ async function waitFor(url, what) {
     };
     delete env.OLLAMA_BASE_URL;
     const children = [
+        spawn(process.execPath, [path.join(__dirname, 'mail-catcher.js')], { cwd: root, env: { ...env, MAIL_SMTP_PORT: String(mail.smtpPort), MAIL_HTTP_PORT: String(mail.httpPort) }, stdio: 'inherit' }),
         spawn(process.execPath, ['src/server.js'], { cwd: root, env, stdio: 'inherit' }),
         spawn(npx, ['vite', 'preview', '--port', String(WEB_PORT), '--strictPort', '--host', '127.0.0.1'], { cwd: path.join(root, 'client'), env, stdio: 'inherit', shell: process.platform === 'win32' }),
     ];

@@ -7,14 +7,14 @@ async function register(page: Page, regNo: string, room: { block: string; floor:
   await page.goto('/register');
   await page.getByLabel('Registration number').fill(regNo);
   await page.getByLabel('Full name').fill('E2E Newcomer');
-  await page.getByLabel('Email', { exact: true }).fill(studentEmail(regNo));
+  await page.getByLabel(/^Email\s*\*?$/).fill(studentEmail(regNo));
   await page.getByLabel('Mobile number').fill('9876543210');
   if (room) {
     await page.getByLabel('Block').selectOption({ label: room.block });
     await page.getByLabel('Floor').selectOption({ label: room.floor });
-    await page.getByLabel('Room').selectOption({ label: room.room });
+    await page.getByLabel('Room').selectOption(room.room);
   }
-  await page.getByLabel('Password', { exact: true }).fill(NEW_PASSWORD);
+  await page.getByLabel(/^Password\s*\*?$/).fill(NEW_PASSWORD);
   await page.getByLabel('Confirm password').fill(NEW_PASSWORD);
   await page.getByRole('button', { name: 'Create account' }).click();
   // Confirm the university mailbox, then the resident profile.
@@ -70,12 +70,12 @@ test.describe('registration, room requests and allotment', () => {
     await page.goto('/register');
     await page.getByLabel('Registration number').fill(regNo);
     await page.getByLabel('Full name').fill('E2E Unconfirmed');
-    await page.getByLabel('Email', { exact: true }).fill(studentEmail(regNo));
+    await page.getByLabel(/^Email\s*\*?$/).fill(studentEmail(regNo));
     await page.getByLabel('Mobile number').fill('9876543210');
     await page.getByLabel('Block').selectOption({ label: 'L-Block (Ladies/Mens Hostel)' });
     await page.getByLabel('Floor').selectOption({ label: 'Floor 3' });
-    await page.getByLabel('Room').selectOption({ label: 'L-305' });
-    await page.getByLabel('Password', { exact: true }).fill(NEW_PASSWORD);
+    await page.getByLabel('Room').selectOption('L-305');
+    await page.getByLabel(/^Password\s*\*?$/).fill(NEW_PASSWORD);
     await page.getByLabel('Confirm password').fill(NEW_PASSWORD);
     await page.getByRole('button', { name: 'Create account' }).click();
     await expect(page).toHaveURL(/\/verify-email/);
@@ -92,9 +92,9 @@ test.describe('registration, room requests and allotment', () => {
     await page.goto('/register');
     await page.getByLabel('Registration number').fill(uniqueReg());
     await page.getByLabel('Full name').fill('Weak Pass');
-    await page.getByLabel('Email', { exact: true }).fill(`weak${Date.now()}@vitstudent.ac.in`);
+    await page.getByLabel(/^Email\s*\*?$/).fill(`weak${Date.now()}@vitstudent.ac.in`);
     await page.getByLabel('Mobile number').fill('9876543210');
-    await page.getByLabel('Password', { exact: true }).fill('short');
+    await page.getByLabel(/^Password\s*\*?$/).fill('short');
     await page.getByLabel('Confirm password').fill('short');
     await page.getByRole('button', { name: 'Create account' }).click();
     await expect(page.getByText(/at least 8 characters/i).first()).toBeVisible();
