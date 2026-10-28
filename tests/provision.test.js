@@ -97,3 +97,48 @@ describe('provisioning accounts', () => {
         assert.equal(rows[0].email, 'owner@example.org');
     });
 });
+
+describe('provisioning from an earlier credentials file', () => {
+    const { passwordsFromFile } = require('../scripts/provision-accounts');
+    const sample = [
+        'ID        PASSWORD        NAME                     DETAILS',
+        'ADMIN_01  4R=p+dvzf9#5NR  Estates Administrator    ',
+        'ADMIN_02  &E?cmc2ku8$4QP  Estates Administrator 2  ',
+        '22BCE1001  3YcbNU$4er@?$W  Aarav Sharma        Men\'s hostel',
+        'Total: 298 account(s) in this file.',
+    ].join('\r\n');
+
+    it('reads the id and password of every account line, and nothing else', () => {
+        const found = passwordsFromFile(sample);
+        assert.equal(found.size, 3);
+        assert.equal(found.get('ADMIN_02'), '&E?cmc2ku8$4QP');
+        assert.equal(found.get('22BCE1001'), '3YcbNU$4er@?$W');
+        assert.ok(!found.has('ID') && !found.has('TOTAL:'));
+    });
+
+    it('creates the accounts with the passwords the file promised, which then sign in', async () => {
+        await resetDatabase();
+        const given = passwordsFromFile(sample);
+        const result = await provision({ connectionString: TEST_DB_URL, admins: 2, students: 1, requireChange: false, givenPasswords: given, log: () => {} });
+        const admin2 = result.created.find((p) => p.id === 'ADMIN_02');
+        assert.equal(admin2.password, '&E?cmc2ku8$4QP');
+        const student = result.created.find((p) => p.id === '22BCE1001');
+        assert.equal(student.password, '3YcbNU$4er@?$W');
+        // Accounts the file does not list still get their own random password.
+        const tech = result.created.find((p) => p.id === 'TECH_CLN_01');
+        assert.match(tech.password, /^.{14}$/);
+        assert.notEqual(tech.password, given.get('TECH_CLN_01'));
+        // The stored hash really is that password, and no password change is forced.
+        const { Client } = require('pg');
+        const bcrypt = require('bcrypt');
+        const c = new Client({ connectionString: TEST_DB_URL });
+        await c.connect();
+        try {
+            const row = (await c.query("SELECT password_hash, must_change_password FROM users WHERE reg_or_emp_id = 'ADMIN_02'")).rows[0];
+            assert.equal(await bcrypt.compare('&E?cmc2ku8$4QP', row.password_hash), true);
+            assert.equal(row.must_change_password, false);
+        } finally {
+            await c.end();
+        }
+    });
+});

@@ -12,6 +12,9 @@ const server = app.listen(PORT, () => {
     console.log(`FIX_MASTER API listening on port ${PORT} (${process.env.NODE_ENV || 'development'})`);
 });
 
+// Say in the log whether the mail service answers (never blocks start-up, never throws).
+require('./services/mailer').checkConnection();
+
 // Background job: close tickets nobody verified (see verificationSweeper.js).
 const stopSweeper = startVerificationSweeper();
 // Background job: themes in residents' review comments (see feedbackTagger.js).

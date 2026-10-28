@@ -19,6 +19,10 @@
  *   --email-domain <d>     placeholder email domain (default fixmaster.example: a reserved name that
  *                          can never be somebody's mailbox). Replace the addresses before relying on email.
  *   --admin-email <addr>   a real address for ADMIN_01, so "Forgot password" reaches them (others keep placeholders)
+ *   --from-file <file>     use the passwords already written in an earlier credentials file for the accounts it lists
+ *                          (the same roster in another database, e.g. to give a deployed site the accounts a staging
+ *                          file promised). Accounts that already exist are left alone. Keeps accounts usable as
+ *                          written: no forced password change unless --require-change is also given.
  *   --web-url <url>        shown in the credentials file
  *
  * The roster is fixed by the code, so running it again creates only what is missing.
@@ -154,7 +158,17 @@ function fullRoster({ admins, students }) {
 }
 
 // ---- writing it -------------------------------------------------------------------------------------------------
-async function provision({ connectionString, admins = 2, students = 200, campus = true, adminOnly = false, requireChange = false, rotate = false, emailDomain = 'fixmaster.example', adminEmail = null, log = console.log } = {}) {
+/** id -> password for every line of a credentials file that looks like `ID   PASSWORD   NAME ...`. */
+function passwordsFromFile(text) {
+    const found = new Map();
+    for (const line of String(text).split(/\r?\n/)) {
+        const m = /^([A-Za-z0-9_]+)\s{2,}(\S+)\s{2,}/.exec(line);
+        if (m && m[1] !== 'ID') found.set(m[1].toUpperCase(), m[2]);
+    }
+    return found;
+}
+
+async function provision({ connectionString, admins = 2, students = 200, campus = true, adminOnly = false, requireChange = false, rotate = false, emailDomain = 'fixmaster.example', adminEmail = null, givenPasswords = null, log = console.log } = {}) {
     const client = new Client(connectionConfig(connectionString));
     await client.connect();
     const q = (text, params) => client.query(text, params);
@@ -189,7 +203,7 @@ async function provision({ connectionString, admins = 2, students = 200, campus 
             (await q('SELECT UPPER(reg_or_emp_id) AS id, user_id FROM users WHERE UPPER(reg_or_emp_id) = ANY($1::text[])', [roster.map((p) => p.id.toUpperCase())])).rows.map((r) => [r.id, r.user_id])
         );
         const needs = roster.filter((p) => !known.has(p.id.toUpperCase()) || rotate);
-        for (const p of needs) p.password = newPassword();
+        for (const p of needs) p.password = (givenPasswords && givenPasswords.get(p.id.toUpperCase())) || newPassword();
         for (let i = 0; i < needs.length; i += 8) await Promise.all(needs.slice(i, i + 8).map(async (p) => (p.hash = await hashPassword(p.password))));
 
         const insertedStudents = [];
@@ -336,7 +350,10 @@ async function main() {
             return 'the configured database';
         }
     })();
-    const requireChange = flag('require-change') || process.env.NODE_ENV === 'production';
+    const fromFile = arg('from-file', null);
+    const givenPasswords = fromFile ? passwordsFromFile(fs.readFileSync(path.resolve(fromFile), 'utf8')) : null;
+    if (fromFile && givenPasswords.size === 0) throw new Error(`No accounts found in ${fromFile}.`);
+    const requireChange = flag('require-change') || (process.env.NODE_ENV === 'production' && !fromFile);
     const emailDomain = arg('email-domain', 'fixmaster.example');
     const result = await provision({
         admins: Number(arg('admins', adminOnly ? 1 : 2)),
@@ -347,6 +364,7 @@ async function main() {
         rotate: flag('rotate'),
         emailDomain,
         adminEmail: arg('admin-email', null),
+        givenPasswords,
     });
     if (result.created.length === 0) {
         console.log(`Nothing to create: all ${result.existing.length} roster accounts already exist (use --rotate for new passwords).`);
@@ -365,4 +383,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { provision, newPassword, fullRoster, render };
+module.exports = { provision, newPassword, fullRoster, render, passwordsFromFile };
