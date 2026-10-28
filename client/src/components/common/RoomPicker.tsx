@@ -13,7 +13,7 @@ export interface RoomChoice {
   floor: string;
   /** The room number as typed: the number on the door, three or four digits. It need not start with the floor. */
   roomNo: string;
-  /** The room this resolves to, '' until it names a room that exists. */
+  /** The room this names: its id when it is in the records, or the id it will get when requested; '' while the numbers are incomplete or clash. */
   roomId: string;
 }
 
@@ -60,12 +60,14 @@ export const RoomPicker: React.FC<RoomPickerProps> = ({ value, onChange, errors 
     enabled: !!value.blockId,
   });
 
-  // A door number is unique within a block, so it names the room; the floor must then agree with the room's own.
+  // A door number is unique within a block, so it names the room. A room already in the records must be on the
+  // floor typed; one that is not is simply added when the request is sent (the hostel office confirms it).
   const byNumber = useMemo(() => new Map(rooms.map((r) => [r.room_number, r])), [rooms]);
   const lookup = (floor: string, roomNo: string) => {
-    if (floor === '' || roomNo === '' || floorProblem(floor) || roomProblem(roomNo)) return '';
+    if (!value.blockId || floor === '' || roomNo === '' || floorProblem(floor) || roomProblem(roomNo)) return '';
     const room = byNumber.get(roomNo);
-    return room && room.floor_number === Number(floor) ? room.room_id : '';
+    if (room) return room.floor_number === Number(floor) ? room.room_id : '';
+    return `${value.blockId.split('_')[0]}-${roomNo}`;
   };
 
   // Rooms may arrive after the numbers were typed (a slow connection): resolve again then.
@@ -87,10 +89,12 @@ export const RoomPicker: React.FC<RoomPickerProps> = ({ value, onChange, errors 
     : !typed || !ready || value.roomNo.length < 3
       ? null
       : value.roomId
-        ? { ok: true, text: `Room ${value.roomId}` }
+        ? found
+          ? { ok: true, text: `Room ${value.roomId}` }
+          : { ok: true, text: `Room ${value.roomId}: not in our records yet, so it will be added and the hostel office will confirm it.` }
         : found
           ? { ok: false, text: `Room ${value.roomNo} is on ${floorLabel(found.floor_number).toLowerCase()} of this block, not ${floorLabel(Number(value.floor)).toLowerCase()}.` }
-          : { ok: false, text: `There is no room ${value.roomNo} in this block.` };
+          : null;
 
   return (
     <>

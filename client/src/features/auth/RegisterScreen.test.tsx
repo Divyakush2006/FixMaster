@@ -99,7 +99,8 @@ describe('RegisterScreen', () => {
 
     await user.clear(roomBox());
     await user.type(roomBox(), '999');
-    expect(await screen.findByText(/there is no room 999 in this block/i)).toBeTruthy();
+    // A room the office has not added yet is not refused: it is added when the request is sent.
+    expect(await screen.findByText(/room x-999: not in our records yet/i)).toBeTruthy();
   });
 
   it('allows floors 0 to 24 and room numbers of three or four digits only', async () => {
@@ -197,7 +198,7 @@ describe('RegisterScreen', () => {
     expect(await screen.findByText('Code entry page')).toBeTruthy();
     expect(login).not.toHaveBeenCalled();
     expect(register).toHaveBeenCalledTimes(1);
-    expect(register).toHaveBeenCalledWith(expect.objectContaining({ block_id: 'X_BLOCK', floor_number: 1, room_id: 'X-101' }));
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({ block_id: 'X_BLOCK', floor_number: 1, room_number: '101' }));
   });
 
   it('shows the server error and keeps the form when registration fails', async () => {

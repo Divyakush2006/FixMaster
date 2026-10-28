@@ -100,10 +100,10 @@ exports.requestRoom = asyncHandler(async (req, res) => {
         if (has.rows.length > 0) {
             throw new AppError(409, 'You already have a room. Ask the hostel office if you need to move.');
         }
-        const room = await assertRequestableRoom(client, { block_id, floor_number, room_id });
+        const room = await assertRequestableRoom(client, { block_id, floor_number, room_id, room_number: req.body.room_number }, req);
         await assertHostelFits(client, req.user.userId, room.block_id);
         const open = await requestStatus(client, req.user.userId);
-        if (open && open.status === 'PENDING' && open.room_id === room_id) {
+        if (open && open.status === 'PENDING' && open.room_id === room.room_id) {
             throw new AppError(409, 'This request is already waiting for the hostel office.');
         }
         await recordRoomRequest(client, req, req.user.userId, room);

@@ -251,6 +251,8 @@ export interface RegisterPayload {
   /** The room asked for. A request only: the hostel office allots the room. */
   block_id?: string;
   floor_number?: number;
+  /** The number on the door (3 or 4 digits). A room not in the records yet is added when it is requested. */
+  room_number?: string;
   room_id?: string;
 }
 

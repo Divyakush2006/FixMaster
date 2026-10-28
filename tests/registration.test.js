@@ -84,6 +84,48 @@ describe('student registration and room requests', () => {
         assert.equal(r.data.room_request.room_id, 'B-420');
     });
 
+    it('asks for a room by its door number: one the office has not added yet is added with the request', async () => {
+        const before = (await t.sql("SELECT COUNT(*)::int AS n FROM rooms WHERE block_id = 'B_BLOCK'")).rows[0].n;
+        const r = await register(31, { block_id: 'B_BLOCK', floor_number: 3, room_number: '428' });
+        assert.equal(r.status, 201, JSON.stringify(r.data));
+        assert.equal(r.data.room_request.room_id, 'B-428');
+        const room = (await t.sql("SELECT floor_number, room_number, is_active FROM rooms WHERE room_id = 'B-428'")).rows[0];
+        assert.deepEqual({ ...room }, { floor_number: 3, room_number: '428', is_active: true });
+        assert.equal((await t.sql("SELECT COUNT(*)::int AS n FROM rooms WHERE block_id = 'B_BLOCK'")).rows[0].n, before + 1);
+        const audit = await t.sql("SELECT details FROM audit_log WHERE action = 'room.create' AND details->>'source' = 'room request'");
+        assert.equal(audit.rows.length, 1, 'the creation is audited');
+
+        // A second resident asking for the same room shares it, and nothing is added twice.
+        const second = await register(32, { block_id: 'B_BLOCK', floor_number: 3, room_number: '428' });
+        assert.equal(second.status, 201);
+        assert.equal((await t.sql("SELECT COUNT(*)::int AS n FROM rooms WHERE room_id = 'B-428'")).rows[0].n, 1);
+
+        // A floor above the block's usual ones is added too (floors go up to 24).
+        const high = await register(33, { block_id: 'B_BLOCK', floor_number: 24, room_number: '2501' });
+        assert.equal(high.status, 201, JSON.stringify(high.data));
+    });
+
+    it('refuses a door number that clashes or is malformed, and adds nothing', async () => {
+        const rooms = async () => (await t.sql('SELECT COUNT(*)::int AS n FROM rooms')).rows[0].n;
+        const before = await rooms();
+        const cases = [
+            [{ block_id: 'B_BLOCK', floor_number: 5, room_number: '428' }, 400], // 428 is on floor 3
+            [{ block_id: 'B_BLOCK', floor_number: 3, room_number: '42' }, 400], // too short
+            [{ block_id: 'B_BLOCK', floor_number: 3, room_number: '12345' }, 400], // too long
+            [{ block_id: 'B_BLOCK', floor_number: 3, room_number: '4x8' }, 400], // not digits
+            [{ block_id: 'MH_BLOCK', floor_number: 1, room_number: '101' }, 400], // not a residential block
+            [{ block_id: 'NO_BLOCK', floor_number: 1, room_number: '101' }, 400],
+            [{ block_id: 'B_BLOCK', floor_number: 25, room_number: '501' }, 400], // floors are 0 to 24
+        ];
+        for (const [extra, status] of cases) {
+            const r = await register(40, extra);
+            assert.equal(r.status, status, JSON.stringify(extra) + ' ' + JSON.stringify(r.data));
+        }
+        assert.equal(await rooms(), before, 'a refused request adds no room');
+        const left = await t.sql("SELECT COUNT(*)::int AS n FROM users WHERE reg_or_emp_id = '25BCE7040'");
+        assert.equal(left.rows[0].n, 0);
+    });
+
     it('can register without a room, and cannot register twice or as staff', async () => {
         assert.equal((await register(2)).status, 201);
         const dupe = await register(2);

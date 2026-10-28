@@ -1,0 +1,13 @@
+# A tiny Cloudflare Worker that visits the API's liveness address every 5 minutes, so Render's free
+# plan (which sleeps after 15 idle minutes) stays awake. Free on Cloudflare's plan.
+#   cd ops/keepalive && npx wrangler deploy
+name = "fixmaster-keepalive"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = false
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+TARGET = "https://fixmaster-api-rho5.onrender.com/api/health/live"

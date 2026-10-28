@@ -25,7 +25,7 @@ export const RoomRequestPanel: React.FC = () => {
   const request = data?.request ?? null;
 
   const send = useMutation({
-    mutationFn: () => meApi.requestRoom({ block_id: choice.blockId, floor_number: Number(choice.floor), room_id: choice.roomId }),
+    mutationFn: () => meApi.requestRoom({ block_id: choice.blockId, floor_number: Number(choice.floor), room_number: choice.roomNo }),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['my-room-request'] });
       showToast('Request sent', 'success', res.message);
@@ -52,7 +52,7 @@ export const RoomRequestPanel: React.FC = () => {
       return setError(
         !choice.blockId || !choice.floor || !choice.roomNo
           ? 'Choose a block and enter your floor and room number.'
-          : floorProblem(choice.floor) || roomProblem(choice.roomNo) || 'We could not find that room on that floor of this block. Check the floor and the number on your door.'
+          : floorProblem(choice.floor) || roomProblem(choice.roomNo) || 'That room number is already used on another floor of this block. Check the floor and the number on your door.'
       );
     }
     send.mutate();

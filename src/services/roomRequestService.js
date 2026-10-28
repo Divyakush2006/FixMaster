@@ -17,8 +17,57 @@ const REQUEST = 'allotment.request';
 const DECLINE = 'allotment.decline';
 const WITHDRAW = 'allotment.withdraw';
 
-/** Confirms block, floor and room exist together, are active, and match. */
-async function assertRequestableRoom(client, { block_id, floor_number, room_id }) {
+const DOOR_NUMBER = /^[1-9][0-9]{2,3}$/;
+
+/**
+ * The room a student asks for, named by the number on its door. A hostel's rooms are normally added by the office
+ * (Blocks & rooms), but a resident must not be turned away because that has not been done yet: when the block is a
+ * residential one and the number is a valid door number, the room is added (floor included, standard type) and the
+ * request goes to the office like any other, who can decline it or correct the room. A door number is unique in its
+ * block, so a room that already exists under another floor is a conflict, not a second room.
+ */
+async function roomForDoorNumber(client, req, { block_id, floor_number, room_number }) {
+    const number = String(room_number).trim();
+    if (!DOOR_NUMBER.test(number)) {
+        throw new AppError(400, 'The room number is the 3 or 4 digit number on the door.');
+    }
+    const block = await client.query('SELECT block_id, block_kind FROM hostel_blocks WHERE block_id = $1', [block_id]);
+    if (block.rows.length === 0 || (block.rows[0].block_kind && block.rows[0].block_kind !== 'RESIDENTIAL')) {
+        throw new AppError(400, 'Choose a residential hostel block.');
+    }
+    const found = await client.query('SELECT room_id, block_id, floor_number, room_number, is_active FROM rooms WHERE block_id = $1 AND room_number = $2', [block_id, number]);
+    if (found.rows.length > 0) {
+        const room = found.rows[0];
+        if (!room.is_active) throw new AppError(404, 'That room was not found or is not open for allotment.');
+        if (room.floor_number !== floor_number) {
+            throw new AppError(400, `Room ${number} is on floor ${room.floor_number} of this block, not floor ${floor_number}.`);
+        }
+        return room;
+    }
+    const roomId = `${block_id.split('_')[0]}-${number}`;
+    await client.query('INSERT INTO block_floors (block_id, floor_number) VALUES ($1, $2) ON CONFLICT DO NOTHING', [block_id, floor_number]);
+    const created = await client.query(
+        `INSERT INTO rooms (room_id, block_id, room_number, floor_number) VALUES ($1, $2, $3, $4)
+         RETURNING room_id, block_id, floor_number, room_number, is_active`,
+        [roomId, block_id, number, floor_number]
+    );
+    await recordAudit(client, req, {
+        action: 'room.create',
+        targetType: 'block',
+        targetId: block_id,
+        details: { floor_number, rooms: [roomId], source: 'room request', note: 'Added because a resident asked for it; the hostel office can correct or close it.' },
+    });
+    return created.rows[0];
+}
+
+/**
+ * Confirms block, floor and room exist together, are active, and match. With `room_number` (the number on the door)
+ * a room that does not exist yet is added (see roomForDoorNumber); with `room_id` only an existing room is accepted.
+ */
+async function assertRequestableRoom(client, { block_id, floor_number, room_id, room_number }, req = null) {
+    if (room_number !== undefined && room_number !== null && room_number !== '') {
+        return roomForDoorNumber(client, req, { block_id, floor_number, room_number });
+    }
     const { rows } = await client.query(
         'SELECT room_id, block_id, floor_number, room_number, is_active FROM rooms WHERE room_id = $1',
         [room_id]

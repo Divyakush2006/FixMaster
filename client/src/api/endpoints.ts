@@ -265,7 +265,7 @@ export const meApi = {
   /** The student's latest room request, or null when none is open / they already have a room. */
   getRoomRequest: () => apiFetch<{ request: RoomRequest | null }>('/me/room-request', { method: 'GET' }),
 
-  requestRoom: (data: { block_id: string; floor_number: number; room_id: string }) =>
+  requestRoom: (data: { block_id: string; floor_number: number; room_number: string }) =>
     apiFetch<{ request: RoomRequest; message: string }>('/me/room-request', { method: 'POST', body: JSON.stringify(data) }),
 
   /** Takes back a request the hostel office has not answered yet. */

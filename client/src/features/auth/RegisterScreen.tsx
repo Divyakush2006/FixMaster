@@ -73,7 +73,7 @@ export const RegisterScreen: React.FC = () => {
     else if (floorProblem(room.floor)) errs.floor = floorProblem(room.floor) as string;
     else if (!room.roomNo) errs.room = 'Enter the number on your door.';
     else if (roomProblem(room.roomNo)) errs.room = roomProblem(room.roomNo) as string;
-    else if (!room.roomId) errs.room = 'We could not find that room on that floor of this block. Check the floor and the number on your door.';
+    else if (!room.roomId) errs.room = 'That room number is already used on another floor of this block. Check the floor and the number on your door.';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -96,7 +96,7 @@ export const RegisterScreen: React.FC = () => {
         password,
         block_id: room.blockId,
         floor_number: Number(room.floor),
-        room_id: room.roomId,
+        room_number: room.roomNo,
       });
 
       // Next: prove the mailbox is theirs. The code screen signs them in.

@@ -110,8 +110,9 @@ exports.registerStudent = asyncHandler(async (req, res) => {
     if (!mailer.isConfigured()) {
         throw new AppError(503, 'Sign-up needs email delivery, which is not set up here yet. Please contact the hostel office.');
     }
-    const { reg_or_emp_id, full_name, email, phone_number, password, block_id, floor_number, room_id } = req.body;
-    const wantsRoom = !!room_id;
+    const { reg_or_emp_id, full_name, email, phone_number, password, block_id, floor_number, room_id, room_number } = req.body;
+    const wantsRoom = !!room_id || !!room_number;
+    let requested = null;
     // One transaction: the account, its room request and its first code exist together or not at all.
     const { user, code } = await db.withTransaction(async (client) => {
         await client.query(
@@ -121,7 +122,8 @@ exports.registerStudent = asyncHandler(async (req, res) => {
                AND (UPPER(reg_or_emp_id) = UPPER($1) OR LOWER(email) = LOWER($2))`,
             [reg_or_emp_id, email, STALE_UNVERIFIED_HOURS]
         );
-        const room = wantsRoom ? await assertRequestableRoom(client, { block_id, floor_number, room_id }) : null;
+        const room = wantsRoom ? await assertRequestableRoom(client, { block_id, floor_number, room_id, room_number }, req) : null;
+        requested = room;
         const created = await createUser(
             { reg_or_emp_id, full_name, email, phone_number, password, role: 'STUDENT', account_status: 'PENDING_VERIFICATION' },
             client
@@ -139,7 +141,7 @@ exports.registerStudent = asyncHandler(async (req, res) => {
         message: `Account created. We sent a 6-digit code to ${maskEmail(user.email)}; enter it to confirm your university email.`,
         user,
         verification: { email: maskEmail(user.email), expires_in_minutes: EMAIL_CODE_TTL_MINUTES },
-        room_request: wantsRoom ? { status: 'PENDING', block_id, floor_number, room_id } : null,
+        room_request: requested ? { status: 'PENDING', block_id, floor_number, room_id: requested.room_id } : null,
     });
 });
 

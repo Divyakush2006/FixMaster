@@ -127,10 +127,14 @@ Everyone else is created from the app, so every real account has a real email:
 ## 7. Keep the API awake (free plan)
 
 A free Render service sleeps after 15 minutes without traffic, takes about a minute to wake, and the retry sweeper
-that re-tries unassigned tickets does not run while it sleeps. A pinger keeps it up:
+that re-tries unassigned tickets does not run while it sleeps. A pinger keeps it up. The repository has one that
+runs on Cloudflare (free, no account elsewhere): a Worker that visits `/api/health/live` every 5 minutes.
 
-1. Create a free account at uptimerobot.com, **Add New Monitor**, type *HTTP(s)*.
-2. URL `https://fixmaster-api.onrender.com/api/health/live`, interval 5 minutes.
+1. In `ops/keepalive/wrangler.toml`, set `TARGET` to your API's address plus `/api/health/live`.
+2. `cd ops/keepalive`, then `npx wrangler login` (once) and `npx wrangler deploy`.
+3. Check: Cloudflare, Workers & Pages, `fixmaster-keepalive`, **Logs** shows a `keepalive 200` line every 5 minutes.
+
+Any external pinger works too (for example UptimeRobot, a free HTTP monitor on the same address every 5 minutes).
 
 The 750 free instance hours a month cover one service running all month (about 720 hours). Do not add a second
 free service in the same Render workspace, or the hours run out around mid-month and both are suspended.
