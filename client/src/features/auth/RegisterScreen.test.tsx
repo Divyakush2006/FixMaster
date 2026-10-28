@@ -29,6 +29,8 @@ const ROOMS: Record<string, unknown[]> = {
   X_BLOCK: [
     { room_id: 'X-101', block_id: 'X_BLOCK', room_number: '101', floor_number: 1, is_active: true },
     { room_id: 'X-G01', block_id: 'X_BLOCK', room_number: 'G01', floor_number: 0, is_active: true },
+    // A hostel that counts the ground floor as 1: floor 3 holds rooms 4xx.
+    { room_id: 'X-420', block_id: 'X_BLOCK', room_number: '420', floor_number: 3, is_active: true },
   ],
   Y_BLOCK: [{ room_id: 'Y-301', block_id: 'Y_BLOCK', room_number: '301', floor_number: 3, is_active: true }],
 };
@@ -83,16 +85,45 @@ describe('RegisterScreen', () => {
     await user.type(roomBox(), '101');
     expect(await screen.findByText('Room X-101')).toBeTruthy();
 
-    // The ground floor is 0, and a room can be typed as the number on the floor.
+    // The door number does not have to start with the floor: floor 3 can hold room 420.
     await user.clear(floorBox());
-    await user.type(floorBox(), '0');
+    await user.type(floorBox(), '3');
     await user.clear(roomBox());
-    await user.type(roomBox(), '1');
-    expect(await screen.findByText('Room X-G01')).toBeTruthy();
+    await user.type(roomBox(), '420');
+    expect(await screen.findByText('Room X-420')).toBeTruthy();
+
+    // The same room on the wrong floor is named, not just refused.
+    await user.clear(floorBox());
+    await user.type(floorBox(), '4');
+    expect(await screen.findByText(/room 420 is on floor 3 of this block, not floor 4/i)).toBeTruthy();
 
     await user.clear(roomBox());
-    await user.type(roomBox(), '77');
-    expect(await screen.findByText(/there is no room 77 on ground floor/i)).toBeTruthy();
+    await user.type(roomBox(), '999');
+    expect(await screen.findByText(/there is no room 999 in this block/i)).toBeTruthy();
+  });
+
+  it('allows floors 0 to 24 and room numbers of three or four digits only', async () => {
+    const user = userEvent.setup();
+    setup();
+    await screen.findByRole('option', { name: 'X Block' });
+    await user.selectOptions(select(/^block/i), 'X_BLOCK');
+
+    await user.type(floorBox(), '25');
+    expect(await screen.findByText(/the floor must be from 0 \(ground\) to 24/i)).toBeTruthy();
+    await user.clear(floorBox());
+    await user.type(floorBox(), '24');
+    expect(screen.queryByText(/the floor must be from 0/i)).toBeNull();
+    await user.clear(floorBox());
+    await user.type(floorBox(), '0');
+    expect(screen.queryByText(/the floor must be from 0/i)).toBeNull();
+
+    // Two digits are still being typed; five are not accepted at all.
+    await user.type(roomBox(), '12345');
+    expect(roomBox().value).toBe('1234');
+    await user.clear(roomBox());
+    await user.type(roomBox(), '07');
+    await user.type(roomBox(), '5');
+    expect(await screen.findByText(/the room number is the 3 or 4 digit number on your door/i)).toBeTruthy();
   });
 
   it('clears the floor and room when the block changes', async () => {

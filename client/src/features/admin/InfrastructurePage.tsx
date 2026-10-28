@@ -19,7 +19,7 @@ import { Skeleton } from '../../components/ui/PageLoader';
 import { Table, TableWrap, THead, Th, TBody, Tr, Td } from '../../components/ui/Table';
 import { cn } from '../../components/ui/cn';
 import { AdminBlock, AdminRoom, BlockKind, CommonAreaRow, CommonAreaType, HostelType, RoomType } from '../../types';
-import { floorCode, floorLabel, roomNumberFor } from '../../utils/formatters';
+import { floorCode, floorLabel } from '../../utils/formatters';
 import { AREA_TYPE_LABEL, BLOCK_KIND_LABEL, HOSTEL_LABEL, ROOM_TYPE_LABEL } from '../../utils/labels';
 
 const ROOM_TYPES: RoomType[] = ['NON_AC', 'AC', 'DELUXE_AC'];
@@ -38,10 +38,10 @@ const GROUP_LABEL: Record<HostelType | 'ACADEMIC', string> = { ...HOSTEL_LABEL, 
  * (and may add blocks to it); a supervisor the blocks they run. The server
  * decides which, so this page just shows what it is given.
  *
- * Room numbers are generated from the floor and can't be typed freely: floor
- * code (G = ground) + two-digit room, e.g. G01, 428, 1007 - the database
- * enforces the same rule. MH (the whole men's hostel) and academic blocks like
- * PRP have no rooms, only shared areas.
+ * A room is added by the number on its door: three or four digits, unique in the
+ * block, on any floor (where the ground floor counts as 1, floor 3 holds rooms
+ * 401-420). The database enforces the format. MH (the whole men's hostel) and
+ * academic blocks like PRP have no rooms, only shared areas.
  */
 export const InfrastructurePage: React.FC = () => {
   const queryClient = useQueryClient();
@@ -189,8 +189,8 @@ export const InfrastructurePage: React.FC = () => {
         title={isAdmin ? 'Blocks & rooms' : 'Block settings'}
         description={
           <>
-            Floors, rooms and shared areas of {isAdmin ? 'every block' : 'the blocks you run'}. Room numbers are the floor code followed by a two-digit room:{' '}
-            <span className="font-mono text-slate-700">G01</span> is ground floor room 1, <span className="font-mono text-slate-700">428</span> is floor 4 room 28.
+            Floors, rooms and shared areas of {isAdmin ? 'every block' : 'the blocks you run'}. A room is added by the number on its door (three or four digits, for example{' '}
+            <span className="font-mono text-slate-700">420</span>), on whichever floor it is. Floor 0 is the ground floor.
           </>
         }
         actions={
@@ -495,7 +495,7 @@ export const InfrastructurePage: React.FC = () => {
                         <Th>Floor</Th>
                         <Th className="text-right">Rooms</Th>
                         <Th className="text-right">Shared areas</Th>
-                        <Th>Room numbers</Th>
+                        <Th>Rooms</Th>
                         <Th className="text-right">
                           <span className="sr-only">Actions</span>
                         </Th>
@@ -519,9 +519,7 @@ export const InfrastructurePage: React.FC = () => {
                             <Td className="font-medium text-slate-900">{floorLabel(f.floor_number)}</Td>
                             <Td className="text-right tabular">{f.room_count}</Td>
                             <Td className="text-right tabular">{f.common_area_count}</Td>
-                            <Td className="font-mono text-xs text-slate-500">
-                              {residential ? `${roomNumberFor(f.floor_number, 1)} – ${roomNumberFor(f.floor_number, 99)}` : '—'}
-                            </Td>
+                            <Td className="text-xs text-slate-500">{residential ? 'Numbered by door' : '—'}</Td>
                             <Td className="text-right">
                               {empty ? (
                                 <IconButton
@@ -575,28 +573,28 @@ export const InfrastructurePage: React.FC = () => {
 const AddRoomsForm: React.FC<{ blockId: string; blockCode: string; floors: number[]; onCreated: () => void }> = ({ blockId, blockCode, floors, onCreated }) => {
   const { showToast } = useToast();
   const [floor, setFloor] = useState<number | ''>('');
-  const [from, setFrom] = useState(1);
-  const [to, setTo] = useState(1);
+  // The exact numbers on the doors. They need not start with the floor: where the ground floor counts as 1,
+  // floor 3 holds rooms 401-420.
+  const [from, setFrom] = useState(101);
+  const [to, setTo] = useState(101);
+  const [typed, setTyped] = useState(false);
   const [roomType, setRoomType] = useState<RoomType>('NON_AC');
   const [beds, setBeds] = useState(3);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setFloor('');
+    setTyped(false);
     setError(null);
   }, [blockId]);
 
-  const valid = floor !== '' && from >= 1 && to >= from && to <= 99;
-  const count = Math.max(0, Math.min(to, 99) - from + 1);
-  const preview =
-    floor === ''
-      ? null
-      : from === to
-        ? `${blockCode}-${roomNumberFor(floor, from)}`
-        : `${blockCode}-${roomNumberFor(floor, from)} to ${blockCode}-${roomNumberFor(floor, Math.min(to, 99))}`;
+  const inRange = (n: number) => Number.isInteger(n) && n >= 100 && n <= 9999;
+  const count = Math.max(0, to - from + 1);
+  const valid = floor !== '' && inRange(from) && inRange(to) && to >= from && count <= 300;
+  const preview = floor === '' || !valid ? null : from === to ? `${blockCode}-${from}` : `${blockCode}-${from} to ${blockCode}-${to}`;
 
   const mutation = useMutation({
-    mutationFn: () => infraApi.createRooms(blockId, { floor_number: floor as number, from, to, room_type: roomType, bed_capacity: beds }),
+    mutationFn: () => infraApi.createRooms(blockId, { floor_number: floor as number, door_from: from, door_to: to, room_type: roomType, bed_capacity: beds }),
     onSuccess: (res) => {
       onCreated();
       showToast(res.message, res.created.length ? 'success' : 'info', res.skipped.length ? `Already existed: ${res.skipped.join(', ')}` : undefined);
@@ -610,18 +608,30 @@ const AddRoomsForm: React.FC<{ blockId: string; blockCode: string; floors: numbe
         onSubmit={(e) => {
           e.preventDefault();
           setError(null);
-          if (!valid) return setError('Choose a floor and a room range between 01 and 99.');
+          if (!valid) return setError('Choose a floor and door numbers of three or four digits (at most 300 rooms at a time).');
           mutation.mutate();
         }}
         noValidate
       >
-        <CardHeader title="Add rooms" description="Add a single room or a numbered range on one floor. Existing rooms are skipped." />
+        <CardHeader title="Add rooms" description="Add a single room or a range on one floor, using the numbers on the doors (for example 401 to 420 on floor 3). Existing rooms are skipped." />
         <CardBody className="space-y-4">
           {error && <Alert tone="danger">{error}</Alert>}
           <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
             <Field label="Floor" required className="col-span-2 md:col-span-1">
               {(a) => (
-                <Select {...a} value={floor} onChange={(e) => setFloor(e.target.value === '' ? '' : Number(e.target.value))}>
+                <Select
+                  {...a}
+                  value={floor}
+                  onChange={(e) => {
+                    const next = e.target.value === '' ? '' : Number(e.target.value);
+                    setFloor(next);
+                    if (next !== '' && !typed) {
+                      const first = (next === 0 ? 1 : next) * 100 + 1;
+                      setFrom(first);
+                      setTo(first);
+                    }
+                  }}
+                >
                   <option value="">Select</option>
                   {floors.map((f) => (
                     <option key={f} value={f}>
@@ -631,24 +641,37 @@ const AddRoomsForm: React.FC<{ blockId: string; blockCode: string; floors: numbe
                 </Select>
               )}
             </Field>
-            <Field label="From room" required>
+            <Field label="First door number" required hint="3 or 4 digits">
               {(a) => (
                 <Input
                   {...a}
                   type="number"
-                  min={1}
-                  max={99}
+                  min={100}
+                  max={9999}
                   value={from}
                   onChange={(e) => {
                     const v = Number(e.target.value);
+                    setTyped(true);
                     setFrom(v);
                     if (to < v) setTo(v);
                   }}
                 />
               )}
             </Field>
-            <Field label="To room" required>
-              {(a) => <Input {...a} type="number" min={from} max={99} value={to} onChange={(e) => setTo(Number(e.target.value))} />}
+            <Field label="Last door number" required hint="same as the first for one room">
+              {(a) => (
+                <Input
+                  {...a}
+                  type="number"
+                  min={from}
+                  max={9999}
+                  value={to}
+                  onChange={(e) => {
+                    setTyped(true);
+                    setTo(Number(e.target.value));
+                  }}
+                />
+              )}
             </Field>
             <Field label="Room type" required>
               {(a) => (
@@ -682,7 +705,7 @@ const AddRoomsForm: React.FC<{ blockId: string; blockCode: string; floors: numbe
                 {count > 1 && <span className="text-slate-500"> ({count} rooms)</span>}
               </>
             ) : (
-              <span className="text-slate-500">Choose a floor to preview the room numbers.</span>
+              <span className="text-slate-500">Choose a floor and door numbers to preview the rooms.</span>
             )}
           </p>
           <Button type="submit" icon={Plus} disabled={!valid} loading={mutation.isPending}>

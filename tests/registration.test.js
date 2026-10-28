@@ -59,6 +59,8 @@ describe('student registration and room requests', () => {
             [{ block_id: 'B_BLOCK', floor_number: 3, room_id: 'B-201' }, 400], // wrong floor
             [{ block_id: 'A_BLOCK', floor_number: 2, room_id: 'B-201' }, 400], // wrong block
             [{ block_id: 'B_BLOCK', room_id: 'B-201' }, 400], // incomplete
+            [{ block_id: 'B_BLOCK', floor_number: 25, room_id: 'B-201' }, 400], // floors are 0 to 24
+            [{ block_id: 'B_BLOCK', floor_number: -1, room_id: 'B-201' }, 400],
         ];
         for (const [extra, status] of cases) {
             const r = await register(20, extra);
@@ -70,6 +72,16 @@ describe('student registration and room requests', () => {
         await t.sql('UPDATE rooms SET is_active = FALSE WHERE room_id = $1', ['B-202']);
         assert.equal((await register(21, { block_id: 'B_BLOCK', floor_number: 2, room_id: 'B-202' })).status, 404, 'closed room');
         await t.sql('UPDATE rooms SET is_active = TRUE WHERE room_id = $1', ['B-202']);
+    });
+
+    it('takes a door number that does not start with the floor (floor 3, room 420)', async () => {
+        assert.equal(
+            (await t.api('/admin/blocks/B_BLOCK/rooms', { method: 'POST', token: admin, body: { floor_number: 3, door_from: 420, room_type: 'AC', bed_capacity: 1 } })).status,
+            201
+        );
+        const r = await register(30, { block_id: 'B_BLOCK', floor_number: 3, room_id: 'B-420' });
+        assert.equal(r.status, 201, JSON.stringify(r.data));
+        assert.equal(r.data.room_request.room_id, 'B-420');
     });
 
     it('can register without a room, and cannot register twice or as staff', async () => {

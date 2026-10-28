@@ -4,7 +4,7 @@ import { meApi } from '../../api/endpoints';
 import { useToast } from '../../components/ui/Toast';
 import { Alert } from '../../components/ui/Alert';
 import { Button } from '../../components/ui/Button';
-import { EMPTY_ROOM_CHOICE, RoomChoice, RoomPicker } from '../../components/common/RoomPicker';
+import { EMPTY_ROOM_CHOICE, RoomChoice, RoomPicker, floorProblem, roomProblem } from '../../components/common/RoomPicker';
 import { floorLabel, formatRelativeTime } from '../../utils/formatters';
 import { blockLabel } from '../../utils/labels';
 
@@ -48,7 +48,13 @@ export const RoomRequestPanel: React.FC = () => {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!choice.blockId || !choice.floor || !choice.roomId) return setError(!choice.blockId || !choice.floor || !choice.roomNo ? 'Choose a block and enter your floor and room number.' : 'That room does not exist in this block. Check the floor and the number on your door.');
+    if (!choice.blockId || !choice.floor || !choice.roomId) {
+      return setError(
+        !choice.blockId || !choice.floor || !choice.roomNo
+          ? 'Choose a block and enter your floor and room number.'
+          : floorProblem(choice.floor) || roomProblem(choice.roomNo) || 'We could not find that room on that floor of this block. Check the floor and the number on your door.'
+      );
+    }
     send.mutate();
   };
 

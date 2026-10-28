@@ -5,13 +5,13 @@ import { Alert } from '../ui/Alert';
 import { Button } from '../ui/Button';
 import { Field, Input, Select } from '../ui/Form';
 import { BlockOptions } from './BlockOptions';
-import { doorNumber, floorLabel } from '../../utils/formatters';
+import { floorLabel } from '../../utils/formatters';
 
 export interface RoomChoice {
   blockId: string;
-  /** The floor as typed: digits, 0 for the ground floor. */
+  /** The floor as typed: a whole number from 0 (ground) to MAX_FLOOR. */
   floor: string;
-  /** The room number as typed: the number on the door ("205"), or the number on the floor ("5"). */
+  /** The room number as typed: the number on the door, three or four digits. It need not start with the floor. */
   roomNo: string;
   /** The room this resolves to, '' until it names a room that exists. */
   roomId: string;
@@ -27,12 +27,24 @@ interface RoomPickerProps {
   onAvailability?: (hasInfrastructure: boolean) => void;
 }
 
+export const MAX_FLOOR = 24;
+
 const digits = (s: string) => s.replace(/\D/g, '').slice(0, 4);
 
+/** What is wrong with a typed floor, or null. */
+export const floorProblem = (floor: string): string | null =>
+  floor !== '' && Number(floor) > MAX_FLOOR ? `The floor must be from 0 (ground) to ${MAX_FLOOR}.` : null;
+
+/** What is wrong with a typed room number, or null. */
+export const roomProblem = (roomNo: string): string | null =>
+  roomNo !== '' && !/^[1-9]\d{2,3}$/.test(roomNo) ? 'The room number is the 3 or 4 digit number on your door.' : null;
+
 /**
- * Block (a list: there are a few dozen) then floor and room NUMBER, typed as
- * whole numbers. The room is looked up among the block's rooms as soon as it is
- * typed, and the form says so ("Room L-205") or says it does not exist.
+ * Block (a list: there are a few dozen) then floor (0-24) and the door number
+ * (3 or 4 digits), typed as whole numbers. The door number does not have to start
+ * with the floor: where the ground floor counts as 1, floor 3 holds rooms 401-420.
+ * The room is looked up among the block's rooms as soon as it is typed, and the
+ * form says so ("Room L-205"), or says it does not exist or is on another floor.
  * Changing the block clears the numbers, so a stale room is never submitted.
  */
 export const RoomPicker: React.FC<RoomPickerProps> = ({ value, onChange, errors = {}, onAvailability }) => {
@@ -48,10 +60,12 @@ export const RoomPicker: React.FC<RoomPickerProps> = ({ value, onChange, errors 
     enabled: !!value.blockId,
   });
 
-  const byNumber = useMemo(() => new Map(rooms.map((r) => [`${r.floor_number}|${r.room_number}`, r])), [rooms]);
+  // A door number is unique within a block, so it names the room; the floor must then agree with the room's own.
+  const byNumber = useMemo(() => new Map(rooms.map((r) => [r.room_number, r])), [rooms]);
   const lookup = (floor: string, roomNo: string) => {
-    if (floor === '' || roomNo === '') return '';
-    return byNumber.get(`${Number(floor)}|${doorNumber(Number(floor), Number(roomNo))}`)?.room_id ?? '';
+    if (floor === '' || roomNo === '' || floorProblem(floor) || roomProblem(roomNo)) return '';
+    const room = byNumber.get(roomNo);
+    return room && room.floor_number === Number(floor) ? room.room_id : '';
   };
 
   // Rooms may arrive after the numbers were typed (a slow connection): resolve again then.
@@ -66,7 +80,17 @@ export const RoomPicker: React.FC<RoomPickerProps> = ({ value, onChange, errors 
 
   const typed = value.floor !== '' && value.roomNo !== '';
   const ready = !!value.blockId && !loadingRooms;
-  const status = !typed || !ready ? null : value.roomId ? { ok: true, text: `Room ${value.roomId}` } : { ok: false, text: `There is no room ${value.roomNo} on ${floorLabel(Number(value.floor)).toLowerCase()} of this block.` };
+  const found = byNumber.get(value.roomNo);
+  const problem = floorProblem(value.floor) || (value.roomNo.length >= 3 ? roomProblem(value.roomNo) : null);
+  const status = problem
+    ? { ok: false, text: problem }
+    : !typed || !ready || value.roomNo.length < 3
+      ? null
+      : value.roomId
+        ? { ok: true, text: `Room ${value.roomId}` }
+        : found
+          ? { ok: false, text: `Room ${value.roomNo} is on ${floorLabel(found.floor_number).toLowerCase()} of this block, not ${floorLabel(Number(value.floor)).toLowerCase()}.` }
+          : { ok: false, text: `There is no room ${value.roomNo} in this block.` };
 
   return (
     <>
@@ -103,7 +127,7 @@ export const RoomPicker: React.FC<RoomPickerProps> = ({ value, onChange, errors 
             </Select>
           )}
         </Field>
-        <Field label="Floor" required error={errors.floor} hint="0 for the ground floor">
+        <Field label="Floor" required error={errors.floor} hint="0 to 24; 0 is the ground floor">
           {(a) => (
             <Input
               {...a}
@@ -121,7 +145,7 @@ export const RoomPicker: React.FC<RoomPickerProps> = ({ value, onChange, errors 
             />
           )}
         </Field>
-        <Field label="Room number" required error={errors.room} hint="The number on your door">
+        <Field label="Room number" required error={errors.room} hint="The 3 or 4 digit number on your door">
           {(a) => (
             <Input
               {...a}
@@ -129,7 +153,7 @@ export const RoomPicker: React.FC<RoomPickerProps> = ({ value, onChange, errors 
               inputMode="numeric"
               autoComplete="off"
               maxLength={4}
-              placeholder="e.g. 205"
+              placeholder="e.g. 420"
               value={value.roomNo}
               disabled={!value.blockId}
               onChange={(e) => {

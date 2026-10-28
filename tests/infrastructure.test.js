@@ -65,12 +65,34 @@ describe('hostel infrastructure: blocks, floors, room numbering', () => {
         assert.deepEqual(listed, ['G01@0', 'G02@0', 'G03@0', '427@4', '428@4', '429@4', '1007@10']);
     });
 
-    it('the database refuses room numbers that do not match their floor', async () => {
+    it('a door number is its own: any three or four digits, on any floor, unique in the block', async () => {
+        // A hostel that counts the ground floor as 1 has rooms 401-420 on floor 3.
+        const byDoor = await t.api('/admin/blocks/A_BLOCK/rooms', {
+            method: 'POST',
+            token: admin,
+            body: { floor_number: 3, door_from: 419, door_to: 420, room_type: 'NON_AC', bed_capacity: 3 },
+        });
+        assert.equal(byDoor.status, 201, JSON.stringify(byDoor.data));
+        assert.deepEqual(byDoor.data.created, ['A-419', 'A-420']);
+        const listed = (await t.api('/meta/blocks/A_BLOCK/rooms')).data.filter((r) => ['419', '420'].includes(r.room_number)).map((r) => `${r.room_number}@${r.floor_number}`);
+        assert.deepEqual(listed, ['419@3', '420@3']);
+
+        const again = await t.api('/admin/blocks/A_BLOCK/rooms', { method: 'POST', token: admin, body: { floor_number: 3, door_from: 420, room_type: 'NON_AC', bed_capacity: 3 } });
+        assert.deepEqual(again.data.skipped, ['A-420']);
+
+        const tooMany = await t.api('/admin/blocks/A_BLOCK/rooms', { method: 'POST', token: admin, body: { floor_number: 3, door_from: 100, door_to: 9000, room_type: 'NON_AC', bed_capacity: 3 } });
+        assert.equal(tooMany.status, 400);
+        const twoDigits = await t.api('/admin/blocks/A_BLOCK/rooms', { method: 'POST', token: admin, body: { floor_number: 3, door_from: 42, room_type: 'NON_AC', bed_capacity: 3 } });
+        assert.equal(twoDigits.status, 400);
+    });
+
+    it('the database still refuses malformed room numbers and room ids', async () => {
         const bad = [
-            ["'A-428'", "'428'", 3], // 428 belongs on floor 4
-            ["'A-G1'", "'G1'", 0], // must be two digits
-            ["'A-400'", "'400'", 4], // room 00 does not exist
-            ["'A-028'", "'028'", 0], // ground floor is G, not 0
+            ["'A-G1'", "'G1'", 0], // ground floor form is G plus two digits
+            ["'A-42'", "'42'", 0], // fewer than three digits
+            ["'A-12345'", "'12345'", 1], // more than four digits
+            ["'A-028'", "'028'", 0], // may not start with 0
+            ["'A-4B8'", "'4B8'", 4], // digits only
         ];
         for (const [id, num, floor] of bad) {
             await assert.rejects(
@@ -82,6 +104,11 @@ describe('hostel infrastructure: blocks, floors, room numbering', () => {
         await assert.rejects(
             t.sql("INSERT INTO rooms (room_id, block_id, room_number, floor_number) VALUES ('B-501', 'A_BLOCK', '501', 5)"),
             /chk_room_id_format/
+        );
+        await assert.rejects(
+            t.sql("INSERT INTO rooms (room_id, block_id, room_number, floor_number) VALUES ('A-419', 'A_BLOCK', '419', 5)"),
+            /duplicate key|uq_block_room|rooms_pkey/,
+            'the door number is unique in the block whatever the floor'
         );
     });
 

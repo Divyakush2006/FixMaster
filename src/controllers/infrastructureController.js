@@ -3,8 +3,10 @@ const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { recordAudit } = require('../services/auditService');
 const { managedBlocks, assertBlockInScope } = require('../services/scopeService');
 
-// Room numbering (enforced by the database too - migration 004):
-//   room_number = floor code + two-digit room 01-99
+// Room numbering (enforced by the database too - migrations 004 and 021):
+//   room_number = the number on the door: three or four digits, unique in the block. It need not
+//                 start with the floor (where the ground floor counts as 1, rooms 401-420 are on floor 3).
+//                 Added by range as <floor code><01-99> (from/to), or as exact door numbers (door_from/door_to).
 //   floor code  = 'G' for ground (floor 0), otherwise the floor number
 //   room_id     = <block code>-<room_number>, block code = block_id minus _BLOCK
 const floorCode = (floorNumber) => (floorNumber === 0 ? 'G' : String(floorNumber));
@@ -233,16 +235,20 @@ exports.listRooms = asyncHandler(async (req, res) => {
 });
 
 // POST /api/admin/blocks/:block_id/rooms
-//   { floor_number, from, to?, room_type, bed_capacity }
-// Creates rooms <floor code><from..to> on that floor, e.g. floor 4, 1..20 ->
-// 401..420; ground floor, 1..5 -> G01..G05. Rooms that already exist are
-// skipped and reported, so the same range can safely be submitted twice.
+//   { floor_number, from, to?, room_type, bed_capacity }        floor code + 1..99: floor 4, 1..20 -> 401..420; ground, 1..5 -> G01..G05
+//   { floor_number, door_from, door_to?, room_type, bed_capacity }  exactly these door numbers: floor 3, 401..420 -> 401..420
+// Rooms that already exist are skipped and reported, so the same range can safely be submitted twice.
 exports.createRooms = asyncHandler(async (req, res) => {
     const { block_id } = req.params;
-    const { floor_number, from, room_type, bed_capacity } = req.body;
-    const to = req.body.to ?? from;
+    const { floor_number, room_type, bed_capacity } = req.body;
+    const byDoor = req.body.door_from !== undefined && req.body.door_from !== null;
+    const from = byDoor ? req.body.door_from : req.body.from;
+    const to = (byDoor ? req.body.door_to : req.body.to) ?? from;
     if (to < from) {
-        throw new AppError(400, '"to" must be greater than or equal to "from".');
+        throw new AppError(400, byDoor ? '"door_to" must be greater than or equal to "door_from".' : '"to" must be greater than or equal to "from".');
+    }
+    if (byDoor && to - from >= 300) {
+        throw new AppError(400, 'Add at most 300 rooms at a time.');
     }
 
     const outcome = await db.withTransaction(async (client) => {
@@ -258,7 +264,7 @@ exports.createRooms = asyncHandler(async (req, res) => {
         const created = [];
         const skipped = [];
         for (let seq = from; seq <= to; seq++) {
-            const roomNumber = roomNumberFor(floor_number, seq);
+            const roomNumber = byDoor ? String(seq) : roomNumberFor(floor_number, seq);
             const roomId = `${blockCodeOf(block_id)}-${roomNumber}`;
             const inserted = await client.query(
                 `INSERT INTO rooms (room_id, block_id, room_number, floor_number, room_type, bed_capacity)

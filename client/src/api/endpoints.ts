@@ -417,7 +417,7 @@ export const infraApi = {
 
   createRooms: (
     blockId: string,
-    data: { floor_number: number; from: number; to: number; room_type: RoomType; bed_capacity: number }
+    data: { floor_number: number; room_type: RoomType; bed_capacity: number } & ({ door_from: number; door_to: number } | { from: number; to: number })
   ) =>
     apiFetch<{ message: string; created: string[]; skipped: string[] }>(`/infrastructure/blocks/${blockId}/rooms`, {
       method: 'POST',

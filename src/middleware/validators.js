@@ -99,7 +99,7 @@ const userProfileRules = [
 // together. They are a REQUEST for an allotment - the hostel office decides.
 const roomRequestRules = [
     body('block_id').optional({ values: 'null' }).isString().trim().notEmpty().isLength({ max: 10 }).withMessage('block_id is invalid.'),
-    body('floor_number').optional({ values: 'null' }).isInt({ min: 0, max: 99 }).withMessage('floor_number is invalid.').toInt(),
+    body('floor_number').optional({ values: 'null' }).isInt({ min: 0, max: 24 }).withMessage('The floor must be a whole number from 0 (ground) to 24.').toInt(),
     body('room_id').optional({ values: 'null' }).isString().trim().notEmpty().isLength({ max: 20 }).withMessage('room_id is invalid.'),
     body().custom((v) => {
         const given = ['block_id', 'floor_number', 'room_id'].filter((k) => v && v[k] !== undefined && v[k] !== null);
@@ -197,7 +197,7 @@ const profileValidators = [
 
 const roomRequestValidators = [
     body('block_id').isString().trim().notEmpty().isLength({ max: 10 }).withMessage('block_id is required.'),
-    body('floor_number').isInt({ min: 0, max: 99 }).withMessage('floor_number is required.').toInt(),
+    body('floor_number').isInt({ min: 0, max: 24 }).withMessage('The floor must be a whole number from 0 (ground) to 24.').toInt(),
     body('room_id').isString().trim().notEmpty().isLength({ max: 20 }).withMessage('room_id is required.'),
     handleValidation,
 ];
@@ -609,8 +609,11 @@ const removeFloorValidators = [
 const createRoomsValidators = [
     blockIdParam,
     body('floor_number').isInt({ min: 0, max: 99 }).withMessage('floor_number must be 0 (ground) to 99.').toInt(),
-    body('from').isInt({ min: 1, max: 99 }).withMessage('from must be a room number 1-99 on that floor.').toInt(),
+    // Either from/to (1-99 after the floor code) or door_from/door_to (the exact door numbers, three or four digits).
+    body('from').if(body('door_from').not().exists()).isInt({ min: 1, max: 99 }).withMessage('from must be a room number 1-99 on that floor (or send door_from).').toInt(),
     body('to').optional({ nullable: true }).isInt({ min: 1, max: 99 }).withMessage('to must be a room number 1-99 on that floor.').toInt(),
+    body('door_from').optional({ nullable: true }).isInt({ min: 100, max: 9999 }).withMessage('door_from must be a room number of three or four digits.').toInt(),
+    body('door_to').optional({ nullable: true }).isInt({ min: 100, max: 9999 }).withMessage('door_to must be a room number of three or four digits.').toInt(),
     body('room_type').isIn(ROOM_TYPES).withMessage(`room_type must be one of: ${ROOM_TYPES.join(', ')}.`),
     body('bed_capacity').isInt({ min: 1, max: 6 }).withMessage('bed_capacity must be 1-6.').toInt(),
     handleValidation,
