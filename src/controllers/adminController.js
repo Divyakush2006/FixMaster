@@ -4,6 +4,7 @@ const { createUser, hashPassword, PUBLIC_USER_COLUMNS } = require('../services/u
 const { recordAudit } = require('../services/auditService');
 const { releaseLiveJobs } = require('../services/taskService');
 const { pendingRequests, assertHostelFits, DECLINE } = require('../services/roomRequestService');
+const mailer = require('../services/mailer');
 
 // ---- Users -------------------------------------------------------------------
 
@@ -179,6 +180,32 @@ exports.declineAllotmentRequest = asyncHandler(async (req, res) => {
 
 // POST /api/admin/users/:user_id/reset-password - for users locked out of
 // their account. Revokes every existing session of that user.
+// POST /api/admin/mail-test { to? } - checks the outgoing mail service and sends one test message, answering with
+// what actually happened (the service's own error text) so a deployment's mail can be diagnosed without reading
+// server logs. `to` defaults to the administrator's own address; it can be any address, for example a student's
+// @vitstudent.ac.in mailbox, to see whether that mailbox gets mail from here.
+exports.mailTest = asyncHandler(async (req, res) => {
+    const me = await db.query('SELECT email FROM users WHERE user_id = $1', [req.user.userId]);
+    const to = req.body.to || (me.rows[0] && me.rows[0].email);
+    if (!to) throw new AppError(400, 'Send "to": the address that should receive the test message.');
+    const notes = [];
+    const capture = { log: (m) => notes.push(String(m)), error: (m) => notes.push(String(m)) };
+    const connection = await mailer.checkConnection(capture);
+    const result = { configured: mailer.isConfigured(), connection: connection === null ? 'not checked' : connection ? 'ok' : 'failed', connection_notes: notes, from: process.env.MAIL_FROM || null, to: mailer.maskRecipient(to), sent: false, error: null };
+    if (result.configured) {
+        try {
+            await mailer.sendMail({ to, subject: 'FixMaster mail test', text: 'This is a test message from FixMaster. If you can read it, outgoing email works.\n' });
+            result.sent = true;
+        } catch (err) {
+            result.error = `${err.code ? `${err.code} ` : ''}${err.message}`;
+        }
+    } else {
+        result.error = 'No mail service is configured (SMTP_* settings or BREVO_API_KEY).';
+    }
+    await recordAudit(null, req, { action: 'mail.test', targetType: 'system', targetId: 'mail', details: { to: result.to, sent: result.sent, error: result.error } });
+    res.json(result);
+});
+
 exports.resetPassword = asyncHandler(async (req, res) => {
     const passwordHash = await hashPassword(req.body.new_password);
     await db.withTransaction(async (client) => {

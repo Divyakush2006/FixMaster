@@ -14,6 +14,7 @@ router.get('/users/summary', admin.userSummary);
 router.post('/users', v.adminCreateUserValidators, admin.createUser);
 router.patch('/users/:user_id', v.adminUpdateUserValidators, admin.updateUser);
 router.post('/users/:user_id/reset-password', v.adminResetPasswordValidators, admin.resetPassword);
+router.post('/mail-test', v.mailTestValidators, admin.mailTest);
 
 // Campus organisation: staff placement and leave, supervisor blocks.
 router.patch('/users/:user_id/placement', v.staffPlacementValidators, org.updateStaffPlacement);

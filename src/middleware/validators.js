@@ -424,6 +424,8 @@ const adminResetPasswordValidators = [
     handleValidation,
 ];
 
+const mailTestValidators = [body('to').optional({ values: 'null' }).isEmail().withMessage('to must be an email address.').isLength({ max: 254 }), handleValidation];
+
 const adminAllotValidators = [
     body('student_id').trim().notEmpty().withMessage('student_id is required.'),
     body('room_id').trim().notEmpty().withMessage('room_id is required.'),
@@ -669,6 +671,7 @@ module.exports = {
     adminAuditValidators,
     adminUpdateUserValidators,
     adminResetPasswordValidators,
+    mailTestValidators,
     adminAllotValidators,
     adminEndAllotmentValidators,
     createBlockValidators,
