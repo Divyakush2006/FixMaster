@@ -6,7 +6,7 @@
                  └─ /api/*  ──► Pages Function (client/functions/api/[[path]].js)
                                     └──► fixmaster-api.onrender.com (Render, always on)
                                               ├─► Neon PostgreSQL
-                                              ├─► Cloudflare R2   (ticket photos)
+                                              ├─► Neon (ticket photos too, table ticket_photos)
                                               ├─► Brevo SMTP      (sign-up and reset email)
                                               └─► Groq / Gemini / OpenRouter (optional AI)
 ```
@@ -15,8 +15,8 @@ The browser only ever talks to `divyakush.info`, so sign-in cookies, CSRF and CO
 special settings. The function passes each visitor's real address to the API (shared secret
 `EDGE_PROXY_SECRET`) so rate limiting is per user, not one bucket for everyone.
 
-Cost: $0. This guide uses only free plans: Render free, Neon free, Cloudflare Pages and R2 (10 GB) and Brevo
-(300 mails a day). See "Limits to know" for what the free plans cost you in behaviour.
+Cost: $0. This guide uses only free plans: Render free, Neon free, Cloudflare Pages and Brevo
+(300 mails a day). No payment card is needed anywhere. See "Limits to know" for what the free plans cost you in behaviour.
 
 Do the steps in order. Each ends with a check.
 
@@ -31,13 +31,17 @@ Do the steps in order. Each ends with a check.
    `postgresql://user:password@ep-xxxx.ap-southeast-1.aws.neon.tech/neondb?sslmode=require`.
 3. Note the region. This project is in `aws-us-east-2` (Ohio), so `render.yaml` uses Render's Ohio region.
 
-## 2. Photo storage (Cloudflare R2)
+## 2. Photo storage
 
-Render's disk is wiped on every deploy, so photos need a bucket.
+Render's free disk is wiped on every deploy, so photos cannot live there. The Blueprint sets
+`PHOTO_STORAGE=database`: each photo is kept in your Neon database (table `ticket_photos`), so there is nothing to
+set up and no storage account or card. Browsers shrink photos to about 300 KB before uploading. Neon's free
+storage is shared with everything else, so check usage in the Neon console now and then (a few thousand photos
+fit in 1 GB).
 
-1. Cloudflare dashboard, **R2 Object Storage**, create a bucket (for example `fixmaster-photos`). Keep it **private**.
-2. **Manage R2 API Tokens**, create a token with *Object Read & Write* on that bucket. Copy the **Access Key ID**,
-   **Secret Access Key** and the S3 endpoint `https://<account-id>.r2.cloudflarestorage.com`.
+Later, if photos grow, move to a bucket (Cloudflare R2 needs a card on file; Amazon S3 and Backblaze B2 are
+other options): add `S3_BUCKET`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_REGION` on
+Render. A bucket takes precedence; photos already in the database are not moved automatically.
 
 ## 3. Email (Brevo) from your own domain
 
@@ -60,7 +64,6 @@ Mail sent "from" a gmail.com address through Brevo is likely to be treated as sp
    | `DATABASE_URL` | the Neon direct string from step 1 |
    | `SMTP_USER`, `SMTP_PASS` | the Brevo SMTP login and key |
    | `MAIL_FROM` | `FixMaster <no-reply@divyakush.info>` (after step 3) |
-   | `S3_BUCKET`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | from step 2 |
    | `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` | your AI keys (optional; leave empty to skip) |
 
    Already set by the Blueprint: `NODE_ENV=production`, `TRUST_PROXY=1`, `SMTP_PORT=2525` (Render's free plan blocks 25, 465 and 587; Brevo also answers on 2525), `CORS_ORIGIN` and `APP_URL`
@@ -146,7 +149,7 @@ private. Each failure says which setting to look at. Then do the steps below by 
 3. Add a block's rooms (Blocks & rooms) and switch the autopilot on for a block (Autopilot settings, as a supervisor).
 4. Register a resident at `/register`; the verification mail arrives; sign in; raise a ticket with a photo.
 5. The ticket shows its handling trail (received, AI review, assigned); sign in as the technician and see it.
-6. Open the photo again after a Render redeploy: it is still there (R2).
+6. Open the photo again after a Render redeploy: it is still there.
 7. `https://divyakush.info/api/auth/capabilities` shows `"password_reset": true` and `"student_signup": true`.
 
 ## Updating later
@@ -163,7 +166,7 @@ private. Each failure says which setting to look at. Then do the steps below by 
   ticket page refreshes every 2 seconds only while the AI review is pending, but a busy campus can still pass
   100,000. If the Functions tab shows you near the limit, the Workers Paid plan ($5 a month) lifts it to 10 million a month.
 - **Render free** sleeps when idle (step 7 prevents it), has no shell and no disk that survives a deploy (photos
-  are in R2, the first administrator is created from your own computer), and gives 750 instance hours a month.
+  are in the database, the first administrator is created from your own computer), and gives 750 instance hours a month.
   If the pinger ever fails, the first visitor after 15 idle minutes waits about a minute.
 - **Brevo free** sends 300 mails a day.
 - **Groq/Gemini/OpenRouter free tiers** have daily allowances; the app falls back to rule-based handling when they run out.
@@ -179,6 +182,6 @@ private. Each failure says which setting to look at. Then do the steps below by 
 | Everyone gets "too many attempts" together | `EDGE_PROXY_SECRET` differs between Render and Pages, so all users appear to share one address. Make them identical. |
 | Render fails at start with "CORS_ORIGIN must be set" or "JWT_SECRET" | A required variable was cleared. The message names it. |
 | Sign-up and "Forgot password" say they are unavailable | Mail settings are missing. Fill the `SMTP_*` and `MAIL_FROM` variables and redeploy. |
-| Photos vanish after a deploy | `S3_BUCKET` is not set, so photos went to Render's disk. Set the R2 variables. |
+| Photos vanish after a deploy | `PHOTO_STORAGE` is not `database` (and no bucket is set), so photos went to Render's disk. Set `PHOTO_STORAGE=database`. |
 | Mail fails with a timeout or "connection" error | `SMTP_PORT` is 587 or 465, which Render free blocks. Use 2525. |
 | Mail goes to spam | The domain is not authenticated in Brevo (step 3), or `MAIL_FROM` is a gmail.com address. |

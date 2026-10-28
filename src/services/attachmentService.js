@@ -2,11 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const objects = require('./objectStorage');
+const db = require('../config/db');
 
-// Photos attached to tickets. The database may not gain a table, so each photo
-// is a file named after its ticket (`<ticket id>.jpg|png`) in UPLOAD_DIR, and
-// the ticket's existing photo_evidence_url column points at the API route that
-// serves it (checked against the same visibility rules as the ticket itself).
+// Photos attached to tickets. Each photo is stored under its ticket's id (a file
+// `<ticket id>.jpg|png`, a bucket object or a row, see below), and the ticket's
+// existing photo_evidence_url column points at the API route that serves it
+// (checked against the same visibility rules as the ticket itself).
 //
 // Every upload is parsed and REBUILT here, never stored as received:
 //   * only JPEG and PNG, judged by content, not by the declared type;
@@ -19,11 +20,14 @@ const objects = require('./objectStorage');
 // Where the files live: on the host's disk (UPLOAD_DIR) by default - with more than
 // one API instance that must be a shared volume, backed up with the database - or,
 // when S3_BUCKET is set, in an S3-compatible bucket (services/objectStorage.js), which
-// any number of instances share. Either way a photo is only served through the API.
+// any number of instances share, or - with PHOTO_STORAGE=database and no bucket - in the
+// ticket_photos table, for hosts with neither a lasting disk nor an object store.
+// Whichever it is, a photo is only served through the API.
 
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 const TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png' };
 
+const inDatabase = () => !objects.isEnabled() && String(process.env.PHOTO_STORAGE || '').toLowerCase() === 'database';
 const uploadDir = () => path.resolve(process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads'));
 const photoUrl = (complaintId) => `/api/complaints/${complaintId}/photo`;
 const isStoredPhotoUrl = (url) => typeof url === 'string' && url.startsWith('/api/complaints/');
@@ -105,7 +109,16 @@ const objectKey = (complaintId, ext) => `${complaintId}.${ext}`;
 const contentTypeOf = (ext) => Object.keys(TYPES).find((type) => TYPES[type] === ext);
 
 /** Writes the photo atomically, replacing any earlier one for the ticket (whatever its type). */
-async function savePhoto(complaintId, buffer, ext) {
+/** Pass the caller's transaction as `executor` so a database-held photo commits or rolls back with the ticket row. */
+async function savePhoto(complaintId, buffer, ext, executor = db) {
+    if (inDatabase()) {
+        await executor.query(
+            `INSERT INTO ticket_photos (complaint_id, content_type, data, size_bytes) VALUES ($1, $2, $3, $4)
+             ON CONFLICT (complaint_id) DO UPDATE SET content_type = EXCLUDED.content_type, data = EXCLUDED.data, size_bytes = EXCLUDED.size_bytes, created_at = NOW()`,
+            [complaintId, contentTypeOf(ext), buffer, buffer.length]
+        );
+        return;
+    }
     if (objects.isEnabled()) {
         await objects.put(objectKey(complaintId, ext), buffer, contentTypeOf(ext));
         for (const other of Object.values(TYPES)) {
@@ -122,7 +135,11 @@ async function savePhoto(complaintId, buffer, ext) {
     }
 }
 
-async function removePhoto(complaintId) {
+async function removePhoto(complaintId, executor = db) {
+    if (inDatabase()) {
+        await executor.query('DELETE FROM ticket_photos WHERE complaint_id = $1', [complaintId]);
+        return;
+    }
     if (objects.isEnabled()) {
         for (const ext of Object.values(TYPES)) await objects.remove(objectKey(complaintId, ext));
         return;
@@ -132,6 +149,10 @@ async function removePhoto(complaintId) {
 
 /** { contentType, ext, file } (on disk) or { contentType, ext, buffer } (in a bucket) for a stored photo, or null. */
 async function findPhoto(complaintId) {
+    if (inDatabase()) {
+        const { rows } = await db.query('SELECT content_type, data FROM ticket_photos WHERE complaint_id = $1', [complaintId]);
+        return rows[0] ? { buffer: rows[0].data, contentType: rows[0].content_type, ext: TYPES[rows[0].content_type] } : null;
+    }
     if (objects.isEnabled()) {
         for (const [contentType, ext] of Object.entries(TYPES)) {
             const found = await objects.get(objectKey(complaintId, ext));

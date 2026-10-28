@@ -37,13 +37,13 @@ describe('preparePhoto', () => {
     return canvas;
   }
 
-  it('scales a large photo down to 2048 px on its longest side and re-encodes it as JPEG', async () => {
+  it('scales a large photo down to 1600 px on its longest side and re-encodes it as JPEG', async () => {
     const out = new Blob([new Uint8Array(500_000)], { type: 'image/jpeg' });
     const canvas = stubCanvas(out);
     const prepared = await preparePhoto(file(9 * 1024 * 1024));
     expect(prepared).toBe(out);
-    expect(canvas.width).toBe(2048);
-    expect(canvas.height).toBe(1536);
+    expect(canvas.width).toBe(1600);
+    expect(canvas.height).toBe(1200);
   });
 
   it('keeps small images at their own size', async () => {

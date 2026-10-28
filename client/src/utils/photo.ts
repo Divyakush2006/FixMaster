@@ -8,7 +8,7 @@
  */
 export const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 export const PHOTO_ACCEPT = 'image/jpeg,image/png';
-const MAX_EDGE = 2048;
+const MAX_EDGE = 1600; // plenty to see a fault, and keeps each photo near 300 KB so storage lasts
 const MAX_ORIGINAL_BYTES = 40 * 1024 * 1024; // refuse absurd files before decoding them
 
 /** What is wrong with the chosen file, or null if it can be used. */
@@ -32,7 +32,7 @@ export async function preparePhoto(file: File): Promise<Blob> {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
       bitmap.close?.();
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
       if (blob && blob.size <= MAX_PHOTO_BYTES) return blob;
     }
   } catch {

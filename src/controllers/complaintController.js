@@ -546,7 +546,7 @@ exports.getComplaintById = asyncHandler(async (req, res) => {
 });
 
 // ---- Photo attachment ------------------------------------------------------------
-// Files live in UPLOAD_DIR (see attachmentService); the ticket's existing
+// Files live in UPLOAD_DIR, a bucket or the database (see attachmentService); the ticket's existing
 // photo_evidence_url column points at GET /api/complaints/:id/photo.
 
 /** Reporter-only, live-ticket-only guard shared by upload and removal. */
@@ -574,7 +574,7 @@ exports.uploadPhoto = asyncHandler(async (req, res) => {
         await lockForPhotoChange(client, req.params.id, req.user.userId);
         await client.query('UPDATE complaints SET photo_evidence_url = $2 WHERE complaint_id = $1', [req.params.id, url]);
         // Inside the transaction: if the file cannot be written, nothing points at it.
-        await savePhoto(req.params.id, image.buffer, image.ext);
+        await savePhoto(req.params.id, image.buffer, image.ext, client);
     }, req.user.userId);
     res.json({ photo_evidence_url: url });
 });
@@ -584,7 +584,7 @@ exports.deletePhoto = asyncHandler(async (req, res) => {
     await db.withTransaction(async (client) => {
         await lockForPhotoChange(client, req.params.id, req.user.userId);
         await client.query('UPDATE complaints SET photo_evidence_url = NULL WHERE complaint_id = $1', [req.params.id]);
-        await removePhoto(req.params.id);
+        await removePhoto(req.params.id, client);
     }, req.user.userId);
     res.status(204).end();
 });

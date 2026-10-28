@@ -105,7 +105,9 @@ Which models run, and why, is in [AI_MODELS.md](AI_MODELS.md) (`npm run ai:bench
 
 ## Photo storage
 
-Ticket photos are written to local disk (`UPLOAD_DIR`) unless `S3_BUCKET` is set,
+Ticket photos are written to local disk (`UPLOAD_DIR`) unless `PHOTO_STORAGE=database` (they are then kept in
+the `ticket_photos` table, which needs no disk and no storage account; browsers shrink photos to about 300 KB
+first, so 1 GB holds a few thousand) or `S3_BUCKET` is set (a bucket takes precedence over the database),
 in which case they live in an S3-compatible bucket (Amazon S3, Cloudflare R2,
 MinIO, SeaweedFS ...) and any number of API instances share them. Requests are
 signed with AWS Signature Version 4 by the API itself; nothing extra is installed.
