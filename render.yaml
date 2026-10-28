@@ -27,10 +27,10 @@ services:
         generateValue: true
       - key: METRICS_TOKEN
         generateValue: true
-      - key: CORS_ORIGIN
-        value: https://divyakush.info
-      - key: APP_URL
-        value: https://divyakush.info
+      - key: CORS_ORIGIN             # the site answers on both; visitors are sent to www (a Cloudflare redirect rule)
+        value: https://www.divyakush.info,https://divyakush.info
+      - key: APP_URL                 # the address in emailed links
+        value: https://www.divyakush.info
       # Email (Brevo)
       - key: SMTP_HOST
         value: smtp-relay.brevo.com

@@ -67,8 +67,8 @@ Mail sent "from" a gmail.com address through Brevo is likely to be treated as sp
    | `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` | your AI keys (optional; leave empty to skip) |
 
    Already set by the Blueprint: `NODE_ENV=production`, `TRUST_PROXY=1`, `SMTP_PORT=2525` (Render's free plan blocks 25, 465 and 587; Brevo also answers on 2525), `CORS_ORIGIN` and `APP_URL`
-   (`https://divyakush.info`), a generated `JWT_SECRET`, `EDGE_PROXY_SECRET` and `METRICS_TOKEN`.
-   If you also serve `https://www.divyakush.info`, set `CORS_ORIGIN` to both, comma separated.
+   (`https://www.divyakush.info`; `CORS_ORIGIN` also lists the bare `https://divyakush.info`), a generated `JWT_SECRET`, `EDGE_PROXY_SECRET` and `METRICS_TOKEN`.
+   The site's main address is `www.divyakush.info`; step 6 redirects the bare domain to it.
 4. Deploy. The container applies the database migrations, then starts.
 5. **Check:** open `https://fixmaster-api.onrender.com/api/health`. Expect `{"status":"ok", ...}`.
    Then **copy the value of `EDGE_PROXY_SECRET`** (Environment tab, reveal) for step 6.
@@ -80,7 +80,7 @@ never leave your machine. (PowerShell shown.)
 
 ```powershell
 $env:DATABASE_URL = "<the Neon direct string>"
-npm run db:provision -- --yes --admin-only --require-change --admin-email you@yourmail.com --web-url https://divyakush.info --out "$HOME\fixmaster-admin.txt"
+npm run db:provision -- --yes --admin-only --require-change --admin-email you@yourmail.com --web-url https://www.divyakush.info --out "$HOME\fixmaster-admin.txt"
 ```
 
 This creates one administrator, `ADMIN_01`, with a random password in that file; it must be changed at first
@@ -119,7 +119,10 @@ Everyone else is created from the app, so every real account has a real email:
 4. Save and deploy. In the project, **Functions** should list the route `/api/[[path]]`.
 5. **Custom domains**, add `divyakush.info` (and `www.divyakush.info` if wanted). The domain must use
    Cloudflare's nameservers; Cloudflare adds the DNS record for you.
-6. **Check:** `https://divyakush.info/api/health/live` returns `{"status":"ok"}` (that is the API, through the function).
+6. **Redirect the bare domain to www:** Cloudflare, the domain, **Rules**, **Redirect Rules**, new rule: when Hostname equals
+   `divyakush.info`, redirect (dynamic) to `concat("https://www.divyakush.info", http.request.uri.path)`, status 301, keep the
+   query string. The `@` DNS record must be proxied (orange cloud).
+7. **Check:** `https://www.divyakush.info/api/health/live` returns `{"status":"ok"}` (that is the API, through the function).
 
 ## 7. Keep the API awake (free plan)
 
@@ -137,20 +140,20 @@ free service in the same Render workspace, or the hours run out around mid-month
 First, let the computer check what it can from outside:
 
 ```
-npm run deploy:check -- --site https://divyakush.info --api https://fixmaster-api.onrender.com
+npm run deploy:check -- --site https://www.divyakush.info --api https://fixmaster-api.onrender.com
 ```
 
 It checks that the app and deep links load, the security headers are sent, `/api` reaches the API through the site,
 the database answers, email is on, other websites are refused, sign-in is accepted from the site, and metrics are
 private. Each failure says which setting to look at. Then do the steps below by hand.
 
-1. `https://divyakush.info/admin`: sign in as `ADMIN_01`; choose a new password when asked.
+1. `https://www.divyakush.info/admin`: sign in as `ADMIN_01`; choose a new password when asked.
 2. Create a supervisor and a technician with real emails; use "Forgot password" for one of them and check the mail arrives.
 3. Add a block's rooms (Blocks & rooms) and switch the autopilot on for a block (Autopilot settings, as a supervisor).
 4. Register a resident at `/register`; the verification mail arrives; sign in; raise a ticket with a photo.
 5. The ticket shows its handling trail (received, AI review, assigned); sign in as the technician and see it.
 6. Open the photo again after a Render redeploy: it is still there.
-7. `https://divyakush.info/api/auth/capabilities` shows `"password_reset": true` and `"student_signup": true`.
+7. `https://www.divyakush.info/api/auth/capabilities` shows `"password_reset": true` and `"student_signup": true`.
 
 ## Updating later
 
@@ -178,7 +181,7 @@ private. Each failure says which setting to look at. Then do the steps below by 
 | Any `/api` call returns 503 `API_UNAVAILABLE` | `API_ORIGIN` is missing or has no `https://` in Pages variables. Fix and redeploy Pages. |
 | Returns 502 `API_UNAVAILABLE` | Render is deploying or down. Check the service's Logs. |
 | Sign-in works but the next page is "session no longer valid" | The page was opened on an address not in `CORS_ORIGIN` (for example `www`). Add it, or redirect `www` to the main address. |
-| 403 `ORIGIN` on every action | `CORS_ORIGIN` does not match the address in the browser exactly (`https://divyakush.info`, no trailing slash). |
+| 403 `ORIGIN` on every action | `CORS_ORIGIN` does not match the address in the browser exactly (`https://www.divyakush.info`, no trailing slash). |
 | Everyone gets "too many attempts" together | `EDGE_PROXY_SECRET` differs between Render and Pages, so all users appear to share one address. Make them identical. |
 | Render fails at start with "CORS_ORIGIN must be set" or "JWT_SECRET" | A required variable was cleared. The message names it. |
 | Sign-up and "Forgot password" say they are unavailable | Mail settings are missing. Fill the `SMTP_*` and `MAIL_FROM` variables and redeploy. |
