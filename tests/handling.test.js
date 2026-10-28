@@ -83,6 +83,11 @@ describe('ticket handling: acknowledgements, AI review, dispatch trail', () => {
         const manager = await trail(sup, id);
         assert.equal(stage(manager, 'AI_REVIEW')[0].data.urgency, 'ROUTINE');
         assert.equal(stage(manager, 'AI_REVIEW')[0].data.ai, 'OK');
+        // Staff see who is suggested and the block's setting; the resident only sees what happens next.
+        const waitingFor = (view) => stage(view, 'DISPATCH').find((x) => x.outcome === 'WAITING').detail;
+        assert.match(waitingFor(manager), /suggest-only/);
+        assert.match(waitingFor(student), /supervisor will choose the technician/);
+        assert.doesNotMatch(waitingFor(student), /suggest-only|autopilot|off shift|suggested/i);
     });
 
     it('lets the AI raise a priority, never above High, and records why', async () => {
@@ -172,8 +177,11 @@ describe('ticket handling: acknowledgements, AI review, dispatch trail', () => {
         const stuck = await raise(rahul, issue.medium, { description: 'The tube light above my desk does not turn on.' });
         const waiting = stage(stuck.data.handling, 'DISPATCH')[0];
         assert.equal(waiting.outcome, 'WAITING');
-        assert.match(waiting.detail, /off duty/);
+        assert.match(waiting.detail, /busy right now/);
         assert.match(waiting.detail, /tried again/);
+        assert.doesNotMatch(waiting.detail, /off duty/, 'shift detail is for staff');
+        const staffView = stage(await trail(sup, stuck.data.complaint.complaint_id), 'DISPATCH').find((x) => x.outcome === 'WAITING');
+        assert.match(staffView.detail, /off duty/);
         assert.equal(stuck.data.complaint.status, 'OPEN');
     });
 
