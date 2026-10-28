@@ -9,8 +9,8 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    plan: starter            # always on; the free plan sleeps after 15 idle minutes
-    region: singapore        # keep it close to the Neon database region
+    plan: free               # sleeps after 15 idle minutes: keep it awake with an uptime pinger (see the guide)
+    region: ohio             # the Neon project is in aws-us-east-2 (Ohio): keep the API next to it
     branch: final
     healthCheckPath: /api/health/live
     autoDeploy: true
@@ -34,8 +34,8 @@ services:
       # Email (Brevo)
       - key: SMTP_HOST
         value: smtp-relay.brevo.com
-      - key: SMTP_PORT
-        value: "587"
+      - key: SMTP_PORT           # Render free blocks 25/465/587; Brevo also answers on 2525
+        value: "2525"
       - key: SMTP_USER
         sync: false
       - key: SMTP_PASS
