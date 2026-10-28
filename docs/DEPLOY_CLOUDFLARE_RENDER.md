@@ -131,6 +131,16 @@ free service in the same Render workspace, or the hours run out around mid-month
 
 ## 8. Smoke test (five minutes)
 
+First, let the computer check what it can from outside:
+
+```
+npm run deploy:check -- --site https://divyakush.info --api https://fixmaster-api.onrender.com
+```
+
+It checks that the app and deep links load, the security headers are sent, `/api` reaches the API through the site,
+the database answers, email is on, other websites are refused, sign-in is accepted from the site, and metrics are
+private. Each failure says which setting to look at. Then do the steps below by hand.
+
 1. `https://divyakush.info/admin`: sign in as `ADMIN_01`; choose a new password when asked.
 2. Create a supervisor and a technician with real emails; use "Forgot password" for one of them and check the mail arrives.
 3. Add a block's rooms (Blocks & rooms) and switch the autopilot on for a block (Autopilot settings, as a supervisor).

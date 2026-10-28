@@ -18,7 +18,8 @@
     "ai:bench": "node scripts/ai-benchmark/run.js",
     "db:drill": "node scripts/backup-drill.js",
     "db:bundle": "node scripts/build-sql-bundles.js",
-    "db:provision": "node scripts/provision-accounts.js"
+    "db:provision": "node scripts/provision-accounts.js",
+    "deploy:check": "node scripts/deploy-check.js"
   },
   "repository": {
     "type": "git",
