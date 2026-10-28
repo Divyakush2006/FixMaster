@@ -92,11 +92,34 @@ async function migrate({ connectionString, log = console.log } = {}) {
     }
 }
 
-module.exports = { migrate, listMigrations };
+/**
+ * What to print when migrating fails. Node reports a refused connection as an AggregateError whose own
+ * message is empty (one entry per address it tried), which left deploy logs showing only blank lines.
+ */
+function describeFailure(err) {
+    const parts = [];
+    const seen = new Set();
+    for (const e of [err, ...((err && err.errors) || [])]) {
+        const text = [e && e.code, e && e.message].filter(Boolean).join(' ');
+        if (text && !seen.has(text)) {
+            seen.add(text);
+            parts.push(text);
+        }
+    }
+    let message = parts.join('; ') || String(err);
+    if (/ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH/.test(message)) {
+        message += ' - The database did not answer. Check DATABASE_URL: it must be the full postgresql://... address, with no quotes, spaces or "DATABASE_URL=" in front, and the host must be reachable from here.';
+    } else if (/ENOTFOUND/.test(message)) {
+        message += ' - The database host name could not be found. Check DATABASE_URL for typos, quotes or spaces.';
+    }
+    return message;
+}
+
+module.exports = { migrate, listMigrations, describeFailure };
 
 if (require.main === module) {
     migrate().catch((err) => {
-        console.error(err.message);
+        console.error(`Migration failed: ${describeFailure(err)}`);
         process.exit(1);
     });
 }

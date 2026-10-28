@@ -174,3 +174,20 @@ describe('database migrations', () => {
         }
     });
 });
+
+describe('migration failure messages', () => {
+    const { describeFailure } = require('../scripts/migrate');
+
+    it('says what happened when a refused connection has an empty message (AggregateError)', () => {
+        const refused = new AggregateError([Object.assign(new Error('connect ECONNREFUSED ::1:5432'), { code: 'ECONNREFUSED' }), Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5432'), { code: 'ECONNREFUSED' })], '');
+        const text = describeFailure(refused);
+        assert.match(text, /ECONNREFUSED/);
+        assert.match(text, /127\.0\.0\.1:5432/);
+        assert.match(text, /Check DATABASE_URL/);
+    });
+
+    it('explains an unknown host and passes other errors through', () => {
+        assert.match(describeFailure(Object.assign(new Error('getaddrinfo ENOTFOUND base'), { code: 'ENOTFOUND' })), /host name could not be found/);
+        assert.equal(describeFailure(new Error('role "x" does not exist')), 'role "x" does not exist');
+    });
+});
