@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { runChecks, PASS, WARN, FAIL } = require('../scripts/deploy-check');
 
 const SITE = 'https://site.example';
-const html = '<!doctype html><div id="root"></div>';
+const html = '<!doctype html><div id="root" class="h-full"></div>'; // the real page has a class on it
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const page = () =>
     new Response(html, { status: 200, headers: { 'content-type': 'text/html', 'content-security-policy': "default-src 'self'", 'x-frame-options': 'DENY', 'x-content-type-options': 'nosniff', 'strict-transport-security': 'max-age=1' } });

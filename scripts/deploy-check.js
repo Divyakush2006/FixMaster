@@ -52,7 +52,7 @@ async function runChecks({ site, api = null, fetchImpl = fetch, timeoutMs = 9000
 
     await attempt('The web app loads', async () => {
         const r = await get(`${site}/`);
-        if (r.status === 200 && typeof r.body === 'string' && r.body.includes('<div id="root">')) add(PASS, 'The web app loads');
+        if (r.status === 200 && typeof r.body === 'string' && /<div[^>]*id=["']root["']/.test(r.body)) add(PASS, 'The web app loads');
         else add(FAIL, 'The web app loads', `HTTP ${r.status}; has the Pages build finished and is the domain attached?`);
         const missing = ['content-security-policy', 'x-frame-options', 'x-content-type-options'].filter((h) => !r.headers.get(h));
         if (missing.length === 0) add(PASS, 'Security headers are sent');
@@ -65,7 +65,7 @@ async function runChecks({ site, api = null, fetchImpl = fetch, timeoutMs = 9000
 
     await attempt('Deep links open the app', async () => {
         const r = await get(`${site}/some/deep/link`);
-        if (r.status === 200 && typeof r.body === 'string' && r.body.includes('<div id="root">')) add(PASS, 'Deep links open the app');
+        if (r.status === 200 && typeof r.body === 'string' && /<div[^>]*id=["']root["']/.test(r.body)) add(PASS, 'Deep links open the app');
         else add(FAIL, 'Deep links open the app', `HTTP ${r.status}`);
     });
 
