@@ -102,7 +102,7 @@ const roomRequestRules = [
     body('floor_number').optional({ values: 'null' }).isInt({ min: 0, max: 24 }).withMessage('The floor must be a whole number from 0 (ground) to 24.').toInt(),
     body('room_id').optional({ values: 'null' }).isString().trim().notEmpty().isLength({ max: 20 }).withMessage('room_id is invalid.'),
     // The number on the door; a room that is not in the records yet is added when it is requested.
-    body('room_number').optional({ values: 'null' }).isString().trim().matches(/^[1-9][0-9]{2,3}$/).withMessage('The room number is the 3 or 4 digit number on the door.'),
+    body('room_number').optional({ values: 'null' }).isString().trim().matches(/^[0-9]{3,4}$/).withMessage('The room number is the 3 or 4 digit number on the door.'),
     body().custom((v) => {
         const has = (k) => v && v[k] !== undefined && v[k] !== null;
         const given = ['block_id', 'floor_number'].filter(has).length + (has('room_id') || has('room_number') ? 1 : 0);
@@ -202,7 +202,7 @@ const roomRequestValidators = [
     body('block_id').isString().trim().notEmpty().isLength({ max: 10 }).withMessage('block_id is required.'),
     body('floor_number').isInt({ min: 0, max: 24 }).withMessage('The floor must be a whole number from 0 (ground) to 24.').toInt(),
     body('room_id').optional({ values: 'null' }).isString().trim().notEmpty().isLength({ max: 20 }).withMessage('room_id is invalid.'),
-    body('room_number').optional({ values: 'null' }).isString().trim().matches(/^[1-9][0-9]{2,3}$/).withMessage('The room number is the 3 or 4 digit number on the door.'),
+    body('room_number').optional({ values: 'null' }).isString().trim().matches(/^[0-9]{3,4}$/).withMessage('The room number is the 3 or 4 digit number on the door.'),
     body().custom((v) => !!v && ((v.room_id !== undefined && v.room_id !== null) || (v.room_number !== undefined && v.room_number !== null))).withMessage('Name the room: send room_number (the number on the door).'),
     handleValidation,
 ];

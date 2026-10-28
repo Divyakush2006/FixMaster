@@ -86,12 +86,23 @@ describe('hostel infrastructure: blocks, floors, room numbering', () => {
         assert.equal(twoDigits.status, 400);
     });
 
+    it('any three or four digits are a door number, including ones that start with 0', async () => {
+        for (const [id, num, floor] of [['A-012', '012', 0], ['A-0101', '0101', 1], ['A-100', '100', 24], ['A-9999', '9999', 7]]) {
+            await t.sql(`INSERT INTO block_floors (block_id, floor_number) VALUES ('A_BLOCK', ${floor}) ON CONFLICT DO NOTHING`);
+            await t.sql(`INSERT INTO rooms (room_id, block_id, room_number, floor_number) VALUES ('${id}', 'A_BLOCK', '${num}', ${floor})`);
+        }
+        const n = (await t.sql("SELECT COUNT(*)::int AS n FROM rooms WHERE room_id IN ('A-012', 'A-0101', 'A-100', 'A-9999')")).rows[0].n;
+        assert.equal(n, 4);
+        // Leave the block as the following tests expect it.
+        await t.sql("DELETE FROM rooms WHERE room_id IN ('A-012', 'A-0101', 'A-100', 'A-9999')");
+        await t.sql("DELETE FROM block_floors WHERE block_id = 'A_BLOCK' AND floor_number = 24");
+    });
+
     it('the database still refuses malformed room numbers and room ids', async () => {
         const bad = [
             ["'A-G1'", "'G1'", 0], // ground floor form is G plus two digits
             ["'A-42'", "'42'", 0], // fewer than three digits
             ["'A-12345'", "'12345'", 1], // more than four digits
-            ["'A-028'", "'028'", 0], // may not start with 0
             ["'A-4B8'", "'4B8'", 4], // digits only
         ];
         for (const [id, num, floor] of bad) {

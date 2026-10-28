@@ -17,7 +17,7 @@ const REQUEST = 'allotment.request';
 const DECLINE = 'allotment.decline';
 const WITHDRAW = 'allotment.withdraw';
 
-const DOOR_NUMBER = /^[1-9][0-9]{2,3}$/;
+const DOOR_NUMBER = /^[0-9]{3,4}$/;
 
 /**
  * The room a student asks for, named by the number on its door. A hostel's rooms are normally added by the office

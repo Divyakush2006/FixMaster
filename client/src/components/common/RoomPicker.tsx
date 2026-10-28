@@ -37,7 +37,7 @@ export const floorProblem = (floor: string): string | null =>
 
 /** What is wrong with a typed room number, or null. */
 export const roomProblem = (roomNo: string): string | null =>
-  roomNo !== '' && !/^[1-9]\d{2,3}$/.test(roomNo) ? 'The room number is the 3 or 4 digit number on your door.' : null;
+  roomNo !== '' && !/^\d{3,4}$/.test(roomNo) ? 'The room number is the 3 or 4 digit number on your door.' : null;
 
 /**
  * Block (a list: there are a few dozen) then floor (0-24) and the door number

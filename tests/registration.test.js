@@ -105,6 +105,19 @@ describe('student registration and room requests', () => {
         assert.equal(high.status, 201, JSON.stringify(high.data));
     });
 
+    it('takes any three or four digit door number on any floor from 0 to 24', async () => {
+        const asked = [['100', 0], ['101', 0], ['012', 2], ['0101', 1], ['199', 5], ['420', 3], ['428', 3], ['501', 4], ['999', 9], ['1000', 10], ['1234', 12], ['2406', 24], ['9999', 24], ['0000', 24]];
+        let n = 50;
+        for (const [door, floor] of asked) {
+            const r = await register(n, { block_id: 'E_BLOCK', floor_number: floor, room_number: door });
+            n += 1;
+            assert.equal(r.status, 201, `${door} on floor ${floor}: ${JSON.stringify(r.data)}`);
+            assert.equal(r.data.room_request.room_id, `E-${door}`);
+        }
+        const rows = (await t.sql("SELECT room_number, floor_number FROM rooms WHERE block_id = 'E_BLOCK' ORDER BY room_number")).rows;
+        assert.equal(rows.length, asked.length);
+    });
+
     it('refuses a door number that clashes or is malformed, and adds nothing', async () => {
         const rooms = async () => (await t.sql('SELECT COUNT(*)::int AS n FROM rooms')).rows[0].n;
         const before = await rooms();

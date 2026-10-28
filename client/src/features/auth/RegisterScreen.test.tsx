@@ -118,13 +118,14 @@ describe('RegisterScreen', () => {
     await user.type(floorBox(), '0');
     expect(screen.queryByText(/the floor must be from 0/i)).toBeNull();
 
-    // Two digits are still being typed; five are not accepted at all.
+    // Five digits are not accepted at all; letters are dropped; a leading zero is a normal door number.
     await user.type(roomBox(), '12345');
     expect(roomBox().value).toBe('1234');
     await user.clear(roomBox());
-    await user.type(roomBox(), '07');
-    await user.type(roomBox(), '5');
-    expect(await screen.findByText(/the room number is the 3 or 4 digit number on your door/i)).toBeTruthy();
+    await user.type(roomBox(), '0a12');
+    expect(roomBox().value).toBe('012');
+    expect(await screen.findByText(/room x-012: not in our records yet/i)).toBeTruthy();
+    expect(screen.queryByText(/the room number is the 3 or 4 digit number/i)).toBeNull();
   });
 
   it('clears the floor and room when the block changes', async () => {
