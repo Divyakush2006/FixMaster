@@ -430,5 +430,5 @@ Released under the [Apache License 2.0](LICENSE).
 ## Team
 
 - [Divyakush Punjabi](https://github.com/Divyakush2006) · [www.divyakush.com](https://www.divyakush.com)
-- [Vihaan Varshney](https://github.com/CodeClosed)
-- [Sudeep Kumar Sahu](https://github.com/sudeep-codes)
+- [Vihaan Varshney](https://github.com/CodeClosed) · [vihaanvarshney.com](https://vihaanvarshney.com)
+- [Sudeep Kumar Sahu](https://github.com/sudeep-codes) · [sudeepcodes.me](https://www.sudeepcodes.me/)
