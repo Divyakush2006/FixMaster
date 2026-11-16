@@ -429,7 +429,6 @@ Released under the [Apache License 2.0](LICENSE).
 
 ## Team
 
-- **[Divyakush Punjabi](https://github.com/Divyakush2006)**, project lead · [www.divyakush.com](https://www.divyakush.com)
-- [CodeClosed](https://github.com/CodeClosed)
-- Vihaan Varshney
-- [Sudeep Kumar Sahu](https://github.com/sudeep-codes)
+- [Divyakush Punjabi](https://github.com/Divyakush2006) · [www.divyakush.com](https://www.divyakush.com)
+- [Vihaan Varshney](https://github.com/CodeClosed) · [vihaanvarshney.com](https://vihaanvarshney.com)
+- [Sudeep Kumar Sahu](https://github.com/sudeep-codes) · [sudeepcodes.me](https://www.sudeepcodes.me/)
