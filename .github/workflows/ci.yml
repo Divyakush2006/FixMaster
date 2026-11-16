@@ -69,6 +69,19 @@ jobs:
         run: npm run db:bundle -- --check
       - name: No known vulnerabilities (production and dev dependencies)
         run: npm audit --audit-level=high
+      - name: Client tools matching the server (PostgreSQL ${{ matrix.postgres }})
+        # The backup-restore drill test dumps and restores with pg_dump and
+        # pg_restore. The runner image's default client can be newer than the
+        # service, and newer dumps may not restore into an older server, so pin
+        # the client to the server's major version (as backup-drill.yml does).
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $VERSION_CODENAME-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-${{ matrix.postgres }}
+          echo "PG_BIN=/usr/lib/postgresql/${{ matrix.postgres }}/bin" >> "$GITHUB_ENV"
       - run: npm test
 
   frontend:
