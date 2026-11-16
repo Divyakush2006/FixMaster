@@ -191,6 +191,12 @@ export interface Complaint {
   /** Technician currently (or most recently) holding the ticket. */
   assigned_staff_id?: string | null;
   assigned_staff_name?: string | null;
+  assigned_technician?: {
+    staff_user_id: string;
+    staff_name: string;
+    specialization: Specialization;
+    allocation_reasoning?: string;
+  } | null;
   closure_reason?: ClosureReason | null;
   closure_note?: string | null;
   merged_into_id?: string | null;

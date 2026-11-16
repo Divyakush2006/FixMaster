@@ -121,7 +121,14 @@ export const NewComplaintForm: React.FC = () => {
           `Raised ${formatRelativeTime(res.complaint.created_at)} as ${ticketRef(res.complaint.complaint_id)}. You have been added to it and will see its progress.`
         );
       } else {
-        showToast('Ticket raised', 'success', `${ticketRef(res.complaint.complaint_id)} · we will keep you updated here.`);
+        const tech = res.complaint.assigned_technician;
+        showToast(
+          'Ticket raised successfully',
+          'success',
+          tech?.staff_name
+            ? `${ticketRef(res.complaint.complaint_id)} · Auto-assigned to ${tech.staff_name} (${tech.specialization}).`
+            : `${ticketRef(res.complaint.complaint_id)} · Ticket registered. Waiting for technician allocation by hostel supervisor / office.`
+        );
       }
       queryClient.invalidateQueries({ queryKey: ['complaints'] });
       navigate(`/student/complaints?id=${res.complaint.complaint_id}`);

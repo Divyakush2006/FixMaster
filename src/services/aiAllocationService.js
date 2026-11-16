@@ -73,23 +73,27 @@ async function allocateTechnician({ subcategory_id, category_id, priority, floor
         };
     }
 
-    // Deterministic fallback rule:
-    // Sort by: EMERGENCY -> fewest active tasks first; otherwise fewest tasks + same floor proximity
+    const { getHealth } = require('./aiHealthTracker');
+    const health = getHealth();
+
+    // When AI service is DOWN or DISABLED, do not auto-allocate any technician.
+    // Push the ticket to manual allocation mode for supervisors/hostel office.
+    if (health.status === 'DOWN' || health.status === 'DISABLED' || !isGeminiEnabled()) {
+        recordFallback('allocation');
+        return {
+            selected_staff_user_id: null,
+            staff_name: null,
+            specialization: trade,
+            allocation_reasoning: 'AI service is in manual allocation mode. Ticket is registered and waiting for manual dispatch by hostel supervisor / office.',
+            meta: { source: 'manual_mode', ai_down: true, candidates_count: candidates.length },
+        };
+    }
+
+    // If only 1 candidate, ask Gemini or assign directly if healthy
     const fallbackCandidate = candidates[0];
     const fallbackReasoning = priority === 'EMERGENCY'
         ? `Emergency allocation: ${fallbackCandidate.full_name} has the lowest active queue (${fallbackCandidate.active_tasks} tasks) for fastest immediate dispatch.`
         : `Allocated to ${fallbackCandidate.full_name} based on active workload (${fallbackCandidate.active_tasks} tasks) and proximity to floor ${floorNumber ?? 'N/A'}.`;
-
-    if (!isGeminiEnabled() || candidates.length === 1) {
-        recordFallback('allocation');
-        return {
-            selected_staff_user_id: fallbackCandidate.user_id,
-            staff_name: fallbackCandidate.full_name,
-            specialization: trade,
-            allocation_reasoning: fallbackReasoning,
-            meta: { source: 'fallback', candidates_count: candidates.length },
-        };
-    }
 
     try {
         const candidateEnum = candidates.map((c) => c.user_id);
@@ -135,15 +139,22 @@ ${JSON.stringify(candidates, null, 2)}`;
         }
     } catch (err) {
         recordFallback('allocation', err);
-        console.warn(`[AI Allocation] Gemini decision error: ${err.message}. Using deterministic fallback.`);
+        console.warn(`[AI Allocation] Gemini decision error: ${err.message}. Switched to manual supervisor dispatch mode.`);
+        return {
+            selected_staff_user_id: null,
+            staff_name: null,
+            specialization: trade,
+            allocation_reasoning: 'AI service encountered an outage or quota limit. Ticket queued for manual allocation by hostel supervisor.',
+            meta: { source: 'manual_mode', ai_down: true, candidates_count: candidates.length },
+        };
     }
 
     return {
-        selected_staff_user_id: fallbackCandidate.user_id,
-        staff_name: fallbackCandidate.full_name,
+        selected_staff_user_id: null,
+        staff_name: null,
         specialization: trade,
-        allocation_reasoning: fallbackReasoning,
-        meta: { source: 'fallback', candidates_count: candidates.length },
+        allocation_reasoning: 'Ticket is waiting for manual allocation by hostel supervisor / office.',
+        meta: { source: 'manual_mode', candidates_count: candidates.length },
     };
 }
 
