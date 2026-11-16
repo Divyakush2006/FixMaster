@@ -15,6 +15,9 @@ work floor by floor, and closes the ticket only after the student confirms the f
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+[![License: Apache 2.0](https://img.shields.io/github/license/Divyakush2006/FixMaster?color=blue)](LICENSE)
+
+[Report a bug](https://github.com/Divyakush2006/FixMaster/issues/new/choose) · [Request a feature](https://github.com/Divyakush2006/FixMaster/issues/new/choose)
 
 </div>
 
@@ -36,6 +39,9 @@ work floor by floor, and closes the ticket only after the student confirms the f
 - [Project structure](#project-structure)
 - [Documentation](#documentation)
 - [Academic context](#academic-context)
+- [Contributing](#contributing)
+- [License](#license)
+- [Team](#team)
 
 ## Overview
 
@@ -342,6 +348,8 @@ All endpoints are under `/api`. Responses are JSON, and list endpoints page with
 Known limitations and recommended next steps are listed in
 [Production Readiness](docs/PRODUCTION_READINESS.md#not-done--accepted-risks-and-decisions-for-the-team).
 
+**Reporting a vulnerability:** please report it privately as described in the [security policy](https://github.com/Divyakush2006/.github/blob/main/SECURITY.md), not in a public issue.
+
 ## Quality and testing
 
 ```bash
@@ -410,3 +418,18 @@ School of Computer Science and Engineering (SCOPE), VIT Vellore, under Dr. Deepi
 The rubric-by-rubric mapping (problem statement, ER design, normalization, SQL
 implementation, security and professional practices) is in the
 [Academic Report](docs/ACADEMIC_REPORT.md).
+
+## Contributing
+
+Contributions are welcome. Please read the [contributing guide](https://github.com/Divyakush2006/.github/blob/main/CONTRIBUTING.md) before opening a pull request. Changes to `final` go through pull requests with passing CI.
+
+## License
+
+Released under the [Apache License 2.0](LICENSE).
+
+## Team
+
+- **[Divyakush Punjabi](https://github.com/Divyakush2006)**, project lead · [www.divyakush.com](https://www.divyakush.com)
+- [CodeClosed](https://github.com/CodeClosed)
+- Vihaan Varshney
+- [Sudeep Kumar Sahu](https://github.com/sudeep-codes)
