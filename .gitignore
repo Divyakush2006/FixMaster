@@ -39,3 +39,6 @@ credentials/
 
 # Cloudflare local dev state
 .wrangler/
+
+# Local developer tooling
+.claude/
